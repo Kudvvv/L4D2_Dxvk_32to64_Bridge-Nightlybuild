@@ -11,7 +11,7 @@ python -m pip install meson==1.3.2 ninja==1.11.1.1
 ./scripts/build_demo.ps1 -DxvkDll C:/dxvk-2.7.1/x64/d3d9.dll
 ```
 
-使用 DXVK 官方 v2.7.1 发布包中的 x64/d3d9.dll。构建脚本使用固定上游 Bridge 提交，只初始化 Detours 子模块；不构建 RTX 渲染器。输出 dist/l4d2-experiment。重新打包前请保留或移走旧输出；脚本拒绝覆盖。也可以在将改动推送到 GitHub 后手动运行 Build experimental L4D2 bridge 工作流，获取 artifact；该工作流目前没有运行过。
+使用 DXVK 官方 v2.7.1 发布包中的 x64/d3d9.dll。构建脚本使用固定上游 Bridge 提交，只初始化 Detours 子模块；不构建 RTX 渲染器。输出 dist/l4d2-experiment。重新打包前请保留或移走旧输出；脚本拒绝覆盖。也可以在将改动推送到 GitHub 后手动运行 Build experimental L4D2 bridge 工作流，获取 artifact；该工作流已成功完成 Windows 编译。
 
 ## 建立基线
 
