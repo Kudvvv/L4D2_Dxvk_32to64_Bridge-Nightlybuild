@@ -1,6 +1,6 @@
 # Arc B580 实验包验收
 
-这是复用 RTX Remix Bridge、接普通上游 DXVK 的实验版本。尚未完成 Windows 编译与游戏实测；构建成功也不代表游戏兼容或显存/地址空间收益已验证。首版不包含 TXVK 定制后端、vscript 修补或帧生成。
+这是复用 RTX Remix Bridge、接普通上游 DXVK 的实验版本。已完成 Windows 编译，尚未完成游戏实测；构建成功不代表游戏兼容或显存/地址空间收益已验证。首版不包含 TXVK 定制后端、vscript 修补或帧生成。
 
 ## 构建
 
@@ -33,6 +33,6 @@ python -m pip install meson==1.3.2 ninja==1.11.1.1
 - 上游保留 Remix 相关代码；配置禁用 API 暴露不等于彻底裁剪。普通 DXVK 分支已隔离初始化查询，后续消息路径仍需实测。
 - 没有复制 TXVK 的所有 L4D2 专用补丁；其成功不能保证本实验直接进图。
 - 当前设备创建诊断覆盖普通 CreateDevice；CreateDeviceEx 和 Reset 可由上游逐调用日志定位，详细参数日志尚未扩展。
-- Windows 原生编译、Arc B580 呈现、退出、Reset 和内存收益都尚未验证。
+- Arc B580 呈现、退出、Reset 和内存收益尚未验证。
 
 上游 Bridge 来源 https://github.com/NVIDIAGameWorks/dxvk-remix ，MIT；DXVK 来源 https://github.com/doitsujin/dxvk ，zlib。实验补丁修改了原始 Bridge。

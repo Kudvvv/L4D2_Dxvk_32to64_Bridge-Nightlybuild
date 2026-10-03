@@ -32,4 +32,5 @@ jobs:
         with:
           name: l4d2-bridge-experiment
           path: dist/l4d2-experiment/
+          include-hidden-files: true
           if-no-files-found: error
