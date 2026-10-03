@@ -16,6 +16,7 @@ def prepare(source):
     if not source.exists():
         source.parent.mkdir(parents=True, exist_ok=True)
         run("git", "init", str(source))
+        run("git", "config", "core.autocrlf", "false", cwd=source)
         run("git", "remote", "add", "origin", REMOTE, cwd=source)
         run("git", "fetch", "--depth=1", "origin", COMMIT, cwd=source)
         run("git", "checkout", "--detach", "FETCH_HEAD", cwd=source)
