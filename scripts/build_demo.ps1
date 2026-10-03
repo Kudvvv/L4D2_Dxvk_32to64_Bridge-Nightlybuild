@@ -1,0 +1,23 @@
+param(
+  [Parameter(Mandatory = $true)][string]$DxvkDll,
+  [string]$VcVarsVer = '14.29'
+)
+$ErrorActionPreference = 'Stop'
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$dxvkPath = (Resolve-Path $DxvkDll).Path
+function Invoke-Checked {
+  param([string]$Program, [string[]]$Arguments)
+  & $Program @Arguments
+  if ($LASTEXITCODE -ne 0) { throw "$Program failed: $LASTEXITCODE" }
+}
+Invoke-Checked 'python' @("$PSScriptRoot/prepare_bridge.py")
+$source = Join-Path $repoRoot '.deps/dxvk-remix'
+Push-Location (Join-Path $source 'bridge')
+try {
+  # Each architecture gets a fresh PowerShell process and its own MSVC environment.
+  foreach ($arch in @('x64', 'x86')) {
+    $buildCommand = ". .\build_bridge.ps1; Build -Platform $arch -BuildFlavour debugoptimized -BuildSubDir _compDebugOptimized_$arch -VcVarsVer $VcVarsVer; exit `$LASTEXITCODE"
+    Invoke-Checked 'powershell.exe' @('-NoProfile', '-Command', $buildCommand)
+  }
+} finally { Pop-Location }
+Invoke-Checked 'python' @("$PSScriptRoot/package_demo.py", '--source', $source, '--dxvk', $dxvkPath)

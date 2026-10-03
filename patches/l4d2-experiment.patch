@@ -1,0 +1,123 @@
+diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
+index 300aaf5..40b368e 100644
+--- a/bridge/src/client/d3d9_lss.cpp
++++ b/bridge/src/client/d3d9_lss.cpp
+@@ -128,7 +128,7 @@ bool gbBridgeRunning = true;
+ std::string gRemixFolder = "";
+ std::mutex gSwapChainMapMutex;
+ SwapChainMap gSwapChainMap;
+-const char* gServerExecutable = "NvRemixBridge.exe";
++const char* gServerExecutable = "L4D2Bridge64.exe";
+ 
+ static fspath GetServerExecutablePath() {
+   ONCE(Logger::info(std::string("Native arch: ") + getNativeArchString()));
+diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
+index 86434ec..3e4d3d4 100644
+--- a/bridge/src/server/main.cpp
++++ b/bridge/src/server/main.cpp
+@@ -375,7 +375,13 @@ void ProcessDeviceCommandQueue() {
+         D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
+ 
+         IDirect3DDevice9* pD3DDevice = nullptr;
++        Logger::info(format_string(
++          "L4D2 CreateDevice: focus=%p window=%p adapter=%u windowed=%u size=%ux%u flags=0x%x",
++          TRUNCATE_HANDLE(HWND, hFocusWindow), PresentationParameters.hDeviceWindow,
++          Adapter, PresentationParameters.Windowed, PresentationParameters.BackBufferWidth,
++          PresentationParameters.BackBufferHeight, BehaviorFlags));
+         const auto hresult = gpD3D->CreateDevice(IN Adapter, IN DeviceType, IN TRUNCATE_HANDLE(HWND, hFocusWindow), IN BehaviorFlags, IN OUT & PresentationParameters, OUT & pD3DDevice);
++        Logger::info(format_string("L4D2 CreateDevice result: 0x%08x", hresult));
+         if (!SUCCEEDED(hresult)) {
+           std::stringstream ss;
+           ss << format_string("CreateDevice() call failed with error code 0x%x", hresult) << std::endl;
+@@ -3268,7 +3274,16 @@ bool InitializeD3D() {
+   // If vanilla dxvk is enabled attempt to load that first.
+   if (ServerOptions::getUseVanillaDxvk()) {
+     Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
+-    ghModule = LoadLibrary("d3d9vk_x64.dll");
++    char serverPath[MAX_PATH] = {};
++    const DWORD pathLength = GetModuleFileNameA(nullptr, serverPath, MAX_PATH);
++    if (!pathLength || pathLength >= MAX_PATH) {
++      Logger::err("Unable to resolve the bridge host path.");
++      return false;
++    }
++    const auto backendPath = std::filesystem::path(serverPath).parent_path() / "d3d9vk_x64.dll";
++    Logger::info(std::string("L4D2 backend: ") + backendPath.string());
++    ghModule = LoadLibraryExA(backendPath.string().c_str(), nullptr,
++      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+     if (ghModule) {
+       Logger::info("Non-RTX standard d3d9vk_x64.dll loaded");
+     } else {
+@@ -3285,6 +3300,10 @@ bool InitializeD3D() {
+   // create the D3D instance used for the lifetime of this process.
+   if (ghModule != nullptr) {
+     auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
++    if (!Direct3DCreate9) {
++      Logger::err("The D3D9 backend does not export Direct3DCreate9.");
++      return false;
++    }
+     if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
+       Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
+       return false;
+@@ -3311,6 +3330,10 @@ bool InitializeD3D() {
+   }
+ 
+   CheckD3D9Type(ghModule);
++  if (ServerOptions::getUseVanillaDxvk()) {
++    Logger::info("Upstream D3D9 backend initialized; Remix feature queries skipped.");
++    return true;
++  }
+   if (bDxvkModuleLoaded) {
+     auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
+     if(queryFeatureVersion == NULL) {
+@@ -3624,4 +3647,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+     ServerMessage { Commands::Bridge_Ack };
+   }
+   return 0;
+-}
+\ No newline at end of file
++}
+diff --git a/bridge/src/server/meson.build b/bridge/src/server/meson.build
+index 908d93f..ebe67e9 100644
+--- a/bridge/src/server/meson.build
++++ b/bridge/src/server/meson.build
+@@ -46,7 +46,7 @@ server_resource = windows.compile_resources('NvRemixBridge.rc',
+ 	depend_files : ['NvRemixBridge.ico']
+ )
+ 
+-server_exe = executable('NvRemixBridge', server_src, server_header, server_version, server_resource,
++server_exe = executable('L4D2Bridge64', server_src, server_header, server_version, server_resource,
+ sources             : [ bridge_version ],
+ build_by_default    : (cpu_family == 'x86_64') or (cpu_family == 'aarch64') ? true : false,
+ dependencies        : [ thread_dep, util_dep, lib_version, tracy_dep ],
+@@ -56,7 +56,7 @@ win_subsystem       : 'windows')
+ if (cpu_family == 'x86_64') or (cpu_family == 'aarch64')
+ 	# Note: dir names must match util_filesys.h !
+ 	if cpu_family != 'aarch64'
+-		server_output_dir = output_dir + '.trex'
++		server_output_dir = output_dir + '.l4d2bridge'
+ 	else
+ 		server_output_dir = output_dir + '.trex_arm64'
+ 	endif
+@@ -66,6 +66,6 @@ if (cpu_family == 'x86_64') or (cpu_family == 'aarch64')
+ 		output           : ['copy_server_to_output'],
+ 		build_by_default : true,
+ 		depends          : [ server_exe ],
+-		command          : [copy_script_path, meson.current_build_dir(), server_output_dir, 'NvRemixBridge*'] )
++		command          : [copy_script_path, meson.current_build_dir(), server_output_dir, 'L4D2Bridge64*'] )
+ 	endif
+-endif
+\ No newline at end of file
++endif
+diff --git a/bridge/src/util/util_filesys.h b/bridge/src/util/util_filesys.h
+index 15915da..2bcbeb8 100644
+--- a/bridge/src/util/util_filesys.h
++++ b/bridge/src/util/util_filesys.h
+@@ -90,7 +90,7 @@ public:
+     if (arch && 0 == std::strcmp(arch, bridge_util::RTX_ARCH_ARM64)) {
+       return ".trex_arm64";
+     }
+-    return ".trex";
++    return ".l4d2bridge";
+   }
+ };
+ 

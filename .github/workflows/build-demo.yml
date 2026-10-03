@@ -1,0 +1,35 @@
+name: Build experimental L4D2 bridge
+on:
+  push:
+    branches:
+      - codex/l4d2-demo
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install build tools
+        run: python -m pip install meson==1.3.2 ninja==1.11.1.1
+      - name: Download pinned upstream DXVK
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .deps | Out-Null
+          Invoke-WebRequest https://github.com/doitsujin/dxvk/releases/download/v2.7.1/dxvk-2.7.1.tar.gz -OutFile .deps/dxvk.tar.gz
+          $expected = 'd85ce7c79f57ecd765aaa1b9e7007cb875e6fde9f6d331df799bce73d513ce87'
+          if ((Get-FileHash .deps/dxvk.tar.gz -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'DXVK checksum mismatch' }
+          tar -xzf .deps/dxvk.tar.gz -C .deps
+          if ($LASTEXITCODE -ne 0) { throw 'DXVK extraction failed' }
+      - name: Build x86 client and x64 host
+        shell: powershell
+        run: ./scripts/build_demo.ps1 -DxvkDll .deps/dxvk-2.7.1/x64/d3d9.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-experiment
+          path: dist/l4d2-experiment/
+          if-no-files-found: error
