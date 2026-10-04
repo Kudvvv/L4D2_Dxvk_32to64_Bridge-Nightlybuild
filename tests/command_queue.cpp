@@ -181,7 +181,12 @@ int wmain(int argc, wchar_t** argv) {
   try {
     if (argc == 3 && std::wstring(argv[1]) == L"--reader") {
       const std::wstring wideName = argv[2];
-      runReader(std::string(wideName.begin(), wideName.end()));
+      std::string name;
+      for (const wchar_t character : wideName) {
+        require(character >= 0 && character < 128, "expected ASCII test mapping name");
+        name.push_back(static_cast<char>(character));
+      }
+      runReader(name);
     } else {
       require(argc == 2, "expected peer executable path");
       testIdleAndCancel();
