@@ -183,7 +183,7 @@ int wmain(int argc, wchar_t** argv) {
       const std::wstring wideName = argv[2];
       std::string name;
       for (const wchar_t character : wideName) {
-        require(character >= 0 && character < 128, "expected ASCII test mapping name");
+        require(static_cast<uint32_t>(character) < 128, "expected ASCII test mapping name");
         name.push_back(static_cast<char>(character));
       }
       runReader(name);
