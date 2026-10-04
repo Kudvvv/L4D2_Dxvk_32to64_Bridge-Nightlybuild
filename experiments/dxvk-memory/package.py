@@ -37,6 +37,9 @@ def package(source, dll, output):
     shutil.copy2(dll, destination)
     shutil.copytree(ROOT / "licenses", output / "licenses")
     shutil.copy2(source / "LICENSE", output / "licenses/DXVK-LICENSE.txt")
+    shutil.copy2(source / "include/openvr/LICENSE", output / "licenses/OpenVR-LICENSE.txt")
+    sha1_notice = (source / "src/util/sha1/sha1.c").read_text().split("#include", 1)[0]
+    (output / "licenses/SHA1-NOTICE.txt").write_text(sha1_notice)
     dependencies = {
         "libdisplay-info": ("subprojects/libdisplay-info", "LICENSE"),
         "Vulkan-Headers": ("include/vulkan", "LICENSE.md"),
@@ -44,6 +47,8 @@ def package(source, dll, output):
         "MinGW-DirectX-Headers": ("include/native/directx", "COPYING.MinGW-w64.txt"),
     }
     sources = {"DXVK": {"url": "https://github.com/doitsujin/dxvk", "commit": UPSTREAM, "modified": True}}
+    sources["OpenVR-Headers"] = {"url": "https://github.com/ValveSoftware/openvr", "path_in_dxvk": "include/openvr", "parent_commit": UPSTREAM, "license": "BSD-3-Clause"}
+    sources["SHA1"] = {"author": "Steve Reid", "path_in_dxvk": "src/util/sha1", "parent_commit": UPSTREAM, "license": "Public Domain (upstream declaration)"}
     for name, (directory, notice) in dependencies.items():
         path = source / directory
         shutil.copy2(path / notice, output / "licenses" / f"{name}-LICENSE.txt")
@@ -55,7 +60,7 @@ def package(source, dll, output):
         for notice in Path("/usr/share/doc").glob(pattern):
             shutil.copy2(notice, output / "licenses" / f"toolchain-{notice.parent.name}.txt")
     common = Path("/usr/share/common-licenses")
-    for name in ("GPL-3", "LGPL-2.1"):
+    for name in ("GPL-3", "LGPL-2.1", "Apache-2"):
         if (common / name).exists():
             shutil.copy2(common / name, output / "licenses" / f"toolchain-{name}.txt")
     for name in ("LICENSE", "THIRD_PARTY.md"):
