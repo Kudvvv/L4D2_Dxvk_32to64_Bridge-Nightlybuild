@@ -115,7 +115,7 @@ Steam → L4D2 → 属性 → 启动选项：
 | --- | --- |
 | `bridge32.log`、`bridge64.log` | 上游默认位于游戏工作目录的 `rtx-remix/logs/`，记录两端启动、握手、设备创建和退出；找不到时在游戏目录搜索同名文件 |
 | `l4d2-memory.log` | 固定在游戏 `bin/`，记录 x86 地址空间、shadow 保留数据和映射缓存 |
-| `l4d2-host-memory.log` | 新 Host 固定写入 `bin/.l4d2bridge/`，记录 x64 内存、CPU 用时、命令速率和资源表计数 |
+| `l4d2-host-memory.log` | 新 Host 固定写入 `bin/.l4d2bridge/`，记录 x64 内存、CPU 用时、命令速率、资源分类／生命周期计数与桥自身的 GPU 内存；GPU 无效查询有独立标志 |
 | `console.log` | 启用 `-condebug` 后由游戏写入，通常位于 `left4dead2/` |
 | DXVK 日志 | 由 x64 后端写入，位置受工作目录和 `DXVK_LOG_PATH` 影响 |
 
@@ -348,7 +348,7 @@ If an older configuration omits `client.surfaceShadowCacheMB`, it still defaults
 | --- | --- |
 | `bridge32.log`, `bridge64.log` | Upstream default: `rtx-remix/logs/` under the game's working directory. Record startup, handshake, device creation, and shutdown. Search the game directory for these filenames if necessary. |
 | `l4d2-memory.log` | Always under the game's `bin/`. Records x86 address space, retained shadow data, and mapping-cache usage. |
-| `l4d2-host-memory.log` | The updated Host writes it under `bin/.l4d2bridge/`. Records x64 memory, CPU time, command rate and object-map counts. |
+| `l4d2-host-memory.log` | Written under `bin/.l4d2bridge/`. Records x64 memory, CPU time, command rate, resource-type/lifecycle counters and Host-local GPU memory, with validity flags. |
 | `console.log` | Written by the game with `-condebug`, normally under `left4dead2/`. |
 | DXVK logs | Written by the x64 backend; their location depends on the working directory and `DXVK_LOG_PATH`. |
 

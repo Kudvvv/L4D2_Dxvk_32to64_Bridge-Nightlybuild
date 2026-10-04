@@ -6,6 +6,8 @@
 
 这是后续设计说明，当前更新没有实现额外的纹理资源池。
 
+当前状态：暂缓实现。先调查同一进程反复进图后的菜单内存基线增长及专用／共享 GPU 内存变化，确认资源生命周期与底层保留量，再评估复用收益。
+
 目标是减少同一地图再次加载时的重复资源创建。现有 `client.surfaceShadowCacheMB=128` 缓存的是 x86 纹理 shadow 的映射，避免重复映射并节省地址空间；它不是按地图保存 GPU 纹理的缓存。
 
 | 方案 | 可减少什么 | 边界 |
@@ -32,3 +34,5 @@
 ## English
 
 This is a design document, not an implemented texture pool. The proposed first step is a bounded, optional Host texture-object pool with measured hits, evictions and retained-byte estimates. It may reduce repeated resource creation but does not eliminate engine-side MOD loading/decompression or required texture uploads. Resource identity, format/mip/usage/pool/device compatibility, child-surface and binding references, Reset and destruction must remain correct. Content reuse additionally requires validated content identity and partial-update invalidation; identical dimensions are insufficient. A tentative 256 MiB pool budget limits its estimated retained texture data, not total Host/driver memory. Measure repeated loading and total memory before enabling it by default.
+
+Implementation is currently paused while investigating repeated-map menu memory growth and dedicated/shared GPU usage.
