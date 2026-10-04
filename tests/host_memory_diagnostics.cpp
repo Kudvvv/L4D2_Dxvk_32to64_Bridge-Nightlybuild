@@ -17,6 +17,8 @@ uint64_t value(const std::string& line, const std::string& key) {
 
 int main(int argc, char** argv) {
   if (argc != 2) { return 1; }
+  l4d2_queue::counters.waited(true, false);
+  l4d2_queue::counters.blocked(17);
   {
     l4d2_host_memory::Recorder recorder;
     l4d2_host_memory::Objects objects;
@@ -41,7 +43,9 @@ int main(int argc, char** argv) {
   for (const auto& record : lines) {
     if (value(record, "counters_valid") != 1 || value(record, "commit_valid") != 1 ||
         value(record, "physical_valid") != 1 || value(record, "handles_valid") != 1 ||
-        !value(record, "processors") || value(record, "pid") != GetCurrentProcessId()) { return 8; }
+        !value(record, "processors") || value(record, "pid") != GetCurrentProcessId() ||
+        value(record, "schema") != 2 || value(record, "q_wait_events") != 1 ||
+        value(record, "q_wait_timeouts") != 1 || value(record, "q_full_wait_ms") != 17) { return 8; }
   }
   const uint64_t minimumChange = 48 * 1024 * 1024;
   const auto baseline = value(lines[0], "private_bytes");

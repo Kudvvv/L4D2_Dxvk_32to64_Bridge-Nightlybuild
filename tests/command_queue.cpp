@@ -116,6 +116,53 @@ void testTimeoutAndCompatibility() {
   producer.join();
   require(result == Result::Success && value.sequence == 7, "legacy producer fallback failed");
 }
+void testNotificationCoalescing() {
+  const auto name = uniqueName();
+  Memory memory(name);
+  Writer writer(name, memory.data, kMapSize, kQueueSize);
+  Reader reader(name, memory.data, kMapSize, kQueueSize);
+  auto* waiting = reinterpret_cast<std::atomic<uint32_t>*>(
+    static_cast<char*>(memory.data) + 64);
+  const auto before = l4d2_queue::counters.snapshot();
+  waiting->store(1);
+  for (uint32_t i = 0; i < kQueueSize - 1; ++i) {
+    require(writer.push(Item{Commands::Bridge_Any, i, 0}) == Result::Success,
+      "notification burst stalled");
+  }
+  require(l4d2_queue::counters.snapshot().signals == before.signals + 1 && !waiting->load(),
+    "a waiting reader was notified repeatedly for one burst");
+  for (uint32_t i = 0; i < kQueueSize - 1; ++i) {
+    Result result = Result::Failure;
+    const auto item = reader.pull(result, 1000);
+    require(result == Result::Success && item.sequence == i, "coalesced wake lost a command");
+  }
+  waiting->store(1);
+  require(writer.push(Item{}) == Result::Success &&
+    l4d2_queue::counters.snapshot().signals == before.signals + 2,
+    "a rearmed reader was not notified");
+}
+void testCounters() {
+  l4d2_queue::Counters counters;
+  std::thread first([&] {
+    for (unsigned i = 0; i < 1000; ++i) {
+      counters.waited(true, false);
+      counters.signaled(true);
+      counters.blocked(11);
+    }
+  });
+  for (unsigned i = 0; i < 1000; ++i) {
+    counters.waited(false, true);
+    counters.signaled(false);
+    counters.legacyWait();
+    counters.blocked(7);
+  }
+  first.join();
+  const auto s = counters.snapshot();
+  require(s.waits == 2000 && s.timeouts == 1000 && s.failures == 1000 &&
+    s.signals == 1000 && s.signalFailures == 1000 && s.legacyWaits == 1000 &&
+    s.fullWaits == 2000 && s.fullWaitMs == 18000 && s.maxFullWaitMs == 11,
+    "concurrent queue counters lost updates");
+}
 void testWakeAndWrap() {
   const auto name = uniqueName();
   Memory memory(name);
@@ -191,6 +238,8 @@ int wmain(int argc, wchar_t** argv) {
       require(argc == 2, "expected peer executable path");
       testIdleAndCancel();
       testTimeoutAndCompatibility();
+      testNotificationCoalescing();
+      testCounters();
       testWakeAndWrap();
       testPeer(argv[1]);
       std::puts("Command queue tests passed");

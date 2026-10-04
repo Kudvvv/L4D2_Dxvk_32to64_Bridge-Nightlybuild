@@ -91,7 +91,10 @@ def package(source, dxvk, output):
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(output / relative, destination)
         cpu_hashes[relative] = hashes[relative]
-    shutil.copy2(ROOT / "docs/CPU-QUEUE-TEST.md", cpu_output / "CPU-QUEUE-TEST.md")
+    cpu_guide = (ROOT / "docs/CPU-QUEUE-TEST.md").read_text(encoding="utf-8")
+    cpu_guide = cpu_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (cpu_output / "CPU-QUEUE-TEST.md").write_text(cpu_guide, encoding="utf-8")
+    shutil.copy2(ROOT / "docs/TEXTURE-REUSE-DESIGN.md", cpu_output / "TEXTURE-REUSE-DESIGN.md")
     shutil.copytree(licenses, cpu_output / "licenses")
     for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
         shutil.copy2(ROOT / filename, cpu_output / filename)
