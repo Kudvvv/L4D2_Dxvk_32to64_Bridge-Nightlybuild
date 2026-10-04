@@ -115,6 +115,7 @@ Steam → L4D2 → 属性 → 启动选项：
 | --- | --- |
 | `bridge32.log`、`bridge64.log` | 上游默认位于游戏工作目录的 `rtx-remix/logs/`，记录两端启动、握手、设备创建和退出；找不到时在游戏目录搜索同名文件 |
 | `l4d2-memory.log` | 固定在游戏 `bin/`，记录 x86 地址空间、shadow 保留数据和映射缓存 |
+| `l4d2-host-memory.log` | 新 Host 固定写入 `bin/.l4d2bridge/`，记录 x64 内存、CPU 用时、命令速率和资源表计数 |
 | `console.log` | 启用 `-condebug` 后由游戏写入，通常位于 `left4dead2/` |
 | DXVK 日志 | 由 x64 后端写入，位置受工作目录和 `DXVK_LOG_PATH` 影响 |
 
@@ -123,6 +124,8 @@ Steam → L4D2 → 属性 → 启动选项：
 内存日志每个新进程首次采样覆盖旧文件。发生问题后立即复制保存 `l4d2-memory.log` 和两侧日志，再重新启动游戏。采样间隔约五秒，由绘制和资源操作触发，没有后台轮询线程。详细字段见 [内存诊断说明](docs/MEMORY-DIAGNOSTICS.md)。
 
 `surface_bytes` 是当前映射的数据量，`surface_backing_bytes` 是仍然保留的纹理副本总量，`surface_view_budget_bytes` 是计入映射对齐开销后的缓存占用。判断 x86 地址空间余量应看 `va_free` 和 `largest_free`。游戏 `mem_dump` 若出现负数或明显异常的 OS 统计，不能据此判断真实内存余量。
+
+Host 内存／CPU 诊断更新提供独立的 `l4d2-bridge-host-diagnostics` 包，可只替换 Host EXE，继续使用已有 v1.0.0 客户端与 DXVK。它用于定位增长来源，不是内存优化修复。安装、字段和同场景对比方法见 [Host 诊断说明](docs/HOST-MEMORY-DIAGNOSTICS.md)。每轮结束保存四份日志，新进程会覆盖同名文件。
 
 ## 从源码构建
 
@@ -341,6 +344,7 @@ If an older configuration omits `client.surfaceShadowCacheMB`, it still defaults
 | --- | --- |
 | `bridge32.log`, `bridge64.log` | Upstream default: `rtx-remix/logs/` under the game's working directory. Record startup, handshake, device creation, and shutdown. Search the game directory for these filenames if necessary. |
 | `l4d2-memory.log` | Always under the game's `bin/`. Records x86 address space, retained shadow data, and mapping-cache usage. |
+| `l4d2-host-memory.log` | The updated Host writes it under `bin/.l4d2bridge/`. Records x64 memory, CPU time, command rate and object-map counts. |
 | `console.log` | Written by the game with `-condebug`, normally under `left4dead2/`. |
 | DXVK logs | Written by the x64 backend; their location depends on the working directory and `DXVK_LOG_PATH`. |
 
@@ -349,6 +353,8 @@ The `rtx-remix` log directory and internal Remix interface names are retained to
 The first memory sample in each new process overwrites the previous `l4d2-memory.log`. After a failure, save that file and both bridge logs before restarting. Samples are triggered by rendering and resource operations at approximately five-second intervals, without a background polling thread. See the [memory diagnostics reference](docs/MEMORY-DIAGNOSTICS.md) for detailed fields (in Chinese).
 
 `surface_bytes` measures currently mapped texture data. `surface_backing_bytes` measures all retained texture shadow data, while `surface_view_budget_bytes` includes mapping-alignment overhead. Use `va_free` and `largest_free` to assess x86 address-space headroom. Negative or clearly invalid OS readings from the game's `mem_dump` are not reliable measurements of actual memory availability.
+
+The Host diagnostic update provides a separate `l4d2-bridge-host-diagnostics` artifact: replace only the Host executable and keep the installed v1.0.0 client and DXVK. This update helps investigate growth; it is not a memory optimization fix. See the [Host diagnostic guide](docs/HOST-MEMORY-DIAGNOSTICS.md) for installation, fields and controlled comparisons. Save all four logs after each session, before the next process overwrites them.
 
 ## Building from source
 

@@ -42,6 +42,9 @@ jobs:
       - name: Test x86 diagnostics and shadow eviction
         shell: powershell
         run: ./scripts/test_diagnostics.ps1
+      - name: Test x64 Host memory and CPU diagnostics
+        shell: powershell
+        run: ./scripts/test_host_diagnostics.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: l4d2-bridge-v${{ env.L4D2_PROJECT_VERSION }}
@@ -52,4 +55,10 @@ jobs:
         with:
           name: l4d2-bridge-client-only
           path: dist/l4d2-client-only/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-host-diagnostics
+          path: dist/l4d2-host-only/
+          include-hidden-files: true
           if-no-files-found: error
