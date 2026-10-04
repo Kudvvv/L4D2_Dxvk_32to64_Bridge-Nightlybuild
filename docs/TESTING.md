@@ -1,6 +1,6 @@
 # Arc B580 实验包验收
 
-这是复用 RTX Remix Bridge、接普通上游 DXVK 的实验版本。已完成 Windows 编译，尚未完成游戏实测；构建成功不代表游戏兼容或显存/地址空间收益已验证。首版不包含 TXVK 定制后端、vscript 修补或帧生成。
+这是复用 RTX Remix Bridge、接普通上游 DXVK 的实验版本。可回收纹理映射版已由用户在 Arc B580 / DXVK 2.6.1 上带全部原有 Mod 进入战役，日志验证地址空间回收和正常退出，详见 [首次实测记录](FIRST-GAME-VALIDATION.md)。长时间稳定性、性能对照和其他设备仍待验证。首版不包含 TXVK 定制后端、vscript 修补或帧生成。
 
 ## 构建
 
@@ -11,7 +11,7 @@ python -m pip install meson==1.3.2 ninja==1.11.1.1
 ./scripts/build_demo.ps1 -DxvkDll C:/dxvk-2.7.1/x64/d3d9.dll
 ```
 
-使用 DXVK 官方 v2.7.1 发布包中的 x64/d3d9.dll。构建脚本使用固定上游 Bridge 提交，只初始化 Detours 子模块；不构建 RTX 渲染器。输出 dist/l4d2-experiment。重新打包前请保留或移走旧输出；脚本拒绝覆盖。也可以在将改动推送到 GitHub 后手动运行 Build experimental L4D2 bridge 工作流，获取 artifact；该工作流已成功完成 Windows 编译。
+构建脚本接受 DXVK 官方发布包中的 x64/d3d9.dll。CI 打包使用固定的 v2.7.1，但当前用户在 B580 上实测使用 v2.6.1；已安装用户应下载客户端更新包并保留自己的后端。构建脚本使用固定上游 Bridge 提交，只初始化 Detours 子模块；不构建 RTX 渲染器。输出完整包 dist/l4d2-experiment 和客户端更新包 dist/l4d2-client-only。重新打包前请保留或移走旧输出；脚本拒绝覆盖。也可以手动运行 Build experimental L4D2 bridge 工作流，获取 artifact；该工作流已成功完成 Windows 编译和 x86 自动测试。
 
 ## 建立基线
 
@@ -31,8 +31,8 @@ python -m pip install meson==1.3.2 ninja==1.11.1.1
 ## 已知未解决项
 
 - 上游保留 Remix 相关代码；配置禁用 API 暴露不等于彻底裁剪。普通 DXVK 分支已隔离初始化查询，后续消息路径仍需实测。
-- 没有复制 TXVK 的所有 L4D2 专用补丁；其成功不能保证本实验直接进图。
+- 没有复制 TXVK 的所有 L4D2 专用补丁；其他 Mod、地图和游戏路径仍需覆盖。
 - 当前设备创建诊断覆盖普通 CreateDevice；CreateDeviceEx 和 Reset 可由上游逐调用日志定位，详细参数日志尚未扩展。
-- Arc B580 呈现、退出、Reset 和内存收益尚未验证。
+- Arc B580 的首次战役呈现、正常退出和 x86 地址空间回收已验证；Reset、连续换图、长时间稳定性和定量性能对照仍待验证。
 
 上游 Bridge 来源 https://github.com/NVIDIAGameWorks/dxvk-remix ，MIT；DXVK 来源 https://github.com/doitsujin/dxvk ，zlib。实验补丁修改了原始 Bridge。
