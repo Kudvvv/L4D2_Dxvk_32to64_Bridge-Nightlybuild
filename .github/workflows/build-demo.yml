@@ -38,3 +38,8 @@ jobs:
           path: dist/l4d2-experiment/
           include-hidden-files: true
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-client-only
+          path: dist/l4d2-client-only/
+          if-no-files-found: error

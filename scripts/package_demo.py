@@ -45,7 +45,18 @@ def package(source, dxvk, output):
     shutil.copy2(source / "bridge/ThirdPartyLicenses.txt", licenses / "Bridge-third-party.txt")
     shutil.copy2(ROOT / "licenses/DXVK-LICENSE.txt", licenses / "DXVK-LICENSE.txt")
     (output / "SHA256.json").write_text(json.dumps(hashes, indent=2) + "\n")
+    client_output = output.parent / "l4d2-client-only"
+    (client_output / "bin").mkdir(parents=True, exist_ok=False)
+    shutil.copy2(output / "bin/dxvk_d3d9.dll", client_output / "bin/dxvk_d3d9.dll")
+    shutil.copy2(ROOT / "docs/MEMORY-DIAGNOSTICS.md", client_output / "MEMORY-DIAGNOSTICS.md")
+    (client_output / "licenses").mkdir()
+    for filename in ("Bridge-MIT.txt", "Bridge-third-party.txt"):
+        shutil.copy2(licenses / filename, client_output / "licenses" / filename)
+    (client_output / "SHA256.json").write_text(json.dumps({
+        "bin/dxvk_d3d9.dll": hashes["bin/dxvk_d3d9.dll"],
+    }, indent=2) + "\n")
     print(f"Experimental package: {output}; game runtime is not validated")
+    print(f"Client-only update: {client_output}; preserves the installed host and DXVK")
 
 
 if __name__ == "__main__":

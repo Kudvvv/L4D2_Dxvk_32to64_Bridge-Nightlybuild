@@ -8,7 +8,7 @@
 
 ## 安装与复测
 
-关闭游戏及 Host，**只替换新包里的 bin/dxvk_d3d9.dll**。保留此前能运行的 DXVK 2.6.1 x64 后端、L4D2Bridge64.exe 和原有 bridge.conf。完整包仍包含构建用的 DXVK 2.7.1，请勿覆盖你的 2.6.1。保持 logLevel=Info、logApiCalls=False、logServerCommands=False。
+下载 l4d2-bridge-client-only 更新包。关闭游戏及 Host，**只替换新包里的 bin/dxvk_d3d9.dll**。保留此前能运行的 DXVK 2.6.1 x64 后端、L4D2Bridge64.exe 和原有 bridge.conf。另一个完整包仍包含构建用的 DXVK 2.7.1，请勿覆盖你的 2.6.1。保持 logLevel=Info、logApiCalls=False、logServerCommands=False。
 
 从 Steam 用原来的 Mod 和同一地图再次进图。尝试正常游玩并退出后重新进图一次，检查贴图是否正常、是否崩溃及帧率。请提供 l4d2-memory.log、bridge32.log、bridge64.log，说明能否进图和实际表现；如有崩溃 dump 或报错窗口也一并提供。
 
