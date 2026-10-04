@@ -77,6 +77,9 @@ def package(source, dxvk, output):
     (host_output / "bin/.l4d2bridge").mkdir(parents=True, exist_ok=False)
     shutil.copy2(output / host_relative, host_output / host_relative)
     shutil.copy2(ROOT / "docs/HOST-MEMORY-DIAGNOSTICS.md", host_output / "HOST-MEMORY-DIAGNOSTICS.md")
+    gpu_guide = (ROOT / "docs/GPU-ALLOCATION-DIAGNOSTICS.md").read_text(encoding="utf-8")
+    gpu_guide = gpu_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (host_output / "GPU-ALLOCATION-DIAGNOSTICS.md").write_text(gpu_guide, encoding="utf-8")
     (host_output / "licenses").mkdir()
     for filename in ("Bridge-MIT.txt", "Bridge-third-party.txt", "DXVK-LICENSE.txt"):
         shutil.copy2(licenses / filename, host_output / "licenses" / filename)

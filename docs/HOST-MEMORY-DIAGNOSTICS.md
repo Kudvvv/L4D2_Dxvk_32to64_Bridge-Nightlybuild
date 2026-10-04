@@ -68,6 +68,8 @@ CPU 优化与额外纹理缓存暂缓。保持原来的帧率上限、Mod、分�
 
 判断顺序：菜单阶段同类资源数量是否逐轮增长；游戏侧 shadow backing 是否同步增长；资源数量稳定时 Host 私有／映射提交量和本地／非本地 GPU 使用量是否增长。计数下降只证明桥已处理相关命令，GPU 仍可能有未完成工作、内部引用或分配块保留；不能据此声称资源的物理内存已全部归还。
 
+当资源分类稳定、GPU 非本地使用量仍逐轮增长时，下一步可复用标准 DXVK 的分配器 HUD，查看申请量、使用量和块分布，参见 [GPU 分配诊断](GPU-ALLOCATION-DIAGNOSTICS.md)。
+
 ## English
 
 This is a diagnostic update for v1.0.0, not a memory/performance fix. Exit the game and Host, back up `bin/.l4d2bridge/L4D2Bridge64.exe`, and replace only that executable from the `l4d2-bridge-host-diagnostics` artifact. Keep the client, DXVK, configuration and ReShade files. The existing v1.0.0 client remains compatible. Restore the executable backup to revert.
@@ -77,6 +79,8 @@ The Host writes `bin/.l4d2bridge/l4d2-host-memory.log`, replacing the previous s
 For the current memory investigation, pause CPU changes and texture pooling. In one process, enter the same map, play for at least 30 seconds, return to the menu and wait five minutes; repeat three or four times and exit normally. Record timestamps, game/Host RAM and dedicated/shared GPU readings at each settled menu. Compare at least two cycles without the bridge under the same conditions. Save all four logs before restarting. Existing four-cycle logs remain useful and should be sent first. Card-wide GPU totals include background applications; shared GPU memory uses system RAM and must not simply be added to process working sets as separate physical usage. No other processes need to be sampled.
 
 Compare the same map/mods at 60 FPS and a 300 FPS cap, initially with the ReShade Vulkan layer disabled for this executable (disabling effects alone leaves its hooks active). Then change map and check whether counts and memory return. Record phase times and save all four logs before restarting. A separate ReShade-enabled run can help isolate its impact. These observations can narrow the source of growth or CPU cost, but cannot prove a leak or attribute allocations inside DXVK, the driver or ReShade without further profiling.
+
+Once the long-wait comparison confirms growth with stable resource counts, use the existing DXVK allocator HUD to inspect allocated/used capacity and chunk distribution; see [GPU allocation diagnostics](GPU-ALLOCATION-DIAGNOSTICS.md). Repeating the initial three-cycle comparison is unnecessary for this next step.
 
 ## License and attribution
 
