@@ -38,6 +38,7 @@ def package(source, dxvk, output):
         hashes[relative] = hashlib.sha256(destination.read_bytes()).hexdigest()
     shutil.copy2(ROOT / "config/bridge.conf", output / "bin/.l4d2bridge/bridge.conf")
     shutil.copy2(ROOT / "docs/TESTING.md", output / "TESTING.md")
+    shutil.copy2(ROOT / "docs/MEMORY-DIAGNOSTICS.md", output / "MEMORY-DIAGNOSTICS.md")
     licenses = output / "licenses"
     licenses.mkdir()
     shutil.copy2(source / "bridge/LICENSE-MIT", licenses / "Bridge-MIT.txt")

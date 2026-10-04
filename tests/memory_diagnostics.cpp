@@ -1,9 +1,67 @@
 #define NOMINMAX
 #include "memory_diagnostics.h"
+#include "pagefile_shadow.h"
 #include <fstream>
 #include <iterator>
 #include <limits>
 #include <string>
+#include <memory>
+#include <vector>
+
+int testShadowCache() {
+  using namespace l4d2_memory;
+  SYSTEM_INFO system {};
+  GetSystemInfo(&system);
+  const size_t budget = system.dwAllocationGranularity;
+  {
+    PagefileShadow a, b;
+    if (a.acquire(0, budget)) { return 10; }
+    auto* first = a.acquire(4096, budget);
+    if (!first) { return 11; }
+    for (size_t i = 0; i < 4096; ++i) { first[i] = static_cast<uint8_t>(i); }
+    if (!b.acquire(4096, budget) || a.get() != first) { return 12; }
+    b.release(budget);
+    if (b.get() || !a.get()) { return 13; } // Locked a cannot be evicted.
+    if (a.acquire(4096, budget) != first) { return 14; }
+    a.release(0);
+    if (!a.get()) { return 15; } // Nested lock still pins the view.
+    a.release(0);
+    if (a.get() || bytes[0] || surfaceViewBudgetBytes ||
+        surfaceBackingBytes != 8192 || surfaceBackingCount != 2) { return 16; }
+    auto* restored = a.acquire(4096, budget);
+    if (!restored) { return 17; }
+    for (size_t i = 0; i < 4096; ++i) {
+      if (restored[i] != static_cast<uint8_t>(i)) { return 18; }
+    }
+    a.release(budget);
+    if (!b.acquire(4096, budget) || a.get()) { return 19; }
+    b.release(budget);
+    if (surfaceViewBudgetBytes > budget) { return 20; }
+  }
+  if (bytes[0] || objects[0] || surfaceBackingBytes || surfaceBackingCount ||
+      surfaceViewBudgetBytes) { return 21; }
+  {
+    std::vector<std::unique_ptr<PagefileShadow>> shadows;
+    for (unsigned i = 0; i < 128; ++i) {
+      auto shadow = std::make_unique<PagefileShadow>();
+      auto* data = shadow->acquire(4096, 4 * budget);
+      if (!data) { return 22; }
+      data[0] = static_cast<uint8_t>(i);
+      data[4095] = static_cast<uint8_t>(255 - i);
+      shadow->release(4 * budget);
+      if (surfaceViewBudgetBytes > 4 * budget) { return 23; }
+      shadows.push_back(std::move(shadow));
+    }
+    for (unsigned i = 0; i < shadows.size(); ++i) {
+      auto* data = shadows[i]->acquire(4096, 4 * budget);
+      if (!data || data[0] != i || data[4095] != 255 - i) { return 24; }
+      shadows[i]->release(0);
+    }
+  }
+  if (bytes[0] || objects[0] || surfaceBackingBytes || surfaceBackingCount ||
+      surfaceViewBudgetBytes) { return 25; }
+  return 0;
+}
 
 int main(int argc, char** argv) {
   if (argc != 2) { return 1; }
@@ -27,6 +85,8 @@ int main(int argc, char** argv) {
     delete[] impossible;
   } catch (const std::bad_alloc&) { failed = true; }
   if (!failed || bytes[0] != 0 || objects[0] != 0) { return 5; }
+  const auto shadowResult = testShadowCache();
+  if (shadowResult) { return shadowResult; }
   sample(true, "test-final");
   std::ifstream file(argv[1]);
   const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());

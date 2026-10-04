@@ -12,35 +12,75 @@ index 300aaf5..40b368e 100644
  static fspath GetServerExecutablePath() {
    ONCE(Logger::info(std::string("Native arch: ") + getNativeArchString()));
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
-index e54aec5..38b4705 100644
+index e54aec5..1340d0b 100644
 --- a/bridge/src/client/d3d9_surface.cpp
 +++ b/bridge/src/client/d3d9_surface.cpp
-@@ -30,6 +30,7 @@
+@@ -30,6 +30,17 @@
  #include "d3d9_surfacebuffer_helper.h"
  #include "util_bridge_assert.h"
  #include "util_gdi.h"
 +#include "memory_diagnostics.h"
++
++namespace {
++size_t surfaceShadowBudget() {
++  static const size_t budget = [] {
++    const auto mb = Config::getOption<uint32_t>("client.surfaceShadowCacheMB", 128);
++    return static_cast<size_t>(mb > 1024 ? 1024 : mb) * 1024 * 1024;
++  }();
++  return budget;
++}
++}
  
  Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
                                             const D3DSURFACE_DESC& desc, bool isBackBuffer)
-@@ -50,6 +51,7 @@ Direct3DSurface9_LSS::~Direct3DSurface9_LSS() {
-       bridge_util::calcTotalSizeOfRect(m_desc.Width, m_desc.Height, m_desc.Format);
+@@ -45,14 +56,6 @@ Direct3DSurface9_LSS::~Direct3DSurface9_LSS() {
+     if (m_bufferId != SharedHeap::kInvalidId) {
+       SharedHeap::deallocate(m_bufferId);
+     }
+-  } else if (m_shadow) {
+-    const auto surfaceSize =
+-      bridge_util::calcTotalSizeOfRect(m_desc.Width, m_desc.Height, m_desc.Format);
+-
+-    g_totalSurfaceShadow -= surfaceSize;
+-    Logger::trace(format_string("Releasing shadow of surface [%p] "
+-                                "(size: %zd, total surface shadow size: %zd)",
+-                                this, surfaceSize, g_totalSurfaceShadow));
+   }
+ }
  
-     g_totalSurfaceShadow -= surfaceSize;
-+    l4d2_memory::released(surfaceSize, l4d2_memory::Kind::Surface);
-     Logger::trace(format_string("Releasing shadow of surface [%p] "
-                                 "(size: %zd, total surface shadow size: %zd)",
-                                 this, surfaceSize, g_totalSurfaceShadow));
-@@ -221,7 +223,8 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
+@@ -220,17 +223,14 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
+     lockedRect.pBits = getBufPtr(lockedRect.Pitch, rect);
      m_lockInfoQueue.push({ lockedRect, rect, flags, m_bufferId, discardBufId });
    } else {
-     if (!m_shadow) {
+-    if (!m_shadow) {
 -      m_shadow.reset(new uint8_t[surfaceSize]);
-+      m_shadow.reset(l4d2_memory::allocate(surfaceSize, l4d2_memory::Kind::Surface,
-+        m_desc.Width, m_desc.Height, static_cast<unsigned>(m_desc.Format)));
-       g_totalSurfaceShadow += surfaceSize;
-       Logger::trace(format_string("Allocated a shadow for surface [%p] "
-                                   "(size: %zd, total surface shadow size: %zd)",
+-      g_totalSurfaceShadow += surfaceSize;
+-      Logger::trace(format_string("Allocated a shadow for surface [%p] "
+-                                  "(size: %zd, total surface shadow size: %zd)",
+-                                  this, surfaceSize, g_totalSurfaceShadow));
+-    }
++    auto* shadow = m_shadow.acquire(surfaceSize, surfaceShadowBudget());
++    if (!shadow) { return false; }
++    l4d2_memory::sample(false, "surface-mapped", l4d2_memory::Kind::Surface, surfaceSize,
++      m_desc.Width, m_desc.Height, static_cast<unsigned>(m_desc.Format));
+ 
+     const size_t byteOffset = bridge_util::calcImageByteOffset(lockedRect.Pitch, rect, m_desc.Format);
+ 
+-    lockedRect.pBits = m_shadow.get() + byteOffset;
++    lockedRect.pBits = shadow + byteOffset;
+     m_lockInfoQueue.push({ lockedRect, rect, flags });
+   }
+   return true;
+@@ -247,6 +247,9 @@ void Direct3DSurface9_LSS::unlock() {
+   if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
+     sendDataToServer(lockInfo);
+   }
++  if (!m_bUseSharedHeap) {
++    m_shadow.release(surfaceShadowBudget());
++  }
+ }
+ 
+ RECT Direct3DSurface9_LSS::resolveLockInfoRect(const RECT* const pRect, const D3DSURFACE_DESC& desc) {
 @@ -296,4 +299,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
  std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions(const RECT& rect) {
    return { rect.right  - rect.left,
@@ -48,6 +88,36 @@ index e54aec5..38b4705 100644
 -}
 \ No newline at end of file
 +}
+diff --git a/bridge/src/client/d3d9_surface.h b/bridge/src/client/d3d9_surface.h
+index e4e9d51..ee152cb 100644
+--- a/bridge/src/client/d3d9_surface.h
++++ b/bridge/src/client/d3d9_surface.h
+@@ -32,6 +32,8 @@
+ /*
+  * IDirect3DSurface9 LSS Interceptor Class
+  */
++#include "pagefile_shadow.h"
++
+ class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
+   void onDestroy() override;
+ 
+@@ -48,8 +50,7 @@ class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
+   };
+   std::queue<LockInfo> m_lockInfoQueue;
+ 
+-  std::unique_ptr<uint8_t[]> m_shadow;
+-  inline static size_t g_totalSurfaceShadow = 0;
++  PagefileShadow m_shadow;
+ 
+ public:
+   Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
+@@ -99,4 +100,4 @@ private:
+   void* getBufPtr(const int pitch, const RECT& rect);
+   void sendDataToServer(const LockInfo& lockInfo) const;
+   static std::tuple<size_t, size_t> getRectDimensions(const RECT& box);
+-};
+\ No newline at end of file
++};
 diff --git a/bridge/src/client/d3d9_swapchain.cpp b/bridge/src/client/d3d9_swapchain.cpp
 index 86a19d4..d9d5f15 100644
 --- a/bridge/src/client/d3d9_swapchain.cpp
@@ -116,10 +186,10 @@ index fbfc565..4db336c 100644
 +};
 diff --git a/bridge/src/client/memory_diagnostics.h b/bridge/src/client/memory_diagnostics.h
 new file mode 100644
-index 0000000..e79933c
+index 0000000..8803652
 --- /dev/null
 +++ b/bridge/src/client/memory_diagnostics.h
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,140 @@
 +#pragma once
 +
 +#include <windows.h>
@@ -135,6 +205,9 @@ index 0000000..e79933c
 +enum class Kind : unsigned { Surface, Vertex, Index };
 +inline std::atomic<uint64_t> bytes[3] {};
 +inline std::atomic<uint64_t> objects[3] {};
++inline std::atomic<uint64_t> surfaceBackingBytes { 0 };
++inline std::atomic<uint64_t> surfaceBackingCount { 0 };
++inline std::atomic<uint64_t> surfaceViewBudgetBytes { 0 };
 +inline std::atomic<ULONGLONG> nextSample { 0 };
 +inline std::mutex logMutex;
 +
@@ -164,7 +237,7 @@ index 0000000..e79933c
 +// The failure path uses stack storage and Win32 I/O to avoid heap allocation.
 +inline void sample(bool force = false, const char* event = "sample",
 +    Kind kind = Kind::Surface, size_t requested = 0,
-+    unsigned width = 0, unsigned height = 0, unsigned format = 0) {
++    unsigned width = 0, unsigned height = 0, unsigned format = 0, DWORD error = 0) {
 +  const auto now = GetTickCount64();
 +  auto deadline = nextSample.load();
 +  if (!force && (now < deadline || !nextSample.compare_exchange_strong(deadline, now + 5000))) {
@@ -215,13 +288,15 @@ index 0000000..e79933c
 +    "%02u:%02u:%02u.%03u pid=%lu event=%s kind=%s requested=%llu width=%u height=%u format=0x%x "
 +    "surface_bytes=%llu surface_count=%llu vertex_bytes=%llu vertex_count=%llu index_bytes=%llu index_count=%llu "
 +    "va_committed=%llu va_reserved=%llu va_free=%llu largest_free=%llu va_limit=%llu scan_complete=%u "
-+    "private_bytes=%llu working_set=%llu counters_valid=%u\r\n",
++    "private_bytes=%llu working_set=%llu counters_valid=%u surface_backing_bytes=%llu surface_backing_count=%llu "
++    "surface_view_budget_bytes=%llu win32_error=%lu\r\n",
 +    time.wHour, time.wMinute, time.wSecond, time.wMilliseconds, GetCurrentProcessId(), event,
 +    names[k], static_cast<unsigned long long>(requested), width, height, format,
 +    bytes[0].load(), objects[0].load(), bytes[1].load(), objects[1].load(), bytes[2].load(), objects[2].load(),
 +    committed, reserved, free, largestFree, limit, static_cast<unsigned>(scanComplete),
 +    static_cast<uint64_t>(counters.PrivateUsage), static_cast<uint64_t>(counters.WorkingSetSize),
-+    static_cast<unsigned>(countersValid));
++    static_cast<unsigned>(countersValid), surfaceBackingBytes.load(), surfaceBackingCount.load(),
++    surfaceViewBudgetBytes.load(), error);
 +  if (length > 0 && static_cast<size_t>(length) < sizeof(line)) {
 +    if (log != INVALID_HANDLE_VALUE) {
 +      DWORD written = 0;
@@ -256,24 +331,149 @@ index 0000000..e79933c
 +}
 +}
 diff --git a/bridge/src/client/meson.build b/bridge/src/client/meson.build
-index 2ad1e79..c3520ae 100644
+index 2ad1e79..38bb998 100644
 --- a/bridge/src/client/meson.build
 +++ b/bridge/src/client/meson.build
-@@ -85,6 +85,7 @@ d3d9_header = files([
+@@ -85,6 +85,8 @@ d3d9_header = files([
    'framework.h',
    'lockable_buffer.h',
    'message_channels.h',
 +  'memory_diagnostics.h',
++  'pagefile_shadow.h',
    'pch.h',
    'remix_state.h',
    'resource.h',
-@@ -116,4 +117,4 @@ custom_target('copy_d3d9_to_output',
+@@ -116,4 +118,4 @@ custom_target('copy_d3d9_to_output',
      build_by_default : true,
      depends          : [ d3d9_dll ],
      command          : [copy_script_path, meson.current_build_dir(), output_dir, 'd3d9*'] )
 -endif
 \ No newline at end of file
 +endif
+diff --git a/bridge/src/client/pagefile_shadow.h b/bridge/src/client/pagefile_shadow.h
+new file mode 100644
+index 0000000..4d828e0
+--- /dev/null
++++ b/bridge/src/client/pagefile_shadow.h
+@@ -0,0 +1,118 @@
++#pragma once
++
++#include "memory_diagnostics.h"
++
++// A section keeps CPU-written bytes while unlocked views leave the x86 VA.
++// The budget applies to mapped views; active locks are always pinned.
++class PagefileShadow {
++  HANDLE m_section = nullptr;
++  uint8_t* m_view = nullptr;
++  size_t m_size = 0;
++  size_t m_viewCost = 0;
++  unsigned m_locks = 0;
++  bool m_listed = false;
++  PagefileShadow* m_prev = nullptr;
++  PagefileShadow* m_next = nullptr;
++  inline static PagefileShadow* s_head = nullptr;
++  inline static PagefileShadow* s_tail = nullptr;
++  inline static size_t s_mappedBytes = 0;
++  inline static std::mutex s_mutex;
++
++  void unlink() {
++    if (!m_listed) { return; }
++    if (m_prev) { m_prev->m_next = m_next; } else { s_head = m_next; }
++    if (m_next) { m_next->m_prev = m_prev; } else { s_tail = m_prev; }
++    m_prev = m_next = nullptr;
++    m_listed = false;
++  }
++
++  void unmap() {
++    unlink();
++    if (m_view && UnmapViewOfFile(m_view)) {
++      s_mappedBytes -= m_viewCost;
++      l4d2_memory::surfaceViewBudgetBytes.fetch_sub(m_viewCost);
++      l4d2_memory::released(m_size, l4d2_memory::Kind::Surface);
++      m_view = nullptr;
++    }
++  }
++
++  static void trim(size_t budget) {
++    while (s_mappedBytes > budget && s_tail) {
++      auto victim = s_tail;
++      victim->unmap();
++      if (victim->m_view) { break; }
++    }
++  }
++
++public:
++  PagefileShadow() = default;
++  PagefileShadow(const PagefileShadow&) = delete;
++  PagefileShadow& operator=(const PagefileShadow&) = delete;
++
++  ~PagefileShadow() {
++    std::lock_guard<std::mutex> guard(s_mutex);
++    unmap();
++    if (m_section) {
++      CloseHandle(m_section);
++      l4d2_memory::surfaceBackingBytes.fetch_sub(m_size);
++      l4d2_memory::surfaceBackingCount.fetch_sub(1);
++    }
++  }
++
++  uint8_t* get() const { return m_view; }
++
++  uint8_t* acquire(size_t size, size_t budget) {
++    std::lock_guard<std::mutex> guard(s_mutex);
++    if (!size || (m_section && size != m_size)) { return nullptr; }
++    unlink();
++    if (!m_section) {
++      SYSTEM_INFO system {};
++      GetSystemInfo(&system);
++      const size_t granularity = system.dwAllocationGranularity;
++      // Charge alignment gaps too, otherwise thousands of small mip views
++      // could fragment considerably more VA than their byte sizes suggest.
++      if (size > SIZE_MAX - granularity) { return nullptr; }
++      m_viewCost = ((size + granularity - 1) / granularity) * granularity;
++      m_section = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
++        0, static_cast<DWORD>(size), nullptr);
++      if (!m_section) {
++        const auto error = GetLastError();
++        l4d2_memory::sample(true, "section-create-failed", l4d2_memory::Kind::Surface, size, 0, 0, 0, error);
++        return nullptr;
++      }
++      m_size = size;
++      l4d2_memory::surfaceBackingBytes.fetch_add(size);
++      l4d2_memory::surfaceBackingCount.fetch_add(1);
++    }
++    if (!m_view) {
++      trim(m_viewCost >= budget ? 0 : budget - m_viewCost);
++      m_view = static_cast<uint8_t*>(MapViewOfFile(m_section, FILE_MAP_ALL_ACCESS, 0, 0, m_size));
++      if (!m_view) {
++        // Fragmentation can prevent a mapping even below the cache budget.
++        trim(0);
++        m_view = static_cast<uint8_t*>(MapViewOfFile(m_section, FILE_MAP_ALL_ACCESS, 0, 0, m_size));
++      }
++      if (!m_view) {
++        const auto error = GetLastError();
++        l4d2_memory::sample(true, "section-map-failed", l4d2_memory::Kind::Surface, size, 0, 0, 0, error);
++        return nullptr;
++      }
++      s_mappedBytes += m_viewCost;
++      l4d2_memory::surfaceViewBudgetBytes.fetch_add(m_viewCost);
++      l4d2_memory::bytes[0].fetch_add(m_size);
++      l4d2_memory::objects[0].fetch_add(1);
++    }
++    ++m_locks;
++    return m_view;
++  }
++
++  void release(size_t budget) {
++    std::lock_guard<std::mutex> guard(s_mutex);
++    if (!m_locks || --m_locks) { return; }
++    m_next = s_head;
++    if (s_head) { s_head->m_prev = this; } else { s_tail = this; }
++    s_head = this;
++    m_listed = true;
++    trim(budget);
++  }
++};
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
 index 86434ec..3e4d3d4 100644
 --- a/bridge/src/server/main.cpp
