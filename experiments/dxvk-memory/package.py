@@ -38,6 +38,12 @@ def package(source, dll, output):
     shutil.copytree(ROOT / "licenses", output / "licenses")
     shutil.copy2(source / "LICENSE", output / "licenses/DXVK-LICENSE.txt")
     shutil.copy2(source / "include/openvr/LICENSE", output / "licenses/OpenVR-LICENSE.txt")
+    vulkan_header = (source / "include/vulkan/include/vulkan/vulkan_core.h").read_text()
+    notice_begin = vulkan_header.index("/*")
+    notice_end = vulkan_header.index("*/", notice_begin) + 2
+    (output / "licenses/Vulkan-Headers-COPYRIGHT.txt").write_text(vulkan_header[notice_begin:notice_end] + "\n")
+    if not (output / "licenses/Vulkan-Headers-Apache-2.0.txt").is_file():
+        raise ValueError("Missing full Apache 2.0 terms for Vulkan C headers")
     sha1_notice = (source / "src/util/sha1/sha1.c").read_text().split("#include", 1)[0]
     (output / "licenses/SHA1-NOTICE.txt").write_text(sha1_notice)
     dependencies = {
@@ -60,7 +66,7 @@ def package(source, dll, output):
         for notice in Path("/usr/share/doc").glob(pattern):
             shutil.copy2(notice, output / "licenses" / f"toolchain-{notice.parent.name}.txt")
     common = Path("/usr/share/common-licenses")
-    for name in ("GPL-3", "LGPL-2.1", "Apache-2"):
+    for name in ("GPL-3", "LGPL-2.1"):
         if (common / name).exists():
             shutil.copy2(common / name, output / "licenses" / f"toolchain-{name}.txt")
     for name in ("LICENSE", "THIRD_PARTY.md"):
