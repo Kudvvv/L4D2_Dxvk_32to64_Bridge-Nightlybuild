@@ -116,10 +116,10 @@ index fbfc565..4db336c 100644
 +};
 diff --git a/bridge/src/client/memory_diagnostics.h b/bridge/src/client/memory_diagnostics.h
 new file mode 100644
-index 0000000..65f5474
+index 0000000..e79933c
 --- /dev/null
 +++ b/bridge/src/client/memory_diagnostics.h
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,135 @@
 +#pragma once
 +
 +#include <windows.h>
@@ -154,7 +154,8 @@ index 0000000..65f5474
 +  if (!separator || (separator - path) + 1 + 22 >= MAX_PATH) {
 +    return INVALID_HANDLE_VALUE;
 +  }
-+  std::wcscpy(separator + 1, L"l4d2-memory.log");
++  constexpr wchar_t filename[] = L"l4d2-memory.log";
++  std::wmemcpy(separator + 1, filename, sizeof(filename) / sizeof(wchar_t));
 +  return CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
 +    nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 +}
