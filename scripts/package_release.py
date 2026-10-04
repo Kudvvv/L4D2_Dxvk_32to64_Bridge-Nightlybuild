@@ -50,8 +50,9 @@ def package(source, dxvk, output):
     shutil.copy2(ROOT / "docs/TESTING.md", output / "TESTING.md")
     shutil.copy2(ROOT / "docs/MEMORY-DIAGNOSTICS.md", output / "MEMORY-DIAGNOSTICS.md")
     shutil.copy2(ROOT / "docs/FIRST-GAME-VALIDATION.md", output / "FIRST-GAME-VALIDATION.md")
-    for filename in ("README.md", "VERSION", "LICENSE", "THIRD_PARTY.md"):
+    for filename in ("README.md", "CHANGELOG.md", "VERSION", "LICENSE", "THIRD_PARTY.md"):
         shutil.copy2(ROOT / filename, output / filename)
+    shutil.copy2(ROOT / "config/dxvk-memory-1.0.1.conf", output / "dxvk-memory-1.0.1.conf")
     # Preserve the README's relative documentation and patch links in the package.
     shutil.copytree(ROOT / "docs", output / "docs")
     shutil.copytree(ROOT / "patches", output / "patches")

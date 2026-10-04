@@ -1,4 +1,4 @@
-# L4D2 DXVK 32→64 Bridge — v1.0.0
+# L4D2 DXVK 32→64 Bridge — v1.0.1
 
 [中文](#chinese) | [English](#english)
 
@@ -12,7 +12,13 @@
 
 L4D2 的游戏引擎仍然是 32 位。桥接改变的是渲染调用的执行位置和部分资源的存储方式，不会把引擎、脚本或所有 Mod 内存改成 64 位，也不保证减少同等数量的物理内存。
 
-## 第一版状态
+## 当前版本：1.0.1
+
+1.0.1 保留已在 Intel Arc B580 上验证的可选内存修复后端 `mem1`：使用 16 MiB 普通映射分配块，降低退图后的保留容量。完整包默认继续使用官方 DXVK 2.6.1；要启用修复，请另外安装 `l4d2-bridge-memory-update-v1.0.1` 并合并配置。已有兼容桥只需更新后端 DLL；如果已经使用本次实测的 mem1 + 16 MiB 设置，无需重新替换二进制。
+
+本次稳定菜单 Sysmem 为 224 / 304 MiB，上一轮官方后端会话为 448 / 512 MiB。跨轮容量仍增加，地图内的 x64 纹理 CPU backing 也仍存在；本版本不声称消除全部内存增长。具体安装、回退和验证范围见 [内存修复说明](docs/DXVK-MEMORY-EXPERIMENT.md) 与 [更新记录](CHANGELOG.md)。
+
+## 第一版验证记录
 
 v1.0.0 已由项目作者确认作为第一版本：保留全部原有 Mod 正常进入战役，反馈运行流畅、未观察到掉帧，客户端与 Host 正常退出。
 
@@ -43,10 +49,13 @@ v1.0.0 已由项目作者确认作为第一版本：保留全部原有 Mod 正�
 
 | 包名 | 用途 |
 | --- | --- |
-| `l4d2-bridge-v1.0.0` | 首次安装，包含 x86 客户端、x64 Host、DXVK 2.6.1 和配置 |
+| `l4d2-bridge-v1.0.1` | 首次安装，包含 x86 客户端、x64 Host、官方 DXVK 2.6.1 和配置 |
 | `l4d2-bridge-client-only` | 已装桥接且 Host 兼容时更新客户端，保留自己的 Host、DXVK 和配置 |
+| `l4d2-bridge-memory-update-v1.0.1` | 可选内存修复，单独工作流提供；只更新 x64 后端并合并配置 |
 
 下载 Actions artifact 通常需要登录 GitHub。版本号见包内 `VERSION`，二进制校验值见 `SHA256.json`。更新现有安装时先阅读对应版本说明；客户端包不用于首次安装。
+
+可选内存修复包来自 [Build optional DXVK memory fix](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/workflows/build-dxvk-experiment.yml)，不是完整安装包。安装完成后若再覆盖完整包，它携带的官方后端会替换 mem1；已有安装优先按对应更新包说明替换必要文件。
 
 ### 2. 退出游戏并备份
 
@@ -91,6 +100,8 @@ Steam → L4D2 → 属性 → 启动选项：
 
 如果已运行本项目并希望保留现用后端，关闭游戏和 Host 后只替换客户端包的 `bin/dxvk_d3d9.dll`。第一版保留上游握手版本标识；今后若修改协议或版本匹配规则，更新时应同时更换客户端与 Host。
 
+启用 1.0.1 可选内存修复时，只替换 `bin/.l4d2bridge/d3d9vk_x64.dll`，将包内 `dxvk-memory-1.0.1.conf` 的两项设置合并到游戏生效的 `dxvk.conf`。日常运行使用 `dxvk.bridgeMappedChunkSize = 16`、`dxvk.bridgeMemoryDiagnostics = False`；需要分配归属日志时再启用后者。不要覆盖其他 DXVK 或 ReShade 配置。
+
 卸载时关闭游戏和 Host，恢复备份的 `bin/dxvk_d3d9.dll`、桥接目录和 Steam 启动选项。若原来使用根目录 `d3d9.dll`，恢复它的原名。只删除本项目安装或运行生成的文件，不要删除其他 Mod 的内容。
 
 ## 配置与日志
@@ -127,7 +138,7 @@ Steam → L4D2 → 属性 → 启动选项：
 
 Host 内存／CPU 诊断更新提供独立的 `l4d2-bridge-host-diagnostics` 包，可只替换 Host EXE，继续使用已有 v1.0.0 客户端与 DXVK。它用于定位增长来源，不是内存优化修复。安装、字段和同场景对比方法见 [Host 诊断说明](docs/HOST-MEMORY-DIAGNOSTICS.md)。每轮结束保存四份日志，新进程会覆盖同名文件。
 
-退图后的后端映射分配保留另有可选的 [DXVK 内存实验 mem1](docs/DXVK-MEMORY-EXPERIMENT.md)：仅替换 x64 DXVK，提供分配归属记录和可选的较小映射块。这是待实机验证的修改版，第一版默认包仍使用官方后端。
+退图后的后端映射分配保留可使用 [1.0.1 可选内存修复 mem1](docs/DXVK-MEMORY-EXPERIMENT.md)：仅替换 x64 DXVK，提供已在 B580 上测试的较小映射块及可选分配归属记录。它是明确标识的修改版，默认完整包仍使用官方后端；长期增长是否有界尚未确定。
 
 命令队列 CPU 测试版提供 `l4d2-bridge-cpu-update` 包，需要同时更新客户端 DLL 与 Host EXE。它通过跨进程事件唤醒空队列的消费者，减少等待期间的 CPU 开销；游戏帧率与稳定性仍待实测。安装和验证见 [CPU 测试说明](docs/CPU-QUEUE-TEST.md)。第二轮增加仅桥／游戏内部的等待计数并合并重复唤醒；纹理资源池尚未实现，设计见 [纹理复用说明](docs/TEXTURE-REUSE-DESIGN.md)。
 
@@ -237,7 +248,7 @@ Windows x86 自动测试覆盖映射回收后内容恢复、活动锁及嵌套�
 
 <a id="english"></a>
 
-# English — L4D2 DXVK 32→64 Bridge v1.0.0
+# English — L4D2 DXVK 32→64 Bridge v1.0.1
 
 A **32-bit D3D9 to 64-bit DXVK bridge** for *Left 4 Dead 2* on Windows. The client receives D3D9 calls inside the game process and sends commands and required resource data to a separate 64-bit Host. Standard upstream DXVK translates those calls to Vulkan for GPU rendering.
 
@@ -247,7 +258,13 @@ The project aims to reduce rendering-related address-space pressure in the 32-bi
 
 The L4D2 engine remains 32-bit. This bridge changes where rendering calls execute and how some resource copies are stored. It does not convert the engine, scripts, or all mod allocations to 64-bit, and address-space savings do not imply an equal reduction in physical memory usage.
 
-## First release status
+## Current version: 1.0.1
+
+Version 1.0.1 retains the Intel Arc B580-tested `mem1` backend as an optional memory fix. A 16 MiB cap on ordinary mapped chunks reduces capacity retained after returning to the menu. The full package still uses official DXVK 2.6.1; install `l4d2-bridge-memory-update-v1.0.1` separately and merge its settings to opt in. Compatible existing clients and Hosts can remain installed. If you already use the hardware-tested mem1 backend with the 16 MiB setting, no binary replacement is required.
+
+Two stable menus showed 224 / 304 MiB Sysmem capacity, compared with 448 / 512 MiB in the preceding official-backend session. Repeated-cycle capacity growth and x64 texture CPU backing during gameplay remain; this release does not claim to eliminate all memory growth. See the [memory-fix guide](docs/DXVK-MEMORY-EXPERIMENT.md) and [changelog](CHANGELOG.md) for installation, rollback and validation limits.
+
+## First release validation record
 
 The project author has confirmed **v1.0.0 as the first version**. With all existing mods enabled, the game successfully entered a campaign. The author reported smooth gameplay with no observed frame drops, and both client and Host shut down normally.
 
@@ -278,10 +295,13 @@ Open this repository's [GitHub Actions](https://github.com/yeyunyyds/L4D2_Dxvk_3
 
 | Artifact | Purpose |
 | --- | --- |
-| `l4d2-bridge-v1.0.0` | First installation: x86 client, x64 Host, DXVK 2.6.1, and configuration |
+| `l4d2-bridge-v1.0.1` | First installation: x86 client, x64 Host, official DXVK 2.6.1, and configuration |
 | `l4d2-bridge-client-only` | Update the client of an existing installation with a compatible Host, preserving its backend and configuration |
+| `l4d2-bridge-memory-update-v1.0.1` | Optional memory fix from the separate backend workflow; replace only the x64 backend and merge settings |
 
 Downloading Actions artifacts usually requires signing in to GitHub. The package version is in `VERSION`; binary checksums are in `SHA256.json`. Read the relevant version instructions before updating. The client-only package cannot be used for a first installation.
+
+Get the optional backend artifact from [Build optional DXVK memory fix](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/workflows/build-dxvk-experiment.yml). It is not a full installation package. Copying the full package over an existing mem1 installation replaces it with the official backend; use the appropriate update instructions to preserve your chosen backend.
 
 ### 2. Exit the game and make backups
 
@@ -326,13 +346,15 @@ On a newly tested device, first confirm that you can enter the game, then test y
 
 To update a compatible existing installation while preserving its backend, exit the game and Host, then replace only `bin/dxvk_d3d9.dll` from the client-only package. Version 1.0.0 retains the upstream handshake version identifier. If a future release changes the protocol or version-matching rules, update both client and Host as instructed.
 
+To enable the optional 1.0.1 memory fix, replace only `bin/.l4d2bridge/d3d9vk_x64.dll` and merge the two settings from `dxvk-memory-1.0.1.conf` into the game's effective `dxvk.conf`. Use `dxvk.bridgeMappedChunkSize = 16` and `dxvk.bridgeMemoryDiagnostics = False` for normal play; enable diagnostics when investigating allocation ownership. Preserve other DXVK and ReShade settings.
+
 To uninstall, exit both processes and restore the backed-up client DLL, bridge directory, and Steam launch options. If your original installation used root-directory `d3d9.dll`, restore its filename. Remove only files installed or generated by this project, leaving other mods intact.
 
 ## Configuration and logs
 
 The main configuration file is `bin/.l4d2bridge/bridge.conf`:
 
-| Setting | v1.0.0 default | Purpose |
+| Setting | v1.0.1 default | Purpose |
 | --- | --- | --- |
 | `server.useVanillaDxvk` | `True` | Select standard DXVK as the backend |
 | `exposeRemixApi` | `False` | Do not expose the Remix API to the game |
@@ -362,7 +384,7 @@ The first memory sample in each new process overwrites the previous `l4d2-memory
 
 The Host diagnostic update provides a separate `l4d2-bridge-host-diagnostics` artifact: replace only the Host executable and keep the installed v1.0.0 client and DXVK. This update helps investigate growth; it is not a memory optimization fix. See the [Host diagnostic guide](docs/HOST-MEMORY-DIAGNOSTICS.md) for installation, fields and controlled comparisons. Save all four logs after each session, before the next process overwrites them.
 
-An optional [DXVK memory experiment mem1](docs/DXVK-MEMORY-EXPERIMENT.md) replaces only the x64 backend, adding allocation attribution and an opt-in smaller mapped-chunk policy. It is an altered build awaiting hardware validation; the standard v1.0.0 package continues to use the official backend.
+The [optional 1.0.1 mem1 memory fix](docs/DXVK-MEMORY-EXPERIMENT.md) replaces only the x64 backend, providing the B580-tested smaller mapped-chunk policy and optional allocation-attribution logs. It is plainly marked as altered DXVK; the default full package still uses the official backend. Long-term growth has not been proven bounded.
 
 The command queue CPU test build provides `l4d2-bridge-cpu-update`: update both the client DLL and Host EXE. Cross-process event wakeups reduce CPU spent waiting on empty queues; game frame rate and stability still require testing. See the [CPU test guide](docs/CPU-QUEUE-TEST.md). The second round adds local wait counters and coalesces notifications. An additional texture pool is not implemented; see the [texture reuse design](docs/TEXTURE-REUSE-DESIGN.md).
 
