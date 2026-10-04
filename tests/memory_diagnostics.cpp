@@ -54,7 +54,8 @@ int testShadowCache() {
     }
     for (unsigned i = 0; i < shadows.size(); ++i) {
       auto* data = shadows[i]->acquire(4096, 4 * budget);
-      if (!data || data[0] != i || data[4095] != 255 - i) { return 24; }
+      if (!data || data[0] != static_cast<uint8_t>(i) ||
+          data[4095] != static_cast<uint8_t>(255 - i)) { return 24; }
       shadows[i]->release(0);
     }
   }
