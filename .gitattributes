@@ -1,4 +1,4 @@
-*.patch -text
+*.patch -text whitespace=-blank-at-eol
 *.py text eol=lf
 *.ps1 text eol=lf
 *.yml text eol=lf

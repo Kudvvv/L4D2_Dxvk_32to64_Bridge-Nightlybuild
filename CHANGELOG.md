@@ -4,6 +4,12 @@
 
 # 更新记录 / Changelog
 
+## 诊断更新 / Diagnostic update
+
+新增可选 PagefileShadow 寿命、锁定语义、按字节汇总、分配突发及纯模拟 LRU 诊断。安装见 [说明](docs/PAGEBLOCK-DIAGNOSTICS.md)。此更新默认关闭，不是新的内存回收修复，不修改资源寿命、真实分配／映射／回收、IPC 或后端。
+
+Adds opt-in PagefileShadow lifetime/access instrumentation, byte-weighted summaries, allocation bursts and a simulation-only LRU analysis. It defaults off and does not change resource lifetime, actual allocation/mapping/eviction, IPC or the backend. This is a diagnostic update rather than another memory-reclamation fix.
+
 ## 1.0.1
 
 保留已通过 Intel Arc B580 实机验证的 `mem1` 可选内存修复：为 DXVK 2.6.1 x64 的普通可映射分配块提供 16 MiB 上限，降低退图后保留容量。完整包默认继续使用官方 DXVK 2.6.1；修复包单独分发，不自动改变现有后端或配置。

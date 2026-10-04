@@ -65,6 +65,9 @@ def package(source, dxvk, output):
     (client_output / "bin").mkdir(parents=True, exist_ok=False)
     shutil.copy2(output / "bin/dxvk_d3d9.dll", client_output / "bin/dxvk_d3d9.dll")
     shutil.copy2(ROOT / "docs/MEMORY-DIAGNOSTICS.md", client_output / "MEMORY-DIAGNOSTICS.md")
+    pageblock_guide = (ROOT / "docs/PAGEBLOCK-DIAGNOSTICS.md").read_text(encoding="utf-8")
+    pageblock_guide = pageblock_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (client_output / "PAGEBLOCK-DIAGNOSTICS.md").write_text(pageblock_guide, encoding="utf-8")
     (client_output / "licenses").mkdir()
     for filename in ("Bridge-MIT.txt", "Bridge-third-party.txt"):
         shutil.copy2(licenses / filename, client_output / "licenses" / filename)

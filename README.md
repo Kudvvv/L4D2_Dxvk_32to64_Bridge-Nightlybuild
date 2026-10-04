@@ -140,6 +140,8 @@ Host 内存／CPU 诊断更新提供独立的 `l4d2-bridge-host-diagnostics` 包
 
 退图后的后端映射分配保留可使用 [1.0.1 可选内存修复 mem1](docs/DXVK-MEMORY-EXPERIMENT.md)：仅替换 x64 DXVK，提供已在 B580 上测试的较小映射块及可选分配归属记录。它是明确标识的修改版，默认完整包仍使用官方后端；长期增长是否有界尚未确定。
 
+进一步调查地图内 CPU backing 的 [PagefileShadow 寿命诊断](docs/PAGEBLOCK-DIAGNOSTICS.md) 为独立诊断更新。启用 `client.pageBlockDiagnostics=True` 后记录资源的锁定／复用、按字节统计、突发分配及四档纯模拟 LRU；输出 `bin/l4d2-pageblock.log`。默认关闭；诊断不释放 backing、不改变映射缓存或渲染。只更新兼容的客户端 DLL，保留 Host 和现用 DXVK。
+
 命令队列 CPU 测试版提供 `l4d2-bridge-cpu-update` 包，需要同时更新客户端 DLL 与 Host EXE。它通过跨进程事件唤醒空队列的消费者，减少等待期间的 CPU 开销；游戏帧率与稳定性仍待实测。安装和验证见 [CPU 测试说明](docs/CPU-QUEUE-TEST.md)。第二轮增加仅桥／游戏内部的等待计数并合并重复唤醒；纹理资源池尚未实现，设计见 [纹理复用说明](docs/TEXTURE-REUSE-DESIGN.md)。
 
 ## 从源码构建
@@ -385,6 +387,8 @@ The first memory sample in each new process overwrites the previous `l4d2-memory
 The Host diagnostic update provides a separate `l4d2-bridge-host-diagnostics` artifact: replace only the Host executable and keep the installed v1.0.0 client and DXVK. This update helps investigate growth; it is not a memory optimization fix. See the [Host diagnostic guide](docs/HOST-MEMORY-DIAGNOSTICS.md) for installation, fields and controlled comparisons. Save all four logs after each session, before the next process overwrites them.
 
 The [optional 1.0.1 mem1 memory fix](docs/DXVK-MEMORY-EXPERIMENT.md) replaces only the x64 backend, providing the B580-tested smaller mapped-chunk policy and optional allocation-attribution logs. It is plainly marked as altered DXVK; the default full package still uses the official backend. Long-term growth has not been proven bounded.
+
+The separate [PagefileShadow lifetime diagnostic update](docs/PAGEBLOCK-DIAGNOSTICS.md) investigates CPU backing during gameplay. Enable `client.pageBlockDiagnostics=True` to collect resource access history, byte-weighted summaries, allocation bursts and four purely simulated LRU budgets in `bin/l4d2-pageblock.log`. It defaults off and does not discard backing or change the mapped-view cache or rendering. Update only the compatible client DLL, preserving your Host and chosen DXVK backend.
 
 The command queue CPU test build provides `l4d2-bridge-cpu-update`: update both the client DLL and Host EXE. Cross-process event wakeups reduce CPU spent waiting on empty queues; game frame rate and stability still require testing. See the [CPU test guide](docs/CPU-QUEUE-TEST.md). The second round adds local wait counters and coalesces notifications. An additional texture pool is not implemented; see the [texture reuse design](docs/TEXTURE-REUSE-DESIGN.md).
 
