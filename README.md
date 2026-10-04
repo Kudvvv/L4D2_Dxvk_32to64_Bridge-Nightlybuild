@@ -213,7 +213,7 @@ Windows x86 自动测试覆盖映射回收后内容恢复、活动锁及嵌套�
 | [DXVK](https://github.com/doitsujin/dxvk) | Philip Rebohle、Joshua Ashton、Robin Kertels、Jeffrey Ellison 及贡献者；提供 D3D9 → Vulkan 后端 | zlib/libpng |
 | [Microsoft Detours](https://github.com/microsoft/Detours) | Microsoft Corporation 及贡献者；提供 API 钩子基础 | MIT |
 | [Tracy](https://github.com/wolfpld/tracy) | Bartosz Taudul 及贡献者；上游桥接所含性能分析组件 | BSD-3-Clause |
-| [TXVK](https://github.com/tianxiaols/TXVK) | tianxiaols；其公开发布物、配置和文档为 L4D2 桥接行为分析提供参考，本项目未复制其定制代码或再分发其二进制 | 参考项目，见其自身许可 |
+| [TXVK](https://github.com/tianxiaols/TXVK) | tianxiaols 及 TXVK contributors；其公开发布物、配置和文档为 L4D2 桥接行为分析提供参考，本项目未复制其定制代码或再分发其二进制 | MIT（参考项目，见其 [LICENSE](https://github.com/tianxiaols/TXVK/blob/main/LICENSE)） |
 | L4D2 / Steam | Valve；提供游戏及运行平台 | 游戏和平台版权归 Valve，不包含于本项目许可 |
 
 完整组件归属与许可清单见 [THIRD_PARTY.md](THIRD_PARTY.md)。分发时请保留原始版权、许可和包内 `licenses/` 文件。
@@ -437,7 +437,7 @@ This includes the new build/packaging scripts, tests, diagnostics, mapping-cache
 | [DXVK](https://github.com/doitsujin/dxvk) | Philip Rebohle, Joshua Ashton, Robin Kertels, Jeffrey Ellison, and contributors; D3D9 → Vulkan backend | zlib/libpng |
 | [Microsoft Detours](https://github.com/microsoft/Detours) | Microsoft Corporation and contributors; API-hooking foundation | MIT |
 | [Tracy](https://github.com/wolfpld/tracy) | Bartosz Taudul and contributors; profiling component included upstream | BSD-3-Clause |
-| [TXVK](https://github.com/tianxiaols/TXVK) | tianxiaols; public release artifacts, configuration, and documentation informed L4D2 bridge behavior analysis. This project does not copy its custom code or redistribute its binaries. | Reference project; see its own license |
+| [TXVK](https://github.com/tianxiaols/TXVK) | tianxiaols and TXVK contributors; public release artifacts, configuration, and documentation informed L4D2 bridge behavior analysis. This project does not copy its custom code or redistribute its binaries. | MIT (reference project; see its [LICENSE](https://github.com/tianxiaols/TXVK/blob/main/LICENSE)) |
 | L4D2 / Steam | Valve; game and runtime platform | Valve's game and platform terms, outside this project's license |
 
 See [THIRD_PARTY.md](THIRD_PARTY.md) for the full source and license inventory. Preserve original copyright notices, license texts, and the package's `licenses/` files when redistributing.
