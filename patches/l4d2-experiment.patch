@@ -11,6 +11,268 @@ index 300aaf5..40b368e 100644
  
  static fspath GetServerExecutablePath() {
    ONCE(Logger::info(std::string("Native arch: ") + getNativeArchString()));
+diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
+index e54aec5..38b4705 100644
+--- a/bridge/src/client/d3d9_surface.cpp
++++ b/bridge/src/client/d3d9_surface.cpp
+@@ -30,6 +30,7 @@
+ #include "d3d9_surfacebuffer_helper.h"
+ #include "util_bridge_assert.h"
+ #include "util_gdi.h"
++#include "memory_diagnostics.h"
+ 
+ Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
+                                            const D3DSURFACE_DESC& desc, bool isBackBuffer)
+@@ -50,6 +51,7 @@ Direct3DSurface9_LSS::~Direct3DSurface9_LSS() {
+       bridge_util::calcTotalSizeOfRect(m_desc.Width, m_desc.Height, m_desc.Format);
+ 
+     g_totalSurfaceShadow -= surfaceSize;
++    l4d2_memory::released(surfaceSize, l4d2_memory::Kind::Surface);
+     Logger::trace(format_string("Releasing shadow of surface [%p] "
+                                 "(size: %zd, total surface shadow size: %zd)",
+                                 this, surfaceSize, g_totalSurfaceShadow));
+@@ -221,7 +223,8 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
+     m_lockInfoQueue.push({ lockedRect, rect, flags, m_bufferId, discardBufId });
+   } else {
+     if (!m_shadow) {
+-      m_shadow.reset(new uint8_t[surfaceSize]);
++      m_shadow.reset(l4d2_memory::allocate(surfaceSize, l4d2_memory::Kind::Surface,
++        m_desc.Width, m_desc.Height, static_cast<unsigned>(m_desc.Format)));
+       g_totalSurfaceShadow += surfaceSize;
+       Logger::trace(format_string("Allocated a shadow for surface [%p] "
+                                   "(size: %zd, total surface shadow size: %zd)",
+@@ -296,4 +299,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+ std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions(const RECT& rect) {
+   return { rect.right  - rect.left,
+            rect.bottom - rect.top  };
+-}
+\ No newline at end of file
++}
+diff --git a/bridge/src/client/d3d9_swapchain.cpp b/bridge/src/client/d3d9_swapchain.cpp
+index 86a19d4..d9d5f15 100644
+--- a/bridge/src/client/d3d9_swapchain.cpp
++++ b/bridge/src/client/d3d9_swapchain.cpp
+@@ -25,6 +25,7 @@
+ #include "d3d9_surface.h"
+ #include "d3d9_surfacebuffer_helper.h"
+ #include "swapchain_map.h"
++#include "memory_diagnostics.h"
+ 
+ extern std::mutex gSwapChainMapMutex;
+ extern SwapChainMap gSwapChainMap;
+@@ -153,6 +154,7 @@ void Direct3DSwapChain9_LSS::onDestroy() {
+ HRESULT Direct3DSwapChain9_LSS::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect,
+                                         HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion,
+                                         DWORD dwFlags) {
++  l4d2_memory::sample();
+   ZoneScoped;
+   LogFunctionCall();
+ #ifdef ENABLE_PRESENT_SEMAPHORE_TRACE
+@@ -308,4 +310,4 @@ HRESULT Direct3DSwapChain9_LSS::GetPresentParameters(D3DPRESENT_PARAMETERS* pPre
+     return D3DERR_INVALIDCALL;
+   *pPresentationParameters = m_presParam;
+   return D3D_OK;
+-}
+\ No newline at end of file
++}
+diff --git a/bridge/src/client/lockable_buffer.h b/bridge/src/client/lockable_buffer.h
+index fbfc565..4db336c 100644
+--- a/bridge/src/client/lockable_buffer.h
++++ b/bridge/src/client/lockable_buffer.h
+@@ -25,6 +25,7 @@
+ #include "util_sharedheap.h"
+ 
+ #include "d3d9_util.h"
++#include "memory_diagnostics.h"
+ 
+ #include <d3d9.h>
+ #include <queue>
+@@ -72,7 +73,9 @@ private:
+   }
+ 
+   void initShadowMem() {
+-    m_shadow = std::make_unique<uint8_t[]>(m_desc.Size);
++    m_shadow.reset(l4d2_memory::allocate(m_desc.Size,
++      bIsVertexBuffer ? l4d2_memory::Kind::Vertex : l4d2_memory::Kind::Index,
++      0, 0, 0, true));
+     g_totalBufferShadow += m_desc.Size;
+     Logger::trace(format_string("Allocated a shadow for dynamic %s buffer [%p] "
+                                 "(size: %zd, total shadow size: %zd)",
+@@ -104,6 +107,8 @@ protected:
+       }
+     } else if (m_shadow) {
+       g_totalBufferShadow -= m_desc.Size;
++      l4d2_memory::released(m_desc.Size,
++        bIsVertexBuffer ? l4d2_memory::Kind::Vertex : l4d2_memory::Kind::Index);
+       Logger::trace(format_string("Released shadow of dynamic %s buffer [%p] "
+                                   "(size: %zd, total shadow size: %zd)",
+                                   bIsVertexBuffer ? "vertex" : "index",
+@@ -227,4 +232,4 @@ protected:
+     }
+     m_lockInfos.pop();
+   }
+-};
+\ No newline at end of file
++};
+diff --git a/bridge/src/client/memory_diagnostics.h b/bridge/src/client/memory_diagnostics.h
+new file mode 100644
+index 0000000..65f5474
+--- /dev/null
++++ b/bridge/src/client/memory_diagnostics.h
+@@ -0,0 +1,134 @@
++#pragma once
++
++#include <windows.h>
++#include <psapi.h>
++#include <atomic>
++#include <cstdint>
++#include <cstdio>
++#include <cwchar>
++#include <mutex>
++#include <new>
++
++namespace l4d2_memory {
++enum class Kind : unsigned { Surface, Vertex, Index };
++inline std::atomic<uint64_t> bytes[3] {};
++inline std::atomic<uint64_t> objects[3] {};
++inline std::atomic<ULONGLONG> nextSample { 0 };
++inline std::mutex logMutex;
++
++inline HANDLE openLog() {
++  HMODULE module = nullptr;
++  if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
++      GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++      reinterpret_cast<LPCWSTR>(&openLog), &module)) {
++    return INVALID_HANDLE_VALUE;
++  }
++  wchar_t path[MAX_PATH] {};
++  const auto length = GetModuleFileNameW(module, path, MAX_PATH);
++  if (!length || length >= MAX_PATH) {
++    return INVALID_HANDLE_VALUE;
++  }
++  auto separator = std::wcsrchr(path, L'\\');
++  if (!separator || (separator - path) + 1 + 22 >= MAX_PATH) {
++    return INVALID_HANDLE_VALUE;
++  }
++  std::wcscpy(separator + 1, L"l4d2-memory.log");
++  return CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
++    nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
++}
++
++// Sampling follows Present and allocations, including map loading without frames.
++// The failure path uses stack storage and Win32 I/O to avoid heap allocation.
++inline void sample(bool force = false, const char* event = "sample",
++    Kind kind = Kind::Surface, size_t requested = 0,
++    unsigned width = 0, unsigned height = 0, unsigned format = 0) {
++  const auto now = GetTickCount64();
++  auto deadline = nextSample.load();
++  if (!force && (now < deadline || !nextSample.compare_exchange_strong(deadline, now + 5000))) {
++    return;
++  }
++  std::lock_guard<std::mutex> guard(logMutex);
++  static HANDLE log = openLog();
++  uint64_t committed = 0, reserved = 0, free = 0, largestFree = 0;
++  bool scanComplete = false;
++  SYSTEM_INFO system {};
++  GetSystemInfo(&system);
++  const uint64_t limit = reinterpret_cast<uintptr_t>(system.lpMaximumApplicationAddress) + uint64_t(1);
++  uint64_t address = 0;
++  while (address < limit) {
++    MEMORY_BASIC_INFORMATION region {};
++    if (!VirtualQuery(reinterpret_cast<void*>(static_cast<uintptr_t>(address)), &region, sizeof(region))) {
++      break;
++    }
++    const uint64_t base = reinterpret_cast<uintptr_t>(region.BaseAddress);
++    const uint64_t size = region.RegionSize;
++    if (!size || base + size <= address) {
++      break;
++    }
++    if (region.State == MEM_FREE) {
++      free += size;
++      if (size > largestFree) { largestFree = size; }
++    } else if (region.State == MEM_COMMIT) {
++      committed += size;
++    } else if (region.State == MEM_RESERVE) {
++      reserved += size;
++    }
++    address = base + size;
++  }
++  scanComplete = address >= limit;
++  PROCESS_MEMORY_COUNTERS_EX counters {};
++  counters.cb = sizeof(counters);
++  using QueryMemory = BOOL(WINAPI*)(HANDLE, PPROCESS_MEMORY_COUNTERS, DWORD);
++  static auto query = reinterpret_cast<QueryMemory>(GetProcAddress(
++    GetModuleHandleW(L"kernel32.dll"), "K32GetProcessMemoryInfo"));
++  const bool countersValid = query && query(GetCurrentProcess(),
++    reinterpret_cast<PPROCESS_MEMORY_COUNTERS>(&counters), sizeof(counters));
++  SYSTEMTIME time {};
++  GetLocalTime(&time);
++  char line[1600] {};
++  const auto k = static_cast<unsigned>(kind);
++  const char* names[] = { "surface", "vertex-buffer", "index-buffer" };
++  const int length = std::snprintf(line, sizeof(line),
++    "%02u:%02u:%02u.%03u pid=%lu event=%s kind=%s requested=%llu width=%u height=%u format=0x%x "
++    "surface_bytes=%llu surface_count=%llu vertex_bytes=%llu vertex_count=%llu index_bytes=%llu index_count=%llu "
++    "va_committed=%llu va_reserved=%llu va_free=%llu largest_free=%llu va_limit=%llu scan_complete=%u "
++    "private_bytes=%llu working_set=%llu counters_valid=%u\r\n",
++    time.wHour, time.wMinute, time.wSecond, time.wMilliseconds, GetCurrentProcessId(), event,
++    names[k], static_cast<unsigned long long>(requested), width, height, format,
++    bytes[0].load(), objects[0].load(), bytes[1].load(), objects[1].load(), bytes[2].load(), objects[2].load(),
++    committed, reserved, free, largestFree, limit, static_cast<unsigned>(scanComplete),
++    static_cast<uint64_t>(counters.PrivateUsage), static_cast<uint64_t>(counters.WorkingSetSize),
++    static_cast<unsigned>(countersValid));
++  if (length > 0 && static_cast<size_t>(length) < sizeof(line)) {
++    if (log != INVALID_HANDLE_VALUE) {
++      DWORD written = 0;
++      WriteFile(log, line, static_cast<DWORD>(length), &written, nullptr);
++      if (force) { FlushFileBuffers(log); }
++    } else {
++      OutputDebugStringA(line);
++    }
++  }
++}
++
++inline uint8_t* allocate(size_t size, Kind kind, unsigned width = 0,
++    unsigned height = 0, unsigned format = 0, bool zero = false) {
++  sample(false, "before-allocation", kind, size, width, height, format);
++  uint8_t* result = nullptr;
++  try {
++    result = zero ? new uint8_t[size]() : new uint8_t[size];
++  } catch (const std::bad_alloc&) {
++    sample(true, "allocation-failed", kind, size, width, height, format);
++    throw;
++  }
++  const auto k = static_cast<unsigned>(kind);
++  bytes[k].fetch_add(size);
++  objects[k].fetch_add(1);
++  return result;
++}
++
++inline void released(size_t size, Kind kind) {
++  const auto k = static_cast<unsigned>(kind);
++  bytes[k].fetch_sub(size);
++  objects[k].fetch_sub(1);
++}
++}
+diff --git a/bridge/src/client/meson.build b/bridge/src/client/meson.build
+index 2ad1e79..c3520ae 100644
+--- a/bridge/src/client/meson.build
++++ b/bridge/src/client/meson.build
+@@ -85,6 +85,7 @@ d3d9_header = files([
+   'framework.h',
+   'lockable_buffer.h',
+   'message_channels.h',
++  'memory_diagnostics.h',
+   'pch.h',
+   'remix_state.h',
+   'resource.h',
+@@ -116,4 +117,4 @@ custom_target('copy_d3d9_to_output',
+     build_by_default : true,
+     depends          : [ d3d9_dll ],
+     command          : [copy_script_path, meson.current_build_dir(), output_dir, 'd3d9*'] )
+-endif
+\ No newline at end of file
++endif
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
 index 86434ec..3e4d3d4 100644
 --- a/bridge/src/server/main.cpp

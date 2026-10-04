@@ -29,6 +29,9 @@ jobs:
       - name: Build x86 client and x64 host
         shell: powershell
         run: ./scripts/build_demo.ps1 -DxvkDll .deps/dxvk-2.7.1/x64/d3d9.dll
+      - name: Test x86 memory diagnostics
+        shell: powershell
+        run: ./scripts/test_diagnostics.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: l4d2-bridge-experiment
