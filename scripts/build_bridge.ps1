@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 yeyunyyds.
+# Generated entirely with ChatGPT-6.1 Sol for yeyunyyds.
+
 param(
   [Parameter(Mandatory = $true)][string]$DxvkDll,
   [string]$VcVarsVer = '14.29'
@@ -20,4 +24,4 @@ try {
     Invoke-Checked 'powershell.exe' @('-NoProfile', '-Command', $buildCommand)
   }
 } finally { Pop-Location }
-Invoke-Checked 'python' @("$PSScriptRoot/package_demo.py", '--source', $source, '--dxvk', $dxvkPath)
+Invoke-Checked 'python' @("$PSScriptRoot/package_release.py", '--source', $source, '--dxvk', $dxvkPath)

@@ -1,4 +1,8 @@
-"""Fetch a pinned Bridge checkout and apply the L4D2 experiment patch."""
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 yeyunyyds.
+# Generated entirely with ChatGPT-6.1 Sol for yeyunyyds.
+
+"""Fetch a pinned Bridge checkout and apply the L4D2 bridge patch."""
 import argparse
 from pathlib import Path
 import subprocess
@@ -24,7 +28,7 @@ def prepare(source):
         ["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
     if head != COMMIT:
         raise RuntimeError(f"Expected upstream {COMMIT}, found {head}; checkout preserved")
-    patch = ROOT / "patches" / "l4d2-experiment.patch"
+    patch = ROOT / "patches" / "l4d2-bridge.patch"
     already_applied = subprocess.run(
         ["git", "apply", "--reverse", "--check", str(patch)],
         cwd=source, capture_output=True).returncode == 0

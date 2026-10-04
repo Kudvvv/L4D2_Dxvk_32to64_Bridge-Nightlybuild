@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 yeyunyyds.
+// Generated entirely with ChatGPT-6.1 Sol for yeyunyyds.
+
 #define NOMINMAX
 #include "memory_diagnostics.h"
 #include "pagefile_shadow.h"

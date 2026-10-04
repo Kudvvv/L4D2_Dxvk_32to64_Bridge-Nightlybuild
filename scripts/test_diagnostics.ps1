@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 yeyunyyds.
+# Generated entirely with ChatGPT-6.1 Sol for yeyunyyds.
+
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $source = Join-Path $repoRoot '.deps/dxvk-remix'

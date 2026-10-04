@@ -1,8 +1,15 @@
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
-index 300aaf5..40b368e 100644
+index 300aaf5..c672afc 100644
 --- a/bridge/src/client/d3d9_lss.cpp
 +++ b/bridge/src/client/d3d9_lss.cpp
-@@ -128,7 +128,7 @@ bool gbBridgeRunning = true;
+@@ -1,3 +1,6 @@
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
+ /*
+  * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
+  *
+@@ -128,7 +131,7 @@ bool gbBridgeRunning = true;
  std::string gRemixFolder = "";
  std::mutex gSwapChainMapMutex;
  SwapChainMap gSwapChainMap;
@@ -11,11 +18,49 @@ index 300aaf5..40b368e 100644
  
  static fspath GetServerExecutablePath() {
    ONCE(Logger::info(std::string("Native arch: ") + getNativeArchString()));
+@@ -524,22 +527,25 @@ bool RemixAttach(HMODULE hModule) {
+ 
+     // Setup Remix folder first hand
+     if (!InitRemixFolder(hModule)) {
+-      Logger::err("Fatal: Unable to initialize Remix folder...");
++      Logger::err("Fatal: Unable to initialize L4D2 bridge runtime folder...");
+       return false;
+     }
+ 
+     // Initialize WndProc logic
+     if(!WndProc::init()) {
+-      Logger::warn("Failed to detour WndProc setter/getter. Remix UI will likely not work.");
++      Logger::warn("Failed to detour WndProc setter/getter. Window message coordination hooks may be unavailable.");
+     }
+ 
+     SetupExceptionHandler();
+ 
+     // Identify yourself
+-    Logger::info("==================\nNVIDIA RTX Remix Bridge Client\n==================");
+-    Logger::info(std::string("Version: ") + std::string(BRIDGE_VERSION));
++    Logger::info("==================\nL4D2 D3D9 Bridge Client\n==================");
++    Logger::info("Project version: 1.0.0");
++    Logger::info("Project additions and modifications: yeyunyyds, generated entirely with ChatGPT-6.1 Sol.");
++    Logger::info(std::string("Upstream Bridge version: ") + std::string(BRIDGE_VERSION));
++    Logger::info("Based on NVIDIA RTX Remix Bridge (MIT); original code belongs to its original authors.");
+     auto clientPath = getModuleFilePath();
+-    Logger::info(format_string("Loaded d3d9.dll from %s", clientPath.c_str()));
++    Logger::info(format_string("Loaded L4D2 D3D9 client from %ls", clientPath.c_str()));
+ 
+     DInputHookAttach();
+ 
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
-index e54aec5..1340d0b 100644
+index e54aec5..5ebf8f7 100644
 --- a/bridge/src/client/d3d9_surface.cpp
 +++ b/bridge/src/client/d3d9_surface.cpp
-@@ -30,6 +30,17 @@
+@@ -1,3 +1,6 @@
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
+ /*
+  * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+  *
+@@ -30,6 +33,17 @@
  #include "d3d9_surfacebuffer_helper.h"
  #include "util_bridge_assert.h"
  #include "util_gdi.h"
@@ -33,7 +78,7 @@ index e54aec5..1340d0b 100644
  
  Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
                                             const D3DSURFACE_DESC& desc, bool isBackBuffer)
-@@ -45,14 +56,6 @@ Direct3DSurface9_LSS::~Direct3DSurface9_LSS() {
+@@ -45,14 +59,6 @@ Direct3DSurface9_LSS::~Direct3DSurface9_LSS() {
      if (m_bufferId != SharedHeap::kInvalidId) {
        SharedHeap::deallocate(m_bufferId);
      }
@@ -48,7 +93,7 @@ index e54aec5..1340d0b 100644
    }
  }
  
-@@ -220,17 +223,14 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
+@@ -220,17 +226,14 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
      lockedRect.pBits = getBufPtr(lockedRect.Pitch, rect);
      m_lockInfoQueue.push({ lockedRect, rect, flags, m_bufferId, discardBufId });
    } else {
@@ -71,7 +116,7 @@ index e54aec5..1340d0b 100644
      m_lockInfoQueue.push({ lockedRect, rect, flags });
    }
    return true;
-@@ -247,6 +247,9 @@ void Direct3DSurface9_LSS::unlock() {
+@@ -247,6 +250,9 @@ void Direct3DSurface9_LSS::unlock() {
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
      sendDataToServer(lockInfo);
    }
@@ -81,7 +126,7 @@ index e54aec5..1340d0b 100644
  }
  
  RECT Direct3DSurface9_LSS::resolveLockInfoRect(const RECT* const pRect, const D3DSURFACE_DESC& desc) {
-@@ -296,4 +299,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -296,4 +302,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
  std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions(const RECT& rect) {
    return { rect.right  - rect.left,
             rect.bottom - rect.top  };
@@ -89,10 +134,17 @@ index e54aec5..1340d0b 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_surface.h b/bridge/src/client/d3d9_surface.h
-index e4e9d51..ee152cb 100644
+index e4e9d51..c86064d 100644
 --- a/bridge/src/client/d3d9_surface.h
 +++ b/bridge/src/client/d3d9_surface.h
-@@ -32,6 +32,8 @@
+@@ -1,3 +1,6 @@
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
+ /*
+  * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+  *
+@@ -32,6 +35,8 @@
  /*
   * IDirect3DSurface9 LSS Interceptor Class
   */
@@ -101,7 +153,7 @@ index e4e9d51..ee152cb 100644
  class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
    void onDestroy() override;
  
-@@ -48,8 +50,7 @@ class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
+@@ -48,8 +53,7 @@ class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
    };
    std::queue<LockInfo> m_lockInfoQueue;
  
@@ -111,7 +163,7 @@ index e4e9d51..ee152cb 100644
  
  public:
    Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
-@@ -99,4 +100,4 @@ private:
+@@ -99,4 +103,4 @@ private:
    void* getBufPtr(const int pitch, const RECT& rect);
    void sendDataToServer(const LockInfo& lockInfo) const;
    static std::tuple<size_t, size_t> getRectDimensions(const RECT& box);
@@ -119,10 +171,17 @@ index e4e9d51..ee152cb 100644
 \ No newline at end of file
 +};
 diff --git a/bridge/src/client/d3d9_swapchain.cpp b/bridge/src/client/d3d9_swapchain.cpp
-index 86a19d4..d9d5f15 100644
+index 86a19d4..4ce02ae 100644
 --- a/bridge/src/client/d3d9_swapchain.cpp
 +++ b/bridge/src/client/d3d9_swapchain.cpp
-@@ -25,6 +25,7 @@
+@@ -1,3 +1,6 @@
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
+ /*
+  * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
+  *
+@@ -25,6 +28,7 @@
  #include "d3d9_surface.h"
  #include "d3d9_surfacebuffer_helper.h"
  #include "swapchain_map.h"
@@ -130,7 +189,7 @@ index 86a19d4..d9d5f15 100644
  
  extern std::mutex gSwapChainMapMutex;
  extern SwapChainMap gSwapChainMap;
-@@ -153,6 +154,7 @@ void Direct3DSwapChain9_LSS::onDestroy() {
+@@ -153,6 +157,7 @@ void Direct3DSwapChain9_LSS::onDestroy() {
  HRESULT Direct3DSwapChain9_LSS::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect,
                                          HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion,
                                          DWORD dwFlags) {
@@ -138,7 +197,7 @@ index 86a19d4..d9d5f15 100644
    ZoneScoped;
    LogFunctionCall();
  #ifdef ENABLE_PRESENT_SEMAPHORE_TRACE
-@@ -308,4 +310,4 @@ HRESULT Direct3DSwapChain9_LSS::GetPresentParameters(D3DPRESENT_PARAMETERS* pPre
+@@ -308,4 +313,4 @@ HRESULT Direct3DSwapChain9_LSS::GetPresentParameters(D3DPRESENT_PARAMETERS* pPre
      return D3DERR_INVALIDCALL;
    *pPresentationParameters = m_presParam;
    return D3D_OK;
@@ -146,10 +205,17 @@ index 86a19d4..d9d5f15 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/lockable_buffer.h b/bridge/src/client/lockable_buffer.h
-index fbfc565..4db336c 100644
+index fbfc565..9076dfb 100644
 --- a/bridge/src/client/lockable_buffer.h
 +++ b/bridge/src/client/lockable_buffer.h
-@@ -25,6 +25,7 @@
+@@ -1,3 +1,6 @@
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
+ /*
+  * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+  *
+@@ -25,6 +28,7 @@
  #include "util_sharedheap.h"
  
  #include "d3d9_util.h"
@@ -157,7 +223,7 @@ index fbfc565..4db336c 100644
  
  #include <d3d9.h>
  #include <queue>
-@@ -72,7 +73,9 @@ private:
+@@ -72,7 +76,9 @@ private:
    }
  
    void initShadowMem() {
@@ -168,7 +234,7 @@ index fbfc565..4db336c 100644
      g_totalBufferShadow += m_desc.Size;
      Logger::trace(format_string("Allocated a shadow for dynamic %s buffer [%p] "
                                  "(size: %zd, total shadow size: %zd)",
-@@ -104,6 +107,8 @@ protected:
+@@ -104,6 +110,8 @@ protected:
        }
      } else if (m_shadow) {
        g_totalBufferShadow -= m_desc.Size;
@@ -177,7 +243,7 @@ index fbfc565..4db336c 100644
        Logger::trace(format_string("Released shadow of dynamic %s buffer [%p] "
                                    "(size: %zd, total shadow size: %zd)",
                                    bIsVertexBuffer ? "vertex" : "index",
-@@ -227,4 +232,4 @@ protected:
+@@ -227,4 +235,4 @@ protected:
      }
      m_lockInfos.pop();
    }
@@ -186,10 +252,14 @@ index fbfc565..4db336c 100644
 +};
 diff --git a/bridge/src/client/memory_diagnostics.h b/bridge/src/client/memory_diagnostics.h
 new file mode 100644
-index 0000000..8803652
+index 0000000..c4b4027
 --- /dev/null
 +++ b/bridge/src/client/memory_diagnostics.h
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,144 @@
++// SPDX-License-Identifier: MIT
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
 +#pragma once
 +
 +#include <windows.h>
@@ -331,10 +401,17 @@ index 0000000..8803652
 +}
 +}
 diff --git a/bridge/src/client/meson.build b/bridge/src/client/meson.build
-index 2ad1e79..38bb998 100644
+index 2ad1e79..23e36ba 100644
 --- a/bridge/src/client/meson.build
 +++ b/bridge/src/client/meson.build
-@@ -85,6 +85,8 @@ d3d9_header = files([
+@@ -1,3 +1,6 @@
++# Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++# Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
+ #############################################################################
+ # Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
+ #
+@@ -85,6 +88,8 @@ d3d9_header = files([
    'framework.h',
    'lockable_buffer.h',
    'message_channels.h',
@@ -343,7 +420,7 @@ index 2ad1e79..38bb998 100644
    'pch.h',
    'remix_state.h',
    'resource.h',
-@@ -116,4 +118,4 @@ custom_target('copy_d3d9_to_output',
+@@ -116,4 +121,4 @@ custom_target('copy_d3d9_to_output',
      build_by_default : true,
      depends          : [ d3d9_dll ],
      command          : [copy_script_path, meson.current_build_dir(), output_dir, 'd3d9*'] )
@@ -352,10 +429,14 @@ index 2ad1e79..38bb998 100644
 +endif
 diff --git a/bridge/src/client/pagefile_shadow.h b/bridge/src/client/pagefile_shadow.h
 new file mode 100644
-index 0000000..4d828e0
+index 0000000..51a781a
 --- /dev/null
 +++ b/bridge/src/client/pagefile_shadow.h
-@@ -0,0 +1,118 @@
+@@ -0,0 +1,122 @@
++// SPDX-License-Identifier: MIT
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
 +#pragma once
 +
 +#include "memory_diagnostics.h"
@@ -475,10 +556,17 @@ index 0000000..4d828e0
 +  }
 +};
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..3e4d3d4 100644
+index 86434ec..602ea7c 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
-@@ -375,7 +375,13 @@ void ProcessDeviceCommandQueue() {
+@@ -1,3 +1,6 @@
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
+ /*
+  * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
+  *
+@@ -375,7 +378,13 @@ void ProcessDeviceCommandQueue() {
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
  
          IDirect3DDevice9* pD3DDevice = nullptr;
@@ -492,7 +580,7 @@ index 86434ec..3e4d3d4 100644
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
            ss << format_string("CreateDevice() call failed with error code 0x%x", hresult) << std::endl;
-@@ -3268,7 +3274,16 @@ bool InitializeD3D() {
+@@ -3268,7 +3277,16 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -510,7 +598,7 @@ index 86434ec..3e4d3d4 100644
      if (ghModule) {
        Logger::info("Non-RTX standard d3d9vk_x64.dll loaded");
      } else {
-@@ -3285,6 +3300,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3303,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -521,7 +609,7 @@ index 86434ec..3e4d3d4 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3330,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3333,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -532,7 +620,26 @@ index 86434ec..3e4d3d4 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3624,4 +3647,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3488,12 +3514,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+   ExceptionHandler::get().init();
+ 
+   // Identify yourself
+-  Logger::info("==================\nNVIDIA RTX Remix Bridge Server\n==================");
+-  Logger::info(std::string("Version: ") + std::string(BRIDGE_VERSION));
++  Logger::info("==================\nL4D2 D3D9 Bridge Server\n==================");
++  Logger::info("Project version: 1.0.0");
++  Logger::info("Project additions and modifications: yeyunyyds, generated entirely with ChatGPT-6.1 Sol.");
++  Logger::info(std::string("Upstream Bridge version: ") + std::string(BRIDGE_VERSION));
++  Logger::info("Based on NVIDIA RTX Remix Bridge (MIT); original code belongs to its original authors.");
+ #ifdef _WIN64
+   Logger::info("Running in x64 mode!");
+ #else
+-  Logger::warn("Running in x86 mode! Are you sure this is what you want? RTX will not work this way, please run the 64-bit server instead!");
++  Logger::warn("Running in x86 mode! This project requires the 64-bit Host; use L4D2Bridge64.exe.");
+ #endif
+ 
+   BRIDGE_ASSERT_LOG((argCount >= 2), "Command line argument count received to launch server is not as expected");
+@@ -3624,4 +3653,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;
@@ -540,10 +647,17 @@ index 86434ec..3e4d3d4 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/server/meson.build b/bridge/src/server/meson.build
-index 908d93f..ebe67e9 100644
+index 908d93f..a968961 100644
 --- a/bridge/src/server/meson.build
 +++ b/bridge/src/server/meson.build
-@@ -46,7 +46,7 @@ server_resource = windows.compile_resources('NvRemixBridge.rc',
+@@ -1,3 +1,6 @@
++# Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++# Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
+ #############################################################################
+ # Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+ #
+@@ -46,7 +49,7 @@ server_resource = windows.compile_resources('NvRemixBridge.rc',
  	depend_files : ['NvRemixBridge.ico']
  )
  
@@ -552,7 +666,7 @@ index 908d93f..ebe67e9 100644
  sources             : [ bridge_version ],
  build_by_default    : (cpu_family == 'x86_64') or (cpu_family == 'aarch64') ? true : false,
  dependencies        : [ thread_dep, util_dep, lib_version, tracy_dep ],
-@@ -56,7 +56,7 @@ win_subsystem       : 'windows')
+@@ -56,7 +59,7 @@ win_subsystem       : 'windows')
  if (cpu_family == 'x86_64') or (cpu_family == 'aarch64')
  	# Note: dir names must match util_filesys.h !
  	if cpu_family != 'aarch64'
@@ -561,7 +675,7 @@ index 908d93f..ebe67e9 100644
  	else
  		server_output_dir = output_dir + '.trex_arm64'
  	endif
-@@ -66,6 +66,6 @@ if (cpu_family == 'x86_64') or (cpu_family == 'aarch64')
+@@ -66,6 +69,6 @@ if (cpu_family == 'x86_64') or (cpu_family == 'aarch64')
  		output           : ['copy_server_to_output'],
  		build_by_default : true,
  		depends          : [ server_exe ],
@@ -572,10 +686,17 @@ index 908d93f..ebe67e9 100644
 \ No newline at end of file
 +endif
 diff --git a/bridge/src/util/util_filesys.h b/bridge/src/util/util_filesys.h
-index 15915da..2bcbeb8 100644
+index 15915da..a9bb4b9 100644
 --- a/bridge/src/util/util_filesys.h
 +++ b/bridge/src/util/util_filesys.h
-@@ -90,7 +90,7 @@ public:
+@@ -1,3 +1,6 @@
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// Generated entirely with ChatGPT-6.1 Sol; original code belongs to its original authors.
++
+ /*
+ * Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+ *
+@@ -90,7 +93,7 @@ public:
      if (arch && 0 == std::strcmp(arch, bridge_util::RTX_ARCH_ARM64)) {
        return ".trex_arm64";
      }
