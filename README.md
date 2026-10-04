@@ -127,6 +127,8 @@ Steam → L4D2 → 属性 → 启动选项：
 
 Host 内存／CPU 诊断更新提供独立的 `l4d2-bridge-host-diagnostics` 包，可只替换 Host EXE，继续使用已有 v1.0.0 客户端与 DXVK。它用于定位增长来源，不是内存优化修复。安装、字段和同场景对比方法见 [Host 诊断说明](docs/HOST-MEMORY-DIAGNOSTICS.md)。每轮结束保存四份日志，新进程会覆盖同名文件。
 
+退图后的后端映射分配保留另有可选的 [DXVK 内存实验 mem1](docs/DXVK-MEMORY-EXPERIMENT.md)：仅替换 x64 DXVK，提供分配归属记录和可选的较小映射块。这是待实机验证的修改版，第一版默认包仍使用官方后端。
+
 命令队列 CPU 测试版提供 `l4d2-bridge-cpu-update` 包，需要同时更新客户端 DLL 与 Host EXE。它通过跨进程事件唤醒空队列的消费者，减少等待期间的 CPU 开销；游戏帧率与稳定性仍待实测。安装和验证见 [CPU 测试说明](docs/CPU-QUEUE-TEST.md)。第二轮增加仅桥／游戏内部的等待计数并合并重复唤醒；纹理资源池尚未实现，设计见 [纹理复用说明](docs/TEXTURE-REUSE-DESIGN.md)。
 
 ## 从源码构建
@@ -359,6 +361,8 @@ The first memory sample in each new process overwrites the previous `l4d2-memory
 `surface_bytes` measures currently mapped texture data. `surface_backing_bytes` measures all retained texture shadow data, while `surface_view_budget_bytes` includes mapping-alignment overhead. Use `va_free` and `largest_free` to assess x86 address-space headroom. Negative or clearly invalid OS readings from the game's `mem_dump` are not reliable measurements of actual memory availability.
 
 The Host diagnostic update provides a separate `l4d2-bridge-host-diagnostics` artifact: replace only the Host executable and keep the installed v1.0.0 client and DXVK. This update helps investigate growth; it is not a memory optimization fix. See the [Host diagnostic guide](docs/HOST-MEMORY-DIAGNOSTICS.md) for installation, fields and controlled comparisons. Save all four logs after each session, before the next process overwrites them.
+
+An optional [DXVK memory experiment mem1](docs/DXVK-MEMORY-EXPERIMENT.md) replaces only the x64 backend, adding allocation attribution and an opt-in smaller mapped-chunk policy. It is an altered build awaiting hardware validation; the standard v1.0.0 package continues to use the official backend.
 
 The command queue CPU test build provides `l4d2-bridge-cpu-update`: update both the client DLL and Host EXE. Cross-process event wakeups reduce CPU spent waiting on empty queues; game frame rate and stability still require testing. See the [CPU test guide](docs/CPU-QUEUE-TEST.md). The second round adds local wait counters and coalesces notifications. An additional texture pool is not implemented; see the [texture reuse design](docs/TEXTURE-REUSE-DESIGN.md).
 
