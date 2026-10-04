@@ -74,6 +74,14 @@ def package(source, dxvk, output):
     shutil.copy2(licenses / "DXVK-LICENSE.txt", client_output / "licenses/DXVK-LICENSE.txt")
     for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
         shutil.copy2(ROOT / filename, client_output / filename)
+    # Partial updates do not ship the backend documentation tree. Keep the
+    # attribution reference usable without adding unrelated installation files.
+    third_party = (client_output / "THIRD_PARTY.md").read_text(encoding="utf-8")
+    third_party = third_party.replace(
+        "(docs/DXVK-MEMORY-EXPERIMENT.md)",
+        "(https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/codex/l4d2-demo/docs/DXVK-MEMORY-EXPERIMENT.md)",
+    )
+    (client_output / "THIRD_PARTY.md").write_text(third_party, encoding="utf-8")
     (client_output / "SHA256.json").write_text(json.dumps({
         "bin/dxvk_d3d9.dll": hashes["bin/dxvk_d3d9.dll"],
     }, indent=2) + "\n")
