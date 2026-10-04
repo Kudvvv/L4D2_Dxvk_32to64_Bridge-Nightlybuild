@@ -26,6 +26,7 @@ def machine(path):
 def package(source, dxvk, output):
     client_output = output.parent / "l4d2-client-only"
     host_output = output.parent / "l4d2-host-only"
+    cpu_output = output.parent / "l4d2-cpu-update"
     inputs = {
         "bin/dxvk_d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
         "bin/.l4d2bridge/L4D2Bridge64.exe": (source / "bridge/_compDebugOptimized_x64/src/server/L4D2Bridge64.exe", 0x8664),
@@ -35,7 +36,7 @@ def package(source, dxvk, output):
     for path, expected in inputs.values():
         if machine(path) != expected:
             raise ValueError(f"Wrong architecture: {path}")
-    for destination in (output, client_output, host_output):
+    for destination in (output, client_output, host_output, cpu_output):
         if destination.exists():
             raise FileExistsError(f"Output already exists; preserve or move it first: {destination}")
     output.mkdir(parents=True, exist_ok=False)
@@ -84,9 +85,21 @@ def package(source, dxvk, output):
     (host_output / "SHA256.json").write_text(json.dumps({
         host_relative: hashes[host_relative],
     }, indent=2) + "\n")
+    cpu_hashes = {}
+    for relative in ("bin/dxvk_d3d9.dll", host_relative):
+        destination = cpu_output / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(output / relative, destination)
+        cpu_hashes[relative] = hashes[relative]
+    shutil.copy2(ROOT / "docs/CPU-QUEUE-TEST.md", cpu_output / "CPU-QUEUE-TEST.md")
+    shutil.copytree(licenses, cpu_output / "licenses")
+    for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
+        shutil.copy2(ROOT / filename, cpu_output / filename)
+    (cpu_output / "SHA256.json").write_text(json.dumps(cpu_hashes, indent=2) + "\n")
     print(f"L4D2 D3D9 Bridge v{(ROOT / 'VERSION').read_text().strip()}: {output}")
     print(f"Client-only update: {client_output}; preserves the installed host and DXVK")
     print(f"Host diagnostics update: {host_output}; preserves the installed client, DXVK and configuration")
+    print(f"CPU queue update: {cpu_output}; update both bridge binaries together")
 
 
 if __name__ == "__main__":

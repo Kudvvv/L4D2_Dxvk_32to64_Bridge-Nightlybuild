@@ -127,6 +127,8 @@ Steam → L4D2 → 属性 → 启动选项：
 
 Host 内存／CPU 诊断更新提供独立的 `l4d2-bridge-host-diagnostics` 包，可只替换 Host EXE，继续使用已有 v1.0.0 客户端与 DXVK。它用于定位增长来源，不是内存优化修复。安装、字段和同场景对比方法见 [Host 诊断说明](docs/HOST-MEMORY-DIAGNOSTICS.md)。每轮结束保存四份日志，新进程会覆盖同名文件。
 
+命令队列 CPU 测试版提供 `l4d2-bridge-cpu-update` 包，需要同时更新客户端 DLL 与 Host EXE。它通过跨进程事件唤醒空队列的消费者，减少等待期间的 CPU 开销；游戏帧率与稳定性仍待实测。安装和验证见 [CPU 测试说明](docs/CPU-QUEUE-TEST.md)。
+
 ## 从源码构建
 
 工具链：Visual Studio 2022，安装 **MSVC v142 / 14.29 的 x86/x64 工具**和 Windows SDK；Python 3.11、Git。构建在 Windows PowerShell 中执行：
@@ -135,6 +137,8 @@ Host 内存／CPU 诊断更新提供独立的 `l4d2-bridge-host-diagnostics` 包
 python -m pip install meson==1.3.2 ninja==1.11.1.1
 ./scripts/build_bridge.ps1 -DxvkDll C:/dxvk-2.6.1/x64/d3d9.dll
 ./scripts/test_diagnostics.ps1
+./scripts/test_host_diagnostics.ps1
+./scripts/test_command_queue.ps1
 ```
 
 脚本从固定上游提交 `9aa74f8dfad2188efbd0f717c64d9f8fa909787e` 准备 Bridge，只初始化所需的 Detours 子模块，应用 [项目补丁](patches/l4d2-bridge.patch)，分别编译 x86 客户端和 x64 Host。无需构建 RTX 渲染器或下载 NVIDIA GPU SDK 子模块。
@@ -356,6 +360,8 @@ The first memory sample in each new process overwrites the previous `l4d2-memory
 
 The Host diagnostic update provides a separate `l4d2-bridge-host-diagnostics` artifact: replace only the Host executable and keep the installed v1.0.0 client and DXVK. This update helps investigate growth; it is not a memory optimization fix. See the [Host diagnostic guide](docs/HOST-MEMORY-DIAGNOSTICS.md) for installation, fields and controlled comparisons. Save all four logs after each session, before the next process overwrites them.
 
+The command queue CPU test build provides `l4d2-bridge-cpu-update`: update both the client DLL and Host EXE. Cross-process event wakeups reduce CPU spent waiting on empty queues; game frame rate and stability still require testing. See the [CPU test guide](docs/CPU-QUEUE-TEST.md).
+
 ## Building from source
 
 Use Visual Studio 2022 with **MSVC v142 / 14.29 x86/x64 tools** and the Windows SDK, plus Python 3.11 and Git. Run the following in Windows PowerShell:
@@ -364,6 +370,8 @@ Use Visual Studio 2022 with **MSVC v142 / 14.29 x86/x64 tools** and the Windows 
 python -m pip install meson==1.3.2 ninja==1.11.1.1
 ./scripts/build_bridge.ps1 -DxvkDll C:/dxvk-2.6.1/x64/d3d9.dll
 ./scripts/test_diagnostics.ps1
+./scripts/test_host_diagnostics.ps1
+./scripts/test_command_queue.ps1
 ```
 
 The scripts prepare Bridge at upstream commit `9aa74f8dfad2188efbd0f717c64d9f8fa909787e`, initialize only the required Detours submodule, apply the [project patch](patches/l4d2-bridge.patch), and build the x86 client and x64 Host separately. They do not require building the RTX renderer or downloading NVIDIA GPU SDK submodules.
