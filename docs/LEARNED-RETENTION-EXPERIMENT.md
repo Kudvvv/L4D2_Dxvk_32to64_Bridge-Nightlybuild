@@ -44,7 +44,7 @@ DB 相对路径以客户端 DLL 的目录为基准，默认实际位置是 **`bi
 
 Hash 使用 **Windows CNG 的增量 SHA-256**，选择成熟系统实现；没有引入第三方哈希代码。现有上传循环每复制一行时把该行逻辑字节送入 hasher，无新增完整上传缓存、无上传后的整张资源扫描。每 mip 只保留初始 hash 和当前已上传内容 hash。parent ContentKey 包含 schema/domain、type、width、height、format、mip count、usage、pool，并按 mip index／逻辑长度／初始内容 hash 顺序合成。StrongKey 再包含归一化创建调用位置。
 
-调用位置保留最多四个外部 frame：模块文件名、PE 时间戳／image size／checksum 和 RVA。过滤桥自身与 kernel32、kernelbase、ntdll、CRT／allocator runtime 模块。地址、PID、resource/parent ID、HANDLE 和创建时间均不进入跨运行 key。不同调用位置可通过 ContentKey 命中 KEEP；允许保守的额外保留。
+调用位置优先捕获 CreateTexture 虚方法的直接调用者，再补充堆栈，避免优化后的 x86 堆栈不可展开时丢失全部位置。只保留最多四个去重后的外部 frame：模块文件名、PE 时间戳／image size／checksum 和 RVA。过滤桥自身与 kernel32、kernelbase、ntdll、CRT／allocator runtime 模块。地址、PID、resource/parent ID、HANDLE 和创建时间均不进入跨运行 key。不同调用位置可通过 ContentKey 命中 KEEP；允许保守的额外保留。
 
 首次上传完成后发送 metadata-only 的有序服务器确认，核对当前 parent texture、mip0 surface、描述和 mip count。确认排在上传命令之后，表示上传已被服务器消费；确认本身不读回像素、不等待 GPU。随后解除所有客户端 view，并 **CloseHandle 真正删除各 mip 的 unnamed PagefileShadow section**。不销毁或替换服务器 texture。日志逐 mip 确认 `cpu_backing_present=0 cpu_backing_bytes=0`。
 
@@ -93,7 +93,7 @@ Phase one passed 39/39 retained-reference comparisons on 13 actual L4D2 resource
 
 Install both binaries from `l4d2-bridge-learned-retention-experiment`, retain the installed x64 DXVK/mem1 backend, and merge the four configuration lines above. Leave the retained-reference test off. The default packaged policy is `keep`; enabling `learned-aggressive` makes eligible UNKNOWN resources DROP. Save `bin/l4d2-retention.log` before restarting.
 
-Incremental Windows CNG SHA-256 hashes are fed logical rows in the existing upload loop. The parent fingerprint includes the complete initial mip chain and descriptor; StrongKey additionally includes up to four normalized external module identity/RVA frames. No addresses, process IDs or resource IDs enter persistent keys. A metadata-only ordered server acknowledgement precedes eviction. All original client views/section handles are then closed; only small hashes remain.
+Incremental Windows CNG SHA-256 hashes are fed logical rows in the existing upload loop. The parent fingerprint includes the complete initial mip chain and descriptor; StrongKey additionally includes the direct CreateTexture caller plus up to four deduplicated normalized external module identity/RVA frames in total, so an optimized x86 stack-walk failure does not discard the direct caller. No addresses, process IDs or resource IDs enter persistent keys. A metadata-only ordered server acknowledgement precedes eviction. All original client views/section handles are then closed; only small hashes remain.
 
 On preserve access, the client recovers all missing parent mips from the current server/DXVK resource with the existing event-query synchronization, verifies each hash, rebuilds and hashes the actual replacement backing, then permanently promotes the parent to KEEP. Full DISCARD overwrite does not read back or promote. A full non-DISCARD Lock still permits reads of previous contents, so it requires recovery. There is no historical-data recovery input or global device idle.
 
