@@ -26,7 +26,7 @@ jobs:
           python-version: '3.11'
       - id: detect
         run: |
-          python -m unittest discover -s tests -p test_release_detection.py
+          python -m unittest discover -s tests -p "test_release*.py"
           python scripts/detect_release.py
         env:
           GH_TOKEN: ${{ github.token }}
@@ -65,10 +65,14 @@ jobs:
           UPSTREAM_BRANCH: ${{ matrix.branch }}
           UPSTREAM_COMMIT: ${{ matrix.commit }}
           RECIPE_COMMIT: ${{ github.sha }}
+          RELEASE_TITLE: ${{ matrix.title }}
+          ARCHIVE_NAME: ${{ matrix.archive }}
+          BUILD_KIND: ${{ matrix.kind }}
+          COMMITS_AFTER_TAG: ${{ matrix.distance }}
         run: |
-          $metadata = @{ upstream_tag = $env:UPSTREAM_TAG; upstream_branch = $env:UPSTREAM_BRANCH; upstream_commit = $env:UPSTREAM_COMMIT; recipe_commit = $env:RECIPE_COMMIT; game_validation = 'Not performed; experimental build' }
+          $metadata = @{ upstream_tag = $env:UPSTREAM_TAG; upstream_branch = $env:UPSTREAM_BRANCH; build_kind = $env:BUILD_KIND; commits_after_tag = $env:COMMITS_AFTER_TAG; upstream_commit = $env:UPSTREAM_COMMIT; recipe_commit = $env:RECIPE_COMMIT; game_validation = 'Not performed; experimental build' }
           $metadata | ConvertTo-Json | Set-Content dist/l4d2-bridge/UPSTREAM.json -Encoding utf8
-          $archive = "bridge-$($env:UPSTREAM_TAG).zip"
+          $archive = $env:ARCHIVE_NAME
           python scripts/archive_release.py dist/l4d2-bridge $archive
           if ($LASTEXITCODE -ne 0) { throw 'Archive failed' }
           "$((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower())  $archive" | Set-Content "$archive.sha256" -Encoding ascii
@@ -76,8 +80,8 @@ jobs:
         with:
           name: ${{ matrix.release_tag }}
           path: |
-            bridge-*.zip
-            bridge-*.zip.sha256
+            l4d2-bridge-*.zip
+            l4d2-bridge-*.zip.sha256
           if-no-files-found: error
   publish:
     needs: [detect, build]
@@ -103,12 +107,17 @@ jobs:
           UPSTREAM_BRANCH: ${{ matrix.branch }}
           UPSTREAM_COMMIT: ${{ matrix.commit }}
           RECIPE_COMMIT: ${{ github.sha }}
+          RELEASE_TITLE: ${{ matrix.title }}
+          ARCHIVE_NAME: ${{ matrix.archive }}
+          BUILD_KIND: ${{ matrix.kind }}
+          COMMITS_AFTER_TAG: ${{ matrix.distance }}
         run: |
-          printf 'Experimental L4D2 Bridge build.\n\nUpstream source: %s\nUpstream commit: %s\nBuild recipe: %s\n\nBoth x86 client and matching x64 Host are included. The DXVK backend is independently pinned by config/backend.json. Compilation and diagnostic tests passed; L4D2 gameplay compatibility has not been verified. Back up your installation before testing.\n' "$UPSTREAM_TAG" "$UPSTREAM_COMMIT" "$RECIPE_COMMIT" > notes.md
+          printf 'Experimental L4D2 Bridge build.\n\n分类 tag: %s\nUpstream commit: %s\nBuild recipe: %s\n\nBoth x86 client and matching x64 Host are included. The DXVK backend is independently pinned by config/backend.json. Compilation and diagnostic tests passed; L4D2 gameplay compatibility has not been verified. Back up your installation before testing.\n' "$UPSTREAM_TAG" "$UPSTREAM_COMMIT" "$RECIPE_COMMIT" > notes.md
+          printf '\nBuild type: %s\nCommits after upstream tag: %s\nSource branch: %s\n' "$BUILD_KIND" "$COMMITS_AFTER_TAG" "$UPSTREAM_BRANCH" >> notes.md
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --target "$RECIPE_COMMIT" --title "Bridge from $UPSTREAM_TAG" --notes-file notes.md --prerelease --draft
+            gh release create "$RELEASE_TAG" --target "$RECIPE_COMMIT" --title "$RELEASE_TITLE" --notes-file notes.md --prerelease --draft
           fi
           gh release upload "$RELEASE_TAG" assets/* --clobber
-          gh release edit "$RELEASE_TAG" --draft=false --prerelease --notes-file notes.md
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease --title "$RELEASE_TITLE" --notes-file notes.md
 
 

@@ -23,3 +23,9 @@ Both client and matching Host are included. Automatic compilation tests do not v
 ## Baseline as of 2026-10-05
 
 The upstream main HEAD is 9aa74f8dfad2188efbd0f717c64d9f8fa909787e, identical to the original project's pinned baseline. Therefore the existing baseline package already uses current upstream source; automatic monitoring now follows subsequent commits instead of waiting for nonexistent Releases. The independent backend remains DXVK-GPLALL 2.6.8-2.
+
+## Release names and tag categories
+
+Releases are grouped by the newest semantic version tag (remix-X.Y.Z) that is an ancestor of the selected source commit. Exact tag revisions are labeled Tag 构建; commits after the tag are labeled Nightly. A branch with no reachable version tag is classified as untagged. The classification never substitutes the old tag's source for the selected latest commit.
+
+Titles use `[remix-X.Y.Z] Nightly · YYYY-MM-DD · shortSHA`. Git tags use `bridge-remix-X.Y.Z-nightly-YYYYMMDD-shortSHA`; packages use `l4d2-bridge-remix-X.Y.Z-nightly-YYYYMMDD-shortSHA.zip`. Dates refer to the upstream commit date (UTC), giving retries the same identity. Full SHA, exact source branch, category, and distance from the version tag are preserved in provenance and release notes. Tagged builds remain experimental because gameplay is not automatically tested.

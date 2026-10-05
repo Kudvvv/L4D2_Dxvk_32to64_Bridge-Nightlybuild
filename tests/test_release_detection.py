@@ -1,10 +1,13 @@
 """Offline checks for branch HEAD tracking and safe retry/deduplication."""
 import importlib.util
 import os
+import sys
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
+
+sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 
 spec = importlib.util.spec_from_file_location("detect", Path(__file__).parents[1] / "scripts/detect_release.py")
 detect = importlib.util.module_from_spec(spec)
@@ -20,13 +23,13 @@ class HeadDetection(unittest.TestCase):
             if path == detect.UPSTREAM:
                 return {"default_branch": branch}
             if "/commits/" in path:
-                return {"sha": SHA}
+                return {"sha": SHA, "commit": {"committer": {"date": "2026-10-05T00:00:00Z"}}}
             if failure:
                 raise HTTPError(path, failure, "failure", {}, None)
             if existing is not None:
                 return existing
             raise HTTPError(path, 404, "missing", {}, None)
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": manual}), patch.object(detect, "api", api):
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": manual}), patch.object(detect, "api", api), patch.object(detect, "classify", return_value={"group":"untagged", "release_tag":"bridge-test"}):
             rows = detect.pending()
         return rows, calls
 
