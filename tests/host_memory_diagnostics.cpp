@@ -76,6 +76,10 @@ int main(int argc, char** argv) {
         value(record, "resource_inventory_valid") != 1 || value(record, "texture_handles") != 1 ||
         value(record, "resource_replace_total") != 1 || value(record, "gpu_local_valid") != 0 ||
         value(record, "gpu_nonlocal_valid") != 0 || value(record, "gpu_vendor") != UINT32_MAX) { return 16; }
+    const auto freeBytes = value(record, "address_free_bytes");
+    const auto largestFreeBlock = value(record, "address_largest_free_block");
+    if (freeBytes == UINT64_MAX || largestFreeBlock == UINT64_MAX ||
+        !largestFreeBlock || largestFreeBlock > freeBytes) { return 18; }
   }
   const uint64_t minimumChange = 48 * 1024 * 1024;
   const auto baseline = value(lines[0], "private_bytes");
@@ -86,6 +90,13 @@ int main(int argc, char** argv) {
       value(lines[2], "address_private_commit") + minimumChange > value(lines[1], "address_private_commit") ||
       value(lines[1], "address_mapped_commit") < value(lines[0], "address_mapped_commit") + 24 * 1024 * 1024 ||
       value(lines[2], "address_mapped_commit") + 24 * 1024 * 1024 > value(lines[1], "address_mapped_commit")) { return 17; }
+  // Committed private memory and a mapped section both consume address space.
+  // Releasing them must restore it in both x86 and x64 processes.
+  const auto baselineFree = value(lines[0], "address_free_bytes");
+  const auto allocatedFree = value(lines[1], "address_free_bytes");
+  const auto releasedFree = value(lines[2], "address_free_bytes");
+  if (baselineFree < allocatedFree + minimumChange ||
+      releasedFree < allocatedFree + minimumChange) { return 19; }
   if (value(lines[0], "cpu_valid") != 0 || value(lines[1], "cpu_valid") != 1 ||
       value(lines[1], "client_exit_code_valid") != 1 ||
       value(lines[1], "client_exit_code") != STILL_ACTIVE ||

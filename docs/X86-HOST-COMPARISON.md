@@ -62,6 +62,8 @@ Host 内存日志仍位于 `bin/.l4d2bridge/l4d2-host-memory.log`，游戏客户
 
 ## 实现与验证边界
 
+如果出现 `CreateTexture` 的 `SUCCEEDED(hresult)` 断言，新诊断版会在断言前立即将 `L4D2 CreateTexture failed` 写入服务器日志，包含 HRESULT、命令 UID、资源 / 设备 ID、尺寸、mip 数、usage、format、pool 和服务器位数。同时强制写入 `event=create-texture-failed` 内存快照，记录 Private Bytes、工作集、可用地址空间总量 `address_free_bytes`、最大连续空闲地址块 `address_largest_free_block` 及可用的 WDDM 使用量。这些地址空间计数不代表可用 RAM 或显存。请在再次启动前保存这一轮服务器日志、DXVK 日志和 Host 内存日志；不要只提供创建设备前的启动采样。该诊断版保留原有失败断言，不声称已修复 DXVK 的创建失败。
+
 32 位服务器使用独立 Meson 构建目录，并为所有服务器与 util 代码设置 `REMIX_BRIDGE_SERVER`，避免复用客户端编译对象造成 IPC 方向错误。服务器名称、日志名称及后端文件名按位数区分；资源、命令协议及正常保留策略复用当前实现。进程地址扫描使用当前进程可见范围，以适配 x86。
 
 CI 构建实际 x86 / x64 服务器，校验每个 EXE / DLL 的 PE 架构与 x86 EXE 的 LARGEADDRESSAWARE 属性，并在两种位数运行现有内存诊断测试。另在原生 32 位 Windows PowerShell 进程中加载官方 x86 DXVK，检查 D3D9 导出。上述检查不代表 L4D2 渲染已通过；硬件渲染、稳定性和约 3 GB 占用的差额需要游戏实测。
@@ -89,3 +91,5 @@ Check the x86 host process name and `bridge-host32.log` for x86 mode and the x86
 Use the same map, mods, graphics settings, FPS limit and background applications. Play with the game window active for two minutes after loading, record stable game/host memory and optional DXVK Sysmem HUD statistics, return to the menu for two minutes, then exit normally. Save the logs into separate x86/x64 folders before starting the other run. Working set, private bytes and WDDM usage overlap and must not be added together. Preserve failure logs if the x86 host cannot load the map. Its LARGEADDRESSAWARE executable is still limited to at most 4 GiB of user address space on 64-bit Windows.
 
 CI verifies actual Windows builds, PE architecture, the x86 address-space flag, memory diagnostics in both architectures, and loading the official x86 backend in a native x86 process. Actual GPU rendering and memory reduction remain subject to L4D2 testing. Upstream copyrights and licenses are preserved; newly added fork implementation uses the MIT License and the attribution stated above. The original DXVK binaries retain their zlib/libpng license.
+
+If `CreateTexture` triggers a `SUCCEEDED(hresult)` assertion, the diagnostic build writes `L4D2 CreateTexture failed` before stopping, including the HRESULT, command UID, resource/device IDs, dimensions, mip count, usage, format, pool and host bitness. It also forces an `event=create-texture-failed` Host memory sample. `address_free_bytes` and `address_largest_free_block` describe total free virtual address space and the largest contiguous free region, not available RAM or VRAM. Save the host, DXVK and Host memory logs before restarting. The original assertion remains; this instrumentation is not a claimed fix for the backend failure.
