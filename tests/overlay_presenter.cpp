@@ -24,6 +24,15 @@ int main(int argc, char** argv) {
     char modulePath[MAX_PATH] {}; require(GetModuleFileNameA(nullptr, modulePath, MAX_PATH) != 0, "test module path");
     std::string fakePath(modulePath); fakePath = fakePath.substr(0, fakePath.find_last_of("\\/")) + (sizeof(void*) == 8 ? "\\fake-x64.dll" : "\\fake-x86.dll");
     HMODULE fake = LoadLibraryA(fakePath.c_str()); require(fake != nullptr, "load API test double");
+    const std::string steamPath = fakePath.substr(0, fakePath.find_last_of("\\/")) + (sizeof(void*) == 8 ? "\\SteamOverlayVulkanLayer64.dll" : "\\SteamOverlayVulkanLayer.dll");
+    require(CopyFileA(fakePath.c_str(), steamPath.c_str(), FALSE) != FALSE, "create named Steam module test double");
+    const unsigned oldModules = l4d2_overlay::Presenter::steamModules();
+    HMODULE steam = LoadLibraryA(steamPath.c_str()); require(steam != nullptr, "load named Steam Vulkan test double");
+    const unsigned bit = sizeof(void*) == 8 ? 2u : 1u;
+    require((l4d2_overlay::Presenter::steamModules() & bit) != 0, "detect correct Steam Vulkan module name");
+    FreeLibrary(steam);
+    require(l4d2_overlay::Presenter::steamModules() == oldModules, "detect delayed Steam module unload");
+    require(DeleteFileA(steamPath.c_str()) != FALSE, "remove named Steam test double");
     const HWND child = presenter.window(parent);
     require(child != nullptr, "cross-process child creation");
     DWORD pid = 0; GetWindowThreadProcessId(child, &pid);
