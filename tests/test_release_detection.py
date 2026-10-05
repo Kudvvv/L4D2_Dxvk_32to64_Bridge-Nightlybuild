@@ -23,7 +23,7 @@ class ReleaseDetection(unittest.TestCase):
             if existing:
                 return existing
             raise HTTPError(path, 404, "missing", {}, None)
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}), patch.object(detect, "api", api):
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": ""}), patch.object(detect, "api", api):
             return detect.pending()
 
     def test_bootstrap_and_skip_historical(self):
@@ -49,3 +49,4 @@ def release(tag, date="2026-10-05T01:00:00Z", prerelease=False):
 
 if __name__ == "__main__":
     unittest.main()
+
