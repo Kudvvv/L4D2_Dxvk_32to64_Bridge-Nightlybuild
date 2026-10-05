@@ -78,6 +78,7 @@ def package(source, dll, output):
     (output / "docs").mkdir()
     shutil.copy2(ROOT / "docs/DXVK-MEMORY-EXPERIMENT.md", output / "docs/DXVK-MEMORY-EXPERIMENT.md")
     shutil.copy2(ROOT / "docs/PAGEBLOCK-DIAGNOSTICS.md", output / "docs/PAGEBLOCK-DIAGNOSTICS.md")
+    shutil.copy2(ROOT / "docs/READBACK-RECOVERY-EXPERIMENT.md", output / "docs/READBACK-RECOVERY-EXPERIMENT.md")
     (output / "patches").mkdir()
     shutil.copy2(ROOT / "patches/dxvk-memory-experiment.patch", output / "patches/dxvk-memory-experiment.patch")
     shutil.copytree(Path(__file__).parent, output / "source", ignore=shutil.ignore_patterns("__pycache__"))

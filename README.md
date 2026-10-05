@@ -142,6 +142,8 @@ Host 内存／CPU 诊断更新提供独立的 `l4d2-bridge-host-diagnostics` 包
 
 进一步调查地图内 CPU backing 的 [PagefileShadow 寿命诊断](docs/PAGEBLOCK-DIAGNOSTICS.md) 为独立诊断更新。启用 `client.pageBlockDiagnostics=True` 后记录资源的锁定／复用、按字节统计、突发分配及四档纯模拟 LRU；输出 `bin/l4d2-pageblock.log`。默认关闭；诊断不释放 backing、不改变映射缓存或渲染。只更新兼容的客户端 DLL，保留 Host 和现用 DXVK。
 
+[Forced readback recovery 前置实验](docs/READBACK-RECOVERY-EXPERIMENT.md) 默认关闭。安装 `l4d2-bridge-readback-experiment` 中的匹配客户端／Host，启用 `client.testReadbackRecovery=True`，从当前 x64 backend 的普通 MANAGED 2D mip0 取回内容，与仍保留的原 backing 逐字节比较。输出 `bin/l4d2-readback.log`；不释放正常 backing、不修改 retention policy，也不声称真实 miss 已通过。现用 DXVK/mem1 保留不变。
+
 命令队列 CPU 测试版提供 `l4d2-bridge-cpu-update` 包，需要同时更新客户端 DLL 与 Host EXE。它通过跨进程事件唤醒空队列的消费者，减少等待期间的 CPU 开销；游戏帧率与稳定性仍待实测。安装和验证见 [CPU 测试说明](docs/CPU-QUEUE-TEST.md)。第二轮增加仅桥／游戏内部的等待计数并合并重复唤醒；纹理资源池尚未实现，设计见 [纹理复用说明](docs/TEXTURE-REUSE-DESIGN.md)。
 
 ## 从源码构建
@@ -389,6 +391,8 @@ The Host diagnostic update provides a separate `l4d2-bridge-host-diagnostics` ar
 The [optional 1.0.1 mem1 memory fix](docs/DXVK-MEMORY-EXPERIMENT.md) replaces only the x64 backend, providing the B580-tested smaller mapped-chunk policy and optional allocation-attribution logs. It is plainly marked as altered DXVK; the default full package still uses the official backend. Long-term growth has not been proven bounded.
 
 The separate [PagefileShadow lifetime diagnostic update](docs/PAGEBLOCK-DIAGNOSTICS.md) investigates CPU backing during gameplay. Enable `client.pageBlockDiagnostics=True` to collect resource access history, byte-weighted summaries, allocation bursts and four purely simulated LRU budgets in `bin/l4d2-pageblock.log`. It defaults off and does not discard backing or change the mapped-view cache or rendering. Update only the compatible client DLL, preserving your Host and chosen DXVK backend.
+
+The [forced readback recovery prerequisite experiment](docs/READBACK-RECOVERY-EXPERIMENT.md) also defaults off. Install the matched client/Host from `l4d2-bridge-readback-experiment`, then enable `client.testReadbackRecovery=True`. Current x64 backend MANAGED 2D mip0 contents are read into a separate temporary section and compared byte-for-byte against the retained original backing. Results go to `bin/l4d2-readback.log`. No normal backing is evicted, no retention policy changes, and actual-deletion recovery is not yet claimed. Preserve your chosen DXVK/mem1 backend.
 
 The command queue CPU test build provides `l4d2-bridge-cpu-update`: update both the client DLL and Host EXE. Cross-process event wakeups reduce CPU spent waiting on empty queues; game frame rate and stability still require testing. See the [CPU test guide](docs/CPU-QUEUE-TEST.md). The second round adds local wait counters and coalesces notifications. An additional texture pool is not implemented; see the [texture reuse design](docs/TEXTURE-REUSE-DESIGN.md).
 

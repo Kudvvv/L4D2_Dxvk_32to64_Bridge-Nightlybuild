@@ -27,6 +27,7 @@ def package(source, dxvk, output):
     client_output = output.parent / "l4d2-client-only"
     host_output = output.parent / "l4d2-host-only"
     cpu_output = output.parent / "l4d2-cpu-update"
+    readback_output = output.parent / "l4d2-readback-experiment"
     inputs = {
         "bin/dxvk_d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
         "bin/.l4d2bridge/L4D2Bridge64.exe": (source / "bridge/_compDebugOptimized_x64/src/server/L4D2Bridge64.exe", 0x8664),
@@ -36,7 +37,7 @@ def package(source, dxvk, output):
     for path, expected in inputs.values():
         if machine(path) != expected:
             raise ValueError(f"Wrong architecture: {path}")
-    for destination in (output, client_output, host_output, cpu_output):
+    for destination in (output, client_output, host_output, cpu_output, readback_output):
         if destination.exists():
             raise FileExistsError(f"Output already exists; preserve or move it first: {destination}")
     output.mkdir(parents=True, exist_ok=False)
@@ -114,10 +115,28 @@ def package(source, dxvk, output):
     for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
         shutil.copy2(ROOT / filename, cpu_output / filename)
     (cpu_output / "SHA256.json").write_text(json.dumps(cpu_hashes, indent=2) + "\n")
+    # This protocol needs a matched client/Host pair, preserving the user's backend.
+    for relative in ("bin/dxvk_d3d9.dll", host_relative):
+        destination = readback_output / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(output / relative, destination)
+    recovery_guide = (ROOT / "docs/READBACK-RECOVERY-EXPERIMENT.md").read_text(encoding="utf-8")
+    recovery_guide = recovery_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (readback_output / "READBACK-RECOVERY-EXPERIMENT.md").write_text(recovery_guide, encoding="utf-8")
+    shutil.copytree(licenses, readback_output / "licenses")
+    for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
+        shutil.copy2(ROOT / filename, readback_output / filename)
+    third_party = (readback_output / "THIRD_PARTY.md").read_text(encoding="utf-8").replace(
+        "(docs/DXVK-MEMORY-EXPERIMENT.md)",
+        "(https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/codex/l4d2-demo/docs/DXVK-MEMORY-EXPERIMENT.md)",
+    )
+    (readback_output / "THIRD_PARTY.md").write_text(third_party, encoding="utf-8")
+    (readback_output / "SHA256.json").write_text(json.dumps(cpu_hashes, indent=2) + "\n")
     print(f"L4D2 D3D9 Bridge v{(ROOT / 'VERSION').read_text().strip()}: {output}")
     print(f"Client-only update: {client_output}; preserves the installed host and DXVK")
     print(f"Host diagnostics update: {host_output}; preserves the installed client, DXVK and configuration")
     print(f"CPU queue update: {cpu_output}; update both bridge binaries together")
+    print(f"Forced readback experiment: {readback_output}; matching client/Host, no backend or configuration overwrite")
 
 
 if __name__ == "__main__":

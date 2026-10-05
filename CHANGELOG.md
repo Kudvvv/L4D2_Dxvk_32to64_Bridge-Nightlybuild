@@ -4,6 +4,12 @@
 
 # 更新记录 / Changelog
 
+## Readback 前置实验 / Readback prerequisite experiment
+
+新增默认关闭的 `client.testReadbackRecovery`：匹配的客户端和 Host 从当前 DXVK MANAGED 2D mip0 resource 恢复完整逻辑内容到独立临时 section，随后才读取原 backing 逐字节验证。支持 DXT1/3/5 与普通 32 位色彩、确定性尺寸槽及同资源重复测试，记录显式 event-query FLUSH/等待和延迟。不改变正常 backing 保留，不实现真实淘汰或持久化策略。真实删除后的 hash 验证阶段等待第一阶段实际 L4D2 结果通过。安装及验证边界见 [实验说明](docs/READBACK-RECOVERY-EXPERIMENT.md)。
+
+Adds an opt-in matched client/Host forced-readback test. It reads the current backend resource into an independent temporary section, then compares logical bytes against retained ground truth, with deterministic format/size sampling, repetition and explicit event-query synchronization. It does not evict normal backing or add retention policy. Actual-deletion/hash recovery remains conditional on real-game phase-one validation.
+
 ## 诊断更新 / Diagnostic update
 
 新增可选 PagefileShadow 寿命、锁定语义、按字节汇总、分配突发及纯模拟 LRU 诊断。安装见 [说明](docs/PAGEBLOCK-DIAGNOSTICS.md)。此更新默认关闭，不是新的内存回收修复，不修改资源寿命、真实分配／映射／回收、IPC 或后端。
