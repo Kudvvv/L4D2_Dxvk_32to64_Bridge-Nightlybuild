@@ -85,7 +85,7 @@ index 9de506f..c9e97f1 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_device.cpp b/bridge/src/client/d3d9_device.cpp
-index 1abdf20..944d577 100644
+index 1abdf20..0cb6db4 100644
 --- a/bridge/src/client/d3d9_device.cpp
 +++ b/bridge/src/client/d3d9_device.cpp
 @@ -1,3 +1,7 @@
@@ -96,7 +96,17 @@ index 1abdf20..944d577 100644
  /*
   * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -46,6 +50,9 @@
+@@ -31,6 +35,9 @@
+ #include "d3d9_surface.h"
+ #include "d3d9_swapchain.h"
+ #include "d3d9_texture.h"
++// NV-DXVK start: Preserve backend creation errors and release rejected wrappers.
++#include "texture_creation.h"
++// NV-DXVK end
+ #include "d3d9_vertexbuffer.h"
+ #include "d3d9_vertexdeclaration.h"
+ #include "d3d9_vertexshader.h"
+@@ -46,6 +53,9 @@
  #include "util_semaphore.h"
  
  #include <wingdi.h>
@@ -106,18 +116,66 @@ index 1abdf20..944d577 100644
  #include <assert.h>
  
  #define GET_PRES_PARAM() (m_pSwapchain->getPresentationParameters())
-@@ -572,7 +579,10 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
+@@ -564,15 +574,31 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
+     return D3DERR_INVALIDCALL;
+   }
+ 
++  // NV-DXVK start: Match D3D9/DXVK dimension validation before creating a wrapper.
++  *ppTexture = nullptr;
++  if (!Width || !Height) {
++    Logger::warn(format_string("L4D2 CreateTexture rejected on client: hresult=0x%08lx width=%u height=%u levels=%u usage=0x%08lx format=0x%08lx pool=%u reason=zero-dimension",
++      static_cast<unsigned long>(D3DERR_INVALIDCALL), Width, Height, Levels,
++      static_cast<unsigned long>(Usage), static_cast<unsigned long>(Format), static_cast<unsigned>(Pool)));
++    return D3DERR_INVALIDCALL;
++  }
++  // NV-DXVK end
++
+   // When Levels is 0, D3D9 will calculate the mip requirements
+   if (Levels == 0) {
+     Levels = CalculateNumMipLevels(Width, Height);
+   }
+ 
    UID currentUID = 0;
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DTexture9_LSS* pLssTexture = nullptr;
++  // NV-DXVK end
    {
      const TEXTURE_DESC desc { Width, Height, 1, Levels, Usage, Format, Pool };
 -    auto* const pLssTexture = trackWrapper(new Direct3DTexture9_LSS(this, desc));
 +    // NV-DXVK start: The direct caller augments normalized external stack frames.
 +    auto site = l4d2_retention::enabled() ? l4d2_retention::creationSite(_ReturnAddress()) : std::string();
-+    auto* const pLssTexture = trackWrapper(new Direct3DTexture9_LSS(this, desc, std::move(site)));
++    pLssTexture = trackWrapper(new Direct3DTexture9_LSS(this, desc, std::move(site)));
 +    // NV-DXVK end
      (*ppTexture) = pLssTexture;
      {
        ClientMessage c(Commands::IDirect3DDevice9Ex_CreateTexture, getId());
+@@ -580,7 +606,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
+       c.send_many(Width, Height, Levels, Usage, Format, Pool, (uint32_t) pLssTexture->getId());
+     }
+   }
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateTexture()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateTexture()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateTexture failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssTexture->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssTexture, ppTexture, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
 index 300aaf5..561d903 100644
 --- a/bridge/src/client/d3d9_lss.cpp
@@ -493,7 +551,7 @@ index 86a19d4..2db4f68 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_texture.cpp b/bridge/src/client/d3d9_texture.cpp
-index 3f4a64f..cf6a668 100644
+index 3f4a64f..6a459fe 100644
 --- a/bridge/src/client/d3d9_texture.cpp
 +++ b/bridge/src/client/d3d9_texture.cpp
 @@ -1,3 +1,7 @@
@@ -504,7 +562,20 @@ index 3f4a64f..cf6a668 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -121,6 +125,10 @@ HRESULT Direct3DTexture9_LSS::GetSurfaceLevel(UINT Level, IDirect3DSurface9** pp
+@@ -66,7 +70,11 @@ ULONG Direct3DTexture9_LSS::Release() {
+ }
+ 
+ void Direct3DTexture9_LSS::onDestroy() {
+-  ClientMessage { Commands::IDirect3DTexture9_Destroy, getId() };
++  // NV-DXVK start: A failed backend creation does not own a server object.
++  if (m_serverCreated) {
++    ClientMessage { Commands::IDirect3DTexture9_Destroy, getId() };
++  }
++  // NV-DXVK end
+ }
+ 
+ HRESULT Direct3DTexture9_LSS::GetLevelDesc(UINT Level, D3DSURFACE_DESC* pDesc) {
+@@ -121,6 +129,10 @@ HRESULT Direct3DTexture9_LSS::GetSurfaceLevel(UINT Level, IDirect3DSurface9** pp
    GetLevelDesc(Level, &desc);
  
    Direct3DSurface9_LSS* pLssSurface = trackWrapper(new Direct3DSurface9_LSS(m_pDevice, this, desc));
@@ -515,7 +586,7 @@ index 3f4a64f..cf6a668 100644
    setChild(Level, pLssSurface);
      
    (*ppSurfaceLevel) = pLssSurface;
-@@ -186,4 +194,4 @@ HRESULT Direct3DTexture9_LSS::AddDirtyRect(CONST RECT* pDirtyRect) {
+@@ -186,4 +198,4 @@ HRESULT Direct3DTexture9_LSS::AddDirtyRect(CONST RECT* pDirtyRect) {
      c.send_data(sizeof(RECT), (void*) pDirtyRect);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("AddDirtyRect()", D3DERR_INVALIDCALL, currentUID);
@@ -523,7 +594,7 @@ index 3f4a64f..cf6a668 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_texture.h b/bridge/src/client/d3d9_texture.h
-index 2a4b9e4..24c1536 100644
+index 2a4b9e4..9f5118a 100644
 --- a/bridge/src/client/d3d9_texture.h
 +++ b/bridge/src/client/d3d9_texture.h
 @@ -1,3 +1,7 @@
@@ -542,12 +613,15 @@ index 2a4b9e4..24c1536 100644
  
  #include <unknwn.h>
  #include <d3d9.h>
-@@ -32,11 +37,18 @@
+@@ -32,15 +37,29 @@
   */
  class Direct3DTexture9_LSS: public LssBaseTexture2D<IDirect3DTexture9> {
    void onDestroy() override;
 +  // NV-DXVK start: Parent policy stores only hashes and non-owning subresource metadata.
 +  std::shared_ptr<l4d2_retention::Parent> m_retention;
++  // NV-DXVK end
++  // NV-DXVK start: Failed creation has no server resource to destroy.
++  bool m_serverCreated = true;
 +  // NV-DXVK end
  
  public:
@@ -562,7 +636,15 @@ index 2a4b9e4..24c1536 100644
    }
  
    D3DSURFACE_DESC getLevelDesc(const UINT level) const;
-@@ -56,4 +68,4 @@ public:
+ 
++  // NV-DXVK start: Only an explicit failed server response cancels destruction.
++  void cancelServerCreation() { m_serverCreated = false; }
++  // NV-DXVK end
++
+   /*** IUnknown methods ***/
+   STDMETHOD(QueryInterface)(THIS_ REFIID riid, void** ppvObj);
+   STDMETHOD_(ULONG, AddRef)(THIS);
+@@ -56,4 +75,4 @@ public:
    STDMETHOD(LockRect)(THIS_ UINT Level, D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags);
    STDMETHOD(UnlockRect)(THIS_ UINT Level);
    STDMETHOD(AddDirtyRect)(THIS_ CONST RECT* pDirtyRect);
@@ -778,7 +860,7 @@ index 0000000..f4f8b17
 +}
 +}
 diff --git a/bridge/src/client/meson.build b/bridge/src/client/meson.build
-index 2ad1e79..69a1fb1 100644
+index 2ad1e79..5b4092a 100644
 --- a/bridge/src/client/meson.build
 +++ b/bridge/src/client/meson.build
 @@ -1,3 +1,7 @@
@@ -789,7 +871,7 @@ index 2ad1e79..69a1fb1 100644
  #############################################################################
  # Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
  #
-@@ -85,6 +89,14 @@ d3d9_header = files([
+@@ -85,10 +89,19 @@ d3d9_header = files([
    'framework.h',
    'lockable_buffer.h',
    'message_channels.h',
@@ -804,7 +886,12 @@ index 2ad1e79..69a1fb1 100644
    'pch.h',
    'remix_state.h',
    'resource.h',
-@@ -102,7 +114,7 @@ thread_dep = dependency('threads')
+   'shadow_map.h',
++  'texture_creation.h',
+   'window.h',
+ ])
+ 
+@@ -102,7 +115,7 @@ thread_dep = dependency('threads')
  
  d3d9_dll = shared_library('d3d9', d3d9_header, d3d9_src, d3d9_res, 
    sources             : [ bridge_version ],
@@ -813,7 +900,7 @@ index 2ad1e79..69a1fb1 100644
    include_directories : [ bridge_include_path, util_include_path, detours_include_path, public_include_path ],
    vs_module_defs      : 'd3d9_lss.def')
  
-@@ -116,4 +128,4 @@ custom_target('copy_d3d9_to_output',
+@@ -116,4 +129,4 @@ custom_target('copy_d3d9_to_output',
      build_by_default : true,
      depends          : [ d3d9_dll ],
      command          : [copy_script_path, meson.current_build_dir(), output_dir, 'd3d9*'] )
@@ -2327,6 +2414,38 @@ index 0000000..5389ad6
 +  }
 +};
 +}
+diff --git a/bridge/src/client/texture_creation.h b/bridge/src/client/texture_creation.h
+new file mode 100644
+index 0000000..2d99dd4
+--- /dev/null
++++ b/bridge/src/client/texture_creation.h
+@@ -0,0 +1,26 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include <windows.h>
++
++namespace l4d2_texture {
++
++struct CreationResult {
++  HRESULT hresult;
++  bool serverResponded;
++};
++
++template<typename Texture, typename Interface>
++HRESULT completeCreation(Texture* texture, Interface** output, CreationResult result) {
++  if (FAILED(result.hresult)) {
++    // A timeout leaves creation unresolved; an ordered Destroy must still be sent.
++    if (result.serverResponded) { texture->cancelServerCreation(); }
++    *output = nullptr;
++    texture->Release();
++  }
++  return result.hresult;
++}
++
++}
 diff --git a/bridge/src/meson.build b/bridge/src/meson.build
 index b7d5bdf..a7d83f6 100644
 --- a/bridge/src/meson.build
@@ -2767,7 +2886,7 @@ index 0000000..c6ccbb1
 +};
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..b38150c 100644
+index 86434ec..e7fd5e9 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -2892,23 +3011,34 @@ index 86434ec..b38150c 100644
          }
          break;
        }
-@@ -791,6 +838,15 @@ void ProcessDeviceCommandQueue() {
+@@ -787,13 +834,23 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DFORMAT, Format);
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+-        LPDIRECT3DTEXTURE9 pTexture;
++        LPDIRECT3DTEXTURE9 pTexture = nullptr;
          const auto hresult = pD3DDevice->CreateTexture(IN Width, IN Height, IN Levels, IN Usage, IN Format, IN Pool, OUT & pTexture, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pTexture;
+-        }
+-        assert(SUCCEEDED(hresult));
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pTexture), l4d2_host_memory::ResourceKind::Texture);
 +        } else {
-+          // NV-DXVK start: Capture the failed backend call before the upstream assertion stops execution.
++          // NV-DXVK start: Record backend creation errors before returning them to the client.
 +          Logger::err(format_string("L4D2 CreateTexture failed: hresult=0x%08lx uid=%u resource_id=%u device_id=%u width=%u height=%u levels=%u usage=0x%08lx format=0x%08lx pool=%u host_bits=%u",
 +            static_cast<unsigned long>(hresult), currentUID, pHandle, pD3DDeviceHandle, Width, Height, Levels,
 +            static_cast<unsigned long>(Usage), static_cast<unsigned long>(Format), static_cast<unsigned>(Pool),
 +            static_cast<unsigned>(sizeof(void*) * 8)));
 +          sampleHostMemory(true, "create-texture-failed");
 +          // NV-DXVK end
-         }
-         assert(SUCCEEDED(hresult));
++        }
++        // NV-DXVK start: D3D9 creation failures are API results, including invalid-call probes.
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -811,6 +867,7 @@ void ProcessDeviceCommandQueue() {
++        // NV-DXVK end
+         break;
+       }
+       case IDirect3DDevice9Ex_CreateVolumeTexture:
+@@ -811,6 +868,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateVolumeTexture(IN Width, IN Height, IN Depth, IN Levels, IN Usage, IN Format, IN Pool, OUT & pVolumeTexture, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pVolumeTexture;
@@ -2916,7 +3046,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -829,6 +886,7 @@ void ProcessDeviceCommandQueue() {
+@@ -829,6 +887,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateCubeTexture(IN EdgeLength, IN Levels, IN Usage, IN Format, IN Pool, OUT & pCubeTexture, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pCubeTexture;
@@ -2924,7 +3054,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -846,6 +904,7 @@ void ProcessDeviceCommandQueue() {
+@@ -846,6 +905,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateVertexBuffer(IN Length, IN Usage, IN FVF, IN Pool, OUT & pVertexBuffer, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pVertexBuffer;
@@ -2932,7 +3062,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -863,6 +922,7 @@ void ProcessDeviceCommandQueue() {
+@@ -863,6 +923,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateIndexBuffer(IN Length, IN Usage, IN Format, IN Pool, OUT & pIndexBuffer, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pIndexBuffer;
@@ -2940,7 +3070,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -882,6 +942,7 @@ void ProcessDeviceCommandQueue() {
+@@ -882,6 +943,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateRenderTarget(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
@@ -2948,7 +3078,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -901,6 +962,7 @@ void ProcessDeviceCommandQueue() {
+@@ -901,6 +963,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateDepthStencilSurface(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
@@ -2956,7 +3086,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -1005,6 +1067,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1005,6 +1068,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateOffscreenPlainSurface(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
@@ -2964,7 +3094,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -1037,6 +1100,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1037,6 +1101,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->GetRenderTarget(RenderTargetIndex, &pRenderTarget);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pRenderTarget;
@@ -2972,7 +3102,7 @@ index 86434ec..b38150c 100644
          }
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          assert(SUCCEEDED(hresult));
-@@ -1067,6 +1131,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1067,6 +1132,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->GetDepthStencilSurface(&pZStencilSurface);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pZStencilSurface;
@@ -2980,7 +3110,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -1793,6 +1858,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1793,6 +1859,7 @@ void ProcessDeviceCommandQueue() {
          auto hresult = pSwapChain->GetFrontBufferData(pDestSurface);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pDestSurfaceHandle] = pDestSurface;
@@ -2988,7 +3118,7 @@ index 86434ec..b38150c 100644
          }
          hresult = ReturnSurfaceDataToClient(pDestSurface, hresult, currentUID);
          assert(SUCCEEDED(hresult));
-@@ -1808,6 +1874,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1808,6 +1875,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pSwapChain->GetBackBuffer(iBackBuffer, Type, &pBackbuffer);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pBackbuffer;
@@ -2996,7 +3126,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -2019,6 +2086,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2019,6 +2087,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pHandle];
          safeDestroy(pTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3004,7 +3134,7 @@ index 86434ec..b38150c 100644
          break;
        }
        case IDirect3DTexture9_GetDevice:
-@@ -2077,6 +2145,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2077,6 +2146,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pTexture->GetSurfaceLevel(IN Level, OUT & pSurfaceLevel);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pSurfaceLevel;
@@ -3012,7 +3142,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2120,6 +2189,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2120,6 +2190,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
          safeDestroy(pVolumeTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3020,7 +3150,7 @@ index 86434ec..b38150c 100644
          break;
        }
        case IDirect3DVolumeTexture9_GetDevice:
-@@ -2259,6 +2329,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2259,6 +2330,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pHandle];
          safeDestroy(pCubeTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3028,7 +3158,7 @@ index 86434ec..b38150c 100644
          break;
        }
        case IDirect3DCubeTexture9_GetDevice:
-@@ -2318,6 +2389,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2318,6 +2390,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pCubeTexture->GetCubeMapSurface(IN FaceType, IN Level, OUT & pCubeMapSurface);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pCubeMapSurfaceHandle] = pCubeMapSurface;
@@ -3036,7 +3166,7 @@ index 86434ec..b38150c 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2362,6 +2434,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2362,6 +2435,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pVertexBuffer = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
          safeDestroy(pVertexBuffer, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3044,7 +3174,7 @@ index 86434ec..b38150c 100644
          break;
        }
        case IDirect3DVertexBuffer9_GetDevice:
-@@ -2448,6 +2521,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2448,6 +2522,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pIndexBuffer = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
          safeDestroy(pIndexBuffer, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3052,7 +3182,7 @@ index 86434ec..b38150c 100644
          break;
        }
        case IDirect3DIndexBuffer9_GetDevice:
-@@ -2533,6 +2607,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2533,6 +2608,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
          safeDestroy(pSurface, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3060,7 +3190,7 @@ index 86434ec..b38150c 100644
          break;
        }
        case IDirect3DSurface9_GetDevice:
-@@ -2563,6 +2638,51 @@ void ProcessDeviceCommandQueue() {
+@@ -2563,6 +2639,51 @@ void ProcessDeviceCommandQueue() {
          assert(SUCCEEDED(hresult));
          break;
        }
@@ -3112,7 +3242,7 @@ index 86434ec..b38150c 100644
        case IDirect3DSurface9_LockRect:
        {
          // Currently we only recieve calls for LockRect in cases where backbuffer data is to be copied for screenshots
-@@ -2806,6 +2926,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2806,6 +2927,7 @@ void ProcessDeviceCommandQueue() {
        {
          GET_HND(pHandle);
          gpD3DResources.erase(pHandle);
@@ -3120,7 +3250,7 @@ index 86434ec..b38150c 100644
          break;
        }
        case Bridge_UnlinkVolumeResource:
-@@ -3209,6 +3330,9 @@ void ProcessDeviceCommandQueue() {
+@@ -3209,6 +3331,9 @@ void ProcessDeviceCommandQueue() {
  
      const auto count = DeviceBridge::end_read_data();
  
@@ -3130,7 +3260,7 @@ index 86434ec..b38150c 100644
  #ifdef ENABLE_DATA_BATCHING_TRACE
      Logger::trace(format_string("Finished batch data read with %d data items.", count));
  #endif
-@@ -3268,14 +3392,26 @@ bool InitializeD3D() {
+@@ -3268,14 +3393,26 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -3160,7 +3290,7 @@ index 86434ec..b38150c 100644
      // Since vanilla dxvk is diabled attempt loading regular d3d9.dll which
      // could be either the system d3d9 one or our own Remix dxvk flavor of it.
      ghModule = LoadLibraryExA("d3d9.dll", nullptr,
-@@ -3285,6 +3421,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3422,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -3171,7 +3301,7 @@ index 86434ec..b38150c 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3451,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3452,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -3182,7 +3312,7 @@ index 86434ec..b38150c 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3488,12 +3632,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3488,12 +3633,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    ExceptionHandler::get().init();
  
    // Identify yourself
@@ -3201,7 +3331,7 @@ index 86434ec..b38150c 100644
  #endif
  
    BRIDGE_ASSERT_LOG((argCount >= 2), "Command line argument count received to launch server is not as expected");
-@@ -3554,6 +3701,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3554,6 +3702,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    }
    const SentryShutdownOnExit sentryShutdownOnExit;
  
@@ -3210,7 +3340,7 @@ index 86434ec..b38150c 100644
    // (3) Send ACK to Client. Connection has been established
    Logger::info("Sync request received, sending ACK response...");
    ServerMessage { Commands::Bridge_Ack, (uintptr_t) gpClientMessageChannel->getWorkerThreadId() };
-@@ -3589,6 +3738,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3589,6 +3739,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    bSignalDone.store(true);
    moduleCmdProcessingThread.join();
  
@@ -3219,7 +3349,7 @@ index 86434ec..b38150c 100644
    if (!dumpLeakedObjects()) {
      bridge_util::Logger::debug("No leaked objects dicovered at Direct3D module eviction.");
    }
-@@ -3624,4 +3775,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +3776,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;

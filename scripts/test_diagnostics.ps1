@@ -23,4 +23,8 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Pageblock diagnostics test compilation failed' }
   & ./pageblock-test.exe (Join-Path $testDir 'l4d2-pageblock.log')
   if ($LASTEXITCODE -ne 0) { throw "Pageblock diagnostics test failed: $LASTEXITCODE" }
+  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX "/I$source/bridge/src/client" "$repoRoot/tests/texture_creation.cpp" /Fe:texture-creation-test.exe
+  if ($LASTEXITCODE -ne 0) { throw 'Texture creation failure test compilation failed' }
+  & ./texture-creation-test.exe
+  if ($LASTEXITCODE -ne 0) { throw "Texture creation failure test failed: $LASTEXITCODE" }
 } finally { Pop-Location }
