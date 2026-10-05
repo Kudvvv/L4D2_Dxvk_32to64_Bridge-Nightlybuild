@@ -9,7 +9,7 @@
 ## NVIDIA RTX Remix Bridge
 
 - 来源：https://github.com/NVIDIAGameWorks/dxvk-remix
-- 固定提交：`9aa74f8dfad2188efbd0f717c64d9f8fa909787e`。
+- 原项目基准提交：`9aa74f8dfad2188efbd0f717c64d9f8fa909787e`；Nightly 跟随上游默认分支，实际构建提交见对应 Release 说明。
 - Copyright 2022–2024 NVIDIA CORPORATION & AFFILIATES，以及各文件声明的权利人。
 - 使用范围：Bridge 子项目及其依赖，不构建或分发 RTX 渲染器。
 - Bridge MIT 原文：[licenses/Bridge-MIT.txt](licenses/Bridge-MIT.txt)。
@@ -51,5 +51,5 @@ L4D2 与 Steam 属于 Valve，游戏及平台不包含在本项目的授权范�
 - 来源：https://github.com/Digger1955/dxvk-gplall/releases/tag/DXVK-GPLALL-2.6.8-2 。
 - 使用 GCC-WinMacLinux-SSE2-O3-LTO 发布包中的 x64/d3d9.dll，仅重命名，不修改二进制。
 - 归属 Digger1955、上游 DXVK 和原文件所列贡献者；保留原始 [LICENSE](licenses/DXVK-GPLALL-LICENSE.txt)。
-- 下载地址和 SHA-256 固定在 config/backend.json，打包记录 BACKEND.json 和 DLL 校验值。
+- 下载地址和 SHA-256 固定在 config/backend.json，构建目录记录 BACKEND.json 和 DLL 校验值；精简 Release 安装包不包含这些开发元数据，归档校验值由附件 .sha256 提供。
 - 原版实测结果不能视作该变体已经通过验证。
