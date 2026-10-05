@@ -17,6 +17,21 @@ def api(path):
 
 
 def pending():
+    manual = os.environ.get("UPSTREAM_COMMIT", "").strip()
+    if manual:
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", manual):
+            raise ValueError("Manual builds require a full 40-character commit SHA")
+        commit = api(f"repos/NVIDIAGameWorks/dxvk-remix/commits/{manual}")["sha"]
+        local = "bridge-commit-" + commit
+        try:
+            existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{local}")
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+        else:
+            if not existing["draft"]:
+                return []
+        return [{"tag": "commit-" + commit, "commit": commit, "release_tag": local}]
     rows = []
     page = 1
     latest_stable_seen = False

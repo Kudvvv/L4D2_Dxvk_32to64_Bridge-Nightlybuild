@@ -28,3 +28,9 @@ Requires the Visual Studio/MSVC/SDK and Python tools described in README.md:
 ```
 
 Existing dependency checkouts are preserved and rejected if they do not match the requested commit. Build from a fresh checkout for each version.
+
+## Upstream currently has no GitHub Releases
+
+As verified on 2026-10-05, the dxvk-remix Releases API returns an empty list. A successful detection-only run therefore skips compilation. It does not follow every branch commit or automatically infer releases from a different repository.
+
+To verify the complete build pipeline, run the workflow manually and fill `upstream_commit` with `9aa74f8dfad2188efbd0f717c64d9f8fa909787e` (the existing validated baseline). Another full upstream commit may be supplied, but the L4D2 patch must apply and compile. Manual builds are deduplicated by their full commit SHA. Leave the field empty for normal release detection.

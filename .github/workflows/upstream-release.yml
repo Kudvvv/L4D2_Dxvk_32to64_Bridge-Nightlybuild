@@ -3,6 +3,11 @@ on:
   schedule:
     - cron: '23 * * * *'
   workflow_dispatch:
+    inputs:
+      upstream_commit:
+        description: 'Optional full upstream commit SHA; empty means release detection'
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -25,6 +30,7 @@ jobs:
           python scripts/detect_release.py
         env:
           GH_TOKEN: ${{ github.token }}
+          UPSTREAM_COMMIT: ${{ inputs.upstream_commit }}
   build:
     needs: detect
     if: needs.detect.outputs.pending == 'true'
