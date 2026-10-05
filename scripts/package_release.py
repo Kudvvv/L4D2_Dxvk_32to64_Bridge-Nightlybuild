@@ -23,18 +23,43 @@ def machine(path):
     return struct.unpack_from("<H", data, offset + 4)[0]
 
 
-def package(source, dxvk, output):
+def package(source, dxvk, output, dxvk_x86=None):
+    if dxvk_x86 is None:
+        raise ValueError("The v1.1 full release requires --dxvk-x86 and the matching x86 Host build")
     client_output = output.parent / "l4d2-client-only"
+    host_output = output.parent / "l4d2-host-only"
+    cpu_output = output.parent / "l4d2-cpu-update"
+    readback_output = output.parent / "l4d2-readback-experiment"
+    retention_output = output.parent / "l4d2-retention-experiment"
+    comparison_output = output.parent / "l4d2-x86-host-comparison"
     inputs = {
         "bin/dxvk_d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
         "bin/.l4d2bridge/L4D2Bridge64.exe": (source / "bridge/_compDebugOptimized_x64/src/server/L4D2Bridge64.exe", 0x8664),
         "bin/.l4d2bridge/d3d9vk_x64.dll": (dxvk, 0x8664),
     }
+    inputs.update({
+        "bin/.l4d2bridge/L4D2Bridge32.exe": (source / "bridge/_compDebugOptimized_x86_server/src/server/L4D2Bridge32.exe", 0x14c),
+        "bin/.l4d2bridge/d3d9vk_x86.dll": (dxvk_x86, 0x14c),
+    })
+    comparison_inputs = {}
+    if dxvk_x86 is not None:
+        comparison_inputs = {
+            **inputs,
+            "bin/.l4d2bridge/L4D2Bridge32.exe": (source / "bridge/_compDebugOptimized_x86_server/src/server/L4D2Bridge32.exe", 0x14c),
+            "bin/.l4d2bridge/d3d9vk_x86.dll": (dxvk_x86, 0x14c),
+        }
     # Validate all inputs before creating output. Never deploy into a game directory.
-    for path, expected in inputs.values():
+    for path, expected in {**inputs, **comparison_inputs}.values():
         if machine(path) != expected:
             raise ValueError(f"Wrong architecture: {path}")
-    for destination in (output, client_output):
+    destinations = [output, client_output, host_output, cpu_output, readback_output, retention_output, output.parent / "l4d2-overlay-input-experiment"]
+    if comparison_inputs:
+        host32 = comparison_inputs["bin/.l4d2bridge/L4D2Bridge32.exe"][0].read_bytes()
+        pe_offset = struct.unpack_from("<I", host32, 60)[0]
+        if not struct.unpack_from("<H", host32, pe_offset + 22)[0] & 0x20:
+            raise ValueError("The x86 comparison host must be LARGEADDRESSAWARE")
+        destinations.append(comparison_output)
+    for destination in destinations:
         if destination.exists():
             raise FileExistsError(f"Output already exists; preserve or move it first: {destination}")
     output.mkdir(parents=True, exist_ok=False)
@@ -48,10 +73,14 @@ def package(source, dxvk, output):
     shutil.copy2(ROOT / "docs/TESTING.md", output / "TESTING.md")
     shutil.copy2(ROOT / "docs/MEMORY-DIAGNOSTICS.md", output / "MEMORY-DIAGNOSTICS.md")
     shutil.copy2(ROOT / "docs/FIRST-GAME-VALIDATION.md", output / "FIRST-GAME-VALIDATION.md")
-    for filename in ("README.md", "VERSION", "LICENSE", "THIRD_PARTY.md"):
+    for filename in ("README.md", "CHANGELOG.md", "VERSION", "LICENSE", "THIRD_PARTY.md"):
         shutil.copy2(ROOT / filename, output / filename)
+    shutil.copy2(ROOT / "config/dxvk-memory-1.0.1.conf", output / "dxvk-memory-1.0.1.conf")
     # Preserve the README's relative documentation and patch links in the package.
     shutil.copytree(ROOT / "docs", output / "docs")
+    shutil.copytree(ROOT / "config", output / "config")
+    for mode in ("X86-HOST.conf", "X64-HOST.conf", "OVERLAY-INPUT.conf"):
+        shutil.copy2(ROOT / "config" / mode, output / mode)
     shutil.copytree(ROOT / "patches", output / "patches")
     licenses = output / "licenses"
     licenses.mkdir()
@@ -62,23 +91,139 @@ def package(source, dxvk, output):
     (client_output / "bin").mkdir(parents=True, exist_ok=False)
     shutil.copy2(output / "bin/dxvk_d3d9.dll", client_output / "bin/dxvk_d3d9.dll")
     shutil.copy2(ROOT / "docs/MEMORY-DIAGNOSTICS.md", client_output / "MEMORY-DIAGNOSTICS.md")
+    pageblock_guide = (ROOT / "docs/PAGEBLOCK-DIAGNOSTICS.md").read_text(encoding="utf-8")
+    pageblock_guide = pageblock_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (client_output / "PAGEBLOCK-DIAGNOSTICS.md").write_text(pageblock_guide, encoding="utf-8")
     (client_output / "licenses").mkdir()
     for filename in ("Bridge-MIT.txt", "Bridge-third-party.txt"):
         shutil.copy2(licenses / filename, client_output / "licenses" / filename)
     shutil.copy2(licenses / "DXVK-LICENSE.txt", client_output / "licenses/DXVK-LICENSE.txt")
     for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
         shutil.copy2(ROOT / filename, client_output / filename)
+    # Partial updates do not ship the backend documentation tree. Keep the
+    # attribution reference usable without adding unrelated installation files.
+    third_party = (client_output / "THIRD_PARTY.md").read_text(encoding="utf-8")
+    third_party = third_party.replace(
+        "(docs/DXVK-MEMORY-EXPERIMENT.md)",
+        "(https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/codex/l4d2-demo/docs/DXVK-MEMORY-EXPERIMENT.md)",
+    )
+    (client_output / "THIRD_PARTY.md").write_text(third_party, encoding="utf-8")
     (client_output / "SHA256.json").write_text(json.dumps({
         "bin/dxvk_d3d9.dll": hashes["bin/dxvk_d3d9.dll"],
     }, indent=2) + "\n")
+    host_relative = "bin/.l4d2bridge/L4D2Bridge64.exe"
+    (host_output / "bin/.l4d2bridge").mkdir(parents=True, exist_ok=False)
+    shutil.copy2(output / host_relative, host_output / host_relative)
+    shutil.copy2(ROOT / "docs/HOST-MEMORY-DIAGNOSTICS.md", host_output / "HOST-MEMORY-DIAGNOSTICS.md")
+    gpu_guide = (ROOT / "docs/GPU-ALLOCATION-DIAGNOSTICS.md").read_text(encoding="utf-8")
+    gpu_guide = gpu_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (host_output / "GPU-ALLOCATION-DIAGNOSTICS.md").write_text(gpu_guide, encoding="utf-8")
+    (host_output / "licenses").mkdir()
+    for filename in ("Bridge-MIT.txt", "Bridge-third-party.txt", "DXVK-LICENSE.txt"):
+        shutil.copy2(licenses / filename, host_output / "licenses" / filename)
+    for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
+        shutil.copy2(ROOT / filename, host_output / filename)
+    (host_output / "SHA256.json").write_text(json.dumps({
+        host_relative: hashes[host_relative],
+    }, indent=2) + "\n")
+    cpu_hashes = {}
+    for relative in ("bin/dxvk_d3d9.dll", host_relative):
+        destination = cpu_output / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(output / relative, destination)
+        cpu_hashes[relative] = hashes[relative]
+    cpu_guide = (ROOT / "docs/CPU-QUEUE-TEST.md").read_text(encoding="utf-8")
+    cpu_guide = cpu_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (cpu_output / "CPU-QUEUE-TEST.md").write_text(cpu_guide, encoding="utf-8")
+    shutil.copy2(ROOT / "docs/TEXTURE-REUSE-DESIGN.md", cpu_output / "TEXTURE-REUSE-DESIGN.md")
+    shutil.copytree(licenses, cpu_output / "licenses")
+    for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
+        shutil.copy2(ROOT / filename, cpu_output / filename)
+    (cpu_output / "SHA256.json").write_text(json.dumps(cpu_hashes, indent=2) + "\n")
+    # This protocol needs a matched client/Host pair, preserving the user's backend.
+    for relative in ("bin/dxvk_d3d9.dll", host_relative):
+        destination = readback_output / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(output / relative, destination)
+    recovery_guide = (ROOT / "docs/READBACK-RECOVERY-EXPERIMENT.md").read_text(encoding="utf-8")
+    recovery_guide = recovery_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (readback_output / "READBACK-RECOVERY-EXPERIMENT.md").write_text(recovery_guide, encoding="utf-8")
+    learned_guide = (ROOT / "docs/LEARNED-RETENTION-EXPERIMENT.md").read_text(encoding="utf-8").replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (readback_output / "LEARNED-RETENTION-EXPERIMENT.md").write_text(learned_guide, encoding="utf-8")
+    shutil.copytree(licenses, readback_output / "licenses")
+    for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
+        shutil.copy2(ROOT / filename, readback_output / filename)
+    third_party = (readback_output / "THIRD_PARTY.md").read_text(encoding="utf-8").replace(
+        "(docs/DXVK-MEMORY-EXPERIMENT.md)",
+        "(https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/codex/l4d2-demo/docs/DXVK-MEMORY-EXPERIMENT.md)",
+    )
+    (readback_output / "THIRD_PARTY.md").write_text(third_party, encoding="utf-8")
+    (readback_output / "SHA256.json").write_text(json.dumps(cpu_hashes, indent=2) + "\n")
+    shutil.copytree(readback_output, retention_output)
+    retention_guide = (ROOT / "docs/LEARNED-RETENTION-EXPERIMENT.md").read_text(encoding="utf-8")
+    retention_guide = retention_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (retention_output / "LEARNED-RETENTION-EXPERIMENT.md").write_text(retention_guide, encoding="utf-8")
+    (retention_output / "LEARNED-RETENTION.conf").write_text(
+        "client.pageBlockRetentionPolicy = learned-aggressive\n"
+        "client.pageBlockRetentionDb = .l4d2bridge/resource-retention.db\n"
+        "client.pageBlockDiagnostics = True\n"
+        "client.testReadbackRecovery = False\n", encoding="utf-8")
+    if comparison_inputs:
+        comparison_hashes = {}
+        for relative, (path, _) in comparison_inputs.items():
+            destination = comparison_output / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, destination)
+            comparison_hashes[relative] = hashlib.sha256(destination.read_bytes()).hexdigest()
+        shutil.copytree(licenses, comparison_output / "licenses")
+        for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
+            shutil.copy2(readback_output / filename, comparison_output / filename)
+        guide = (ROOT / "docs/X86-HOST-COMPARISON.md").read_text(encoding="utf-8")
+        guide = guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+        (comparison_output / "X86-HOST-COMPARISON.md").write_text(guide, encoding="utf-8")
+        for architecture, enabled in (("X86", "True"), ("X64", "False")):
+            (comparison_output / f"{architecture}-HOST.conf").write_text(
+                "# Merge into bin/.l4d2bridge/bridge.conf; one value per key.\n"
+                "server.useVanillaDxvk = True\nforceX64Server = True\nuseSharedHeap = False\n"
+                f"client.testX86Server = {enabled}\n"
+                "client.pageBlockRetentionPolicy = keep\n"
+                "client.testReadbackRecovery = False\n", encoding="utf-8")
+        (comparison_output / "SHA256.json").write_text(json.dumps(comparison_hashes, indent=2) + "\n")
+        (comparison_output / "BACKEND-SOURCES.json").write_text(json.dumps({
+            "project": "doitsujin/dxvk", "version": "2.6.1", "modified": False,
+            "archive_url": "https://github.com/doitsujin/dxvk/releases/download/v2.6.1/dxvk-2.6.1.tar.gz",
+            "archive_sha256": "7ee0bef415910c943d3bda47d9d6821b9c8ca7a74f1e9f6151707d268cf3ce7f",
+            "files": {"x32/d3d9.dll": "bin/.l4d2bridge/d3d9vk_x86.dll", "x64/d3d9.dll": "bin/.l4d2bridge/d3d9vk_x64.dll"},
+        }, indent=2) + "\n")
+        print(f"x86/x64 host comparison: {comparison_output}; official DXVK 2.6.1, switch the host with client.testX86Server")
+    overlay_output = output.parent / "l4d2-overlay-input-experiment"
+    shutil.copytree(cpu_output, overlay_output)
+    overlay_guide = (ROOT / "docs/OVERLAY-INPUT-EXPERIMENT.md").read_text(encoding="utf-8").replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (overlay_output / "OVERLAY-INPUT-EXPERIMENT.md").write_text(overlay_guide, encoding="utf-8")
+    shutil.copy2(ROOT / "config/OVERLAY-INPUT.conf", overlay_output / "OVERLAY-INPUT.conf")
+    shutil.copy2(comparison_output / "BACKEND-SOURCES.json", output / "BACKEND-SOURCES.json")
+    # Keep newly added validation links usable in standalone update packages.
+    for destination in (readback_output, retention_output, comparison_output, overlay_output):
+        shutil.copy2(ROOT / "docs/V1.1-VALIDATION.md", destination / "V1.1-VALIDATION.md")
+        for guide in destination.glob("*.md"):
+            text = guide.read_text(encoding="utf-8").replace(
+                "(../README.md)",
+                "(https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/main/README.md)",
+            )
+            guide.write_text(text, encoding="utf-8")
     print(f"L4D2 D3D9 Bridge v{(ROOT / 'VERSION').read_text().strip()}: {output}")
     print(f"Client-only update: {client_output}; preserves the installed host and DXVK")
+    print(f"Host diagnostics update: {host_output}; preserves the installed client, DXVK and configuration")
+    print(f"CPU queue update: {cpu_output}; update both bridge binaries together")
+    print(f"Forced readback experiment: {readback_output}; matching client/Host, no backend or configuration overwrite")
+    print(f"Learned retention experiment: {retention_output}; matching client/Host, opt-in configuration snippet")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--dxvk", type=Path, required=True)
+    parser.add_argument("--dxvk-x86", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "dist/l4d2-bridge")
     args = parser.parse_args()
-    package(args.source.resolve(), args.dxvk.resolve(), args.output.resolve())
+    package(args.source.resolve(), args.dxvk.resolve(), args.output.resolve(), args.dxvk_x86.resolve() if args.dxvk_x86 else None)

@@ -71,6 +71,8 @@ int testShadowCache() {
 int main(int argc, char** argv) {
   if (argc != 2) { return 1; }
   using namespace l4d2_memory;
+  l4d2_queue::counters.waited(true, false);
+  l4d2_queue::counters.blocked(17);
   auto surface = allocate(4096, Kind::Surface, 64, 16, 21);
   auto vertex = allocate(8192, Kind::Vertex, 0, 0, 0, true);
   auto index = allocate(2048, Kind::Index);
@@ -98,6 +100,10 @@ int main(int argc, char** argv) {
   if (text.find("event=allocation-failed") == std::string::npos ||
       text.find("event=test-final") == std::string::npos ||
       text.find("scan_complete=1") == std::string::npos ||
-      text.find("counters_valid=1") == std::string::npos) { return 6; }
+      text.find("counters_valid=1") == std::string::npos ||
+      text.find("q_wait_events=1") == std::string::npos ||
+      text.find("q_full_wait_ms=17") == std::string::npos ||
+      text.find("cpu_times_valid=1") == std::string::npos ||
+      text.find("schema=2") == std::string::npos) { return 6; }
   return 0;
 }

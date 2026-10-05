@@ -1,4 +1,8 @@
-# v1.0.0 构建与设备验收
+> **v1.1 状态：**普通用户先看 [README](../README.md)。下文保留早期诊断验收方法；现在 x64/x86 gameplay、learned retention 和 x64 ReShade Home 已有实机证据，详见 [验证记录](V1.1-VALIDATION.md)。推荐配置关闭逐调用/详细 PageBlock/参考 readback 诊断。早期“仍待验证”描述不取代 v1.1 的限定验证结论。
+
+# v1.0.1 构建与设备验收
+
+1.0.1 完整包继续使用官方 DXVK 2.6.1，另提供已在 Arc B580 上验证的可选 mem1 内存修复包。版本范围及已知增长见 [更新记录](../CHANGELOG.md)，后端安装和验证见 [内存修复说明](DXVK-MEMORY-EXPERIMENT.md)。以下首次战役记录属于 1.0.0；两版本握手协议一致。
 
 这是复用 RTX Remix Bridge、接普通上游 DXVK 的第一版本，面向支持 DXVK/Vulkan 的显卡。可回收纹理映射版已由用户在 Arc B580 / DXVK 2.6.1 上带全部原有 Mod 进入战役，日志验证地址空间回收和正常退出，详见 [首次实测记录](FIRST-GAME-VALIDATION.md)。长时间稳定性、性能对照和其他设备仍待验证。首版不包含 TXVK 定制后端、vscript 修补或帧生成。
 

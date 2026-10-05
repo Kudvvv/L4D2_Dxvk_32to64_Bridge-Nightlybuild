@@ -36,12 +36,42 @@ jobs:
           if ((Get-FileHash .deps/dxvk.tar.gz -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'DXVK checksum mismatch' }
           tar -xzf .deps/dxvk.tar.gz -C .deps
           if ($LASTEXITCODE -ne 0) { throw 'DXVK extraction failed' }
-      - name: Build x86 client and x64 host
+      - name: Build x86 client, x64 host and isolated x86 comparison host
         shell: powershell
-        run: ./scripts/build_bridge.ps1 -DxvkDll .deps/dxvk-2.6.1/x64/d3d9.dll
+        run: ./scripts/build_bridge.ps1 -DxvkDll .deps/dxvk-2.6.1/x64/d3d9.dll -Dxvk32Dll .deps/dxvk-2.6.1/x32/d3d9.dll
       - name: Test x86 diagnostics and shadow eviction
         shell: powershell
         run: ./scripts/test_diagnostics.ps1
+      - name: Test x64 Host memory and CPU diagnostics
+        shell: powershell
+        run: ./scripts/test_host_diagnostics.ps1
+      - name: Test x86 Host address and process memory diagnostics
+        shell: powershell
+        run: ./scripts/test_host_diagnostics.ps1 -Platform x86
+      - name: Load the official x86 DXVK DLL in a native x86 process
+        shell: powershell
+        run: ./scripts/test_x86_backend.ps1
+      - name: Test native x86 and x64 adapter identifiers and Shader capability transport
+        shell: powershell
+        run: ./scripts/test_adapter_information.ps1
+      - name: Test ATI1 and ATI2 guarded texture transfers on x86 and x64
+        shell: powershell
+        run: ./scripts/test_ati_texture_layout.ps1
+      - name: Test cross-process overlay presentation windows and input capture
+        shell: powershell
+        run: ./scripts/test_overlay_presenter.ps1
+      - name: Test command queue idle CPU and x86 to x64 wakeups
+        shell: powershell
+        run: ./scripts/test_command_queue.ps1
+      - name: Test readback, real backing eviction, recovery and persistent retention
+        shell: powershell
+        run: ./scripts/test_readback_recovery.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-x86-host-comparison
+          path: dist/l4d2-x86-host-comparison/
+          include-hidden-files: true
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: l4d2-bridge-v${{ env.L4D2_PROJECT_VERSION }}
@@ -50,6 +80,36 @@ jobs:
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
+          name: l4d2-bridge-learned-retention-experiment
+          path: dist/l4d2-retention-experiment/
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
           name: l4d2-bridge-client-only
           path: dist/l4d2-client-only/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-readback-experiment
+          path: dist/l4d2-readback-experiment/
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-host-diagnostics
+          path: dist/l4d2-host-only/
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-cpu-update
+          path: dist/l4d2-cpu-update/
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-overlay-input-experiment
+          path: dist/l4d2-overlay-input-experiment/
+          include-hidden-files: true
           if-no-files-found: error

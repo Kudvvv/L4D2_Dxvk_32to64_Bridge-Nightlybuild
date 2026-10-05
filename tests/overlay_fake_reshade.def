@@ -1,0 +1,6 @@
+EXPORTS
+ReShadeRegisterAddon
+ReShadeUnregisterAddon
+ReShadeRegisterEvent
+ReShadeUnregisterEvent
+TestToggleOverlay

@@ -4,6 +4,7 @@
 
 param(
   [Parameter(Mandatory = $true)][string]$DxvkDll,
+  [Parameter(Mandatory = $true)][string]$Dxvk32Dll,
   [string]$VcVarsVer = '14.29'
 )
 $ErrorActionPreference = 'Stop'
@@ -23,5 +24,12 @@ try {
     $buildCommand = ". .\build_bridge.ps1; Build -Platform $arch -BuildFlavour debugoptimized -BuildSubDir _compDebugOptimized_$arch -VcVarsVer $VcVarsVer; exit `$LASTEXITCODE"
     Invoke-Checked 'powershell.exe' @('-NoProfile', '-Command', $buildCommand)
   }
+  if ($Dxvk32Dll) {
+    # A separate directory gives all utility code SERVER definitions instead of CLIENT.
+    $buildCommand = ". .\build_common.ps1; SetupVS -Platform x86 -VcVarsVer $VcVarsVer; & meson setup _compDebugOptimized_x86_server --buildtype debugoptimized --backend ninja --debug -Dexperimental_x86_server=true; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; & meson compile -C _compDebugOptimized_x86_server; exit `$LASTEXITCODE"
+    Invoke-Checked 'powershell.exe' @('-NoProfile', '-Command', $buildCommand)
+  }
 } finally { Pop-Location }
-Invoke-Checked 'python' @("$PSScriptRoot/package_release.py", '--source', $source, '--dxvk', $dxvkPath)
+$packageArgs = @("$PSScriptRoot/package_release.py", '--source', $source, '--dxvk', $dxvkPath)
+if ($Dxvk32Dll) { $packageArgs += @('--dxvk-x86', (Resolve-Path $Dxvk32Dll).Path) }
+Invoke-Checked 'python' $packageArgs
