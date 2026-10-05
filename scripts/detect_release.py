@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,8 +18,14 @@ def api(path):
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     })
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return json.load(response)
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            if error.code not in (429, 500, 502, 503, 504) or attempt == 2:
+                raise
+            time.sleep(2 ** attempt)
 
 
 def pending():
@@ -44,6 +51,11 @@ def pending():
         if not existing["draft"]:
             print(f"Already built upstream {branch}: {commit}")
             return []
+    releases = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases?per_page=100")
+    for release in releases:
+        if not release["draft"] and f"Upstream commit: {commit}" in (release.get("body") or ""):
+            print(f"Already published upstream commit {commit} as {release['tag_name']}")
+            return []
     names = classify(api, UPSTREAM, commit, info["commit"]["committer"]["date"])
     try:
         existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{names['release_tag']}")
@@ -62,4 +74,5 @@ if __name__ == "__main__":
         output.write("matrix=" + json.dumps({"include": rows}) + "\n")
         output.write("pending=" + str(bool(rows)).lower() + "\n")
     print(json.dumps(rows, indent=2))
+
 

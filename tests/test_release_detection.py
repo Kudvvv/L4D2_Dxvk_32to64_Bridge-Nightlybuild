@@ -20,6 +20,8 @@ class HeadDetection(unittest.TestCase):
         calls = []
         def api(path):
             calls.append(path)
+            if "/releases?" in path:
+                return []
             if path == detect.UPSTREAM:
                 return {"default_branch": branch}
             if "/commits/" in path:
@@ -38,7 +40,7 @@ class HeadDetection(unittest.TestCase):
         self.assertEqual(rows[0]["commit"], SHA)
         self.assertEqual(rows[0]["branch"], "main")
         self.assertIn(detect.UPSTREAM + "/commits/main", calls)
-        self.assertFalse(any("releases?" in p for p in calls))
+        self.assertFalse(any(p.startswith(detect.UPSTREAM + "/releases?") for p in calls))
 
     def test_default_branch_changes(self):
         rows, calls = self.run_case(branch="dev/bridge")
@@ -67,3 +69,4 @@ class HeadDetection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
