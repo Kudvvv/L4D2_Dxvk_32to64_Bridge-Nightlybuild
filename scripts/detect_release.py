@@ -1,9 +1,12 @@
-"""Emit a matrix of all stable upstream releases not yet published locally."""
+"""Follow the latest Remix default-branch commit, or a manually selected SHA."""
 import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
+
+UPSTREAM = "repos/NVIDIAGameWorks/dxvk-remix"
 
 
 def api(path):
@@ -21,49 +24,25 @@ def pending():
     if manual:
         if not re.fullmatch(r"[0-9a-fA-F]{40}", manual):
             raise ValueError("Manual builds require a full 40-character commit SHA")
-        commit = api(f"repos/NVIDIAGameWorks/dxvk-remix/commits/{manual}")["sha"]
-        local = "bridge-commit-" + commit
-        try:
-            existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{local}")
-        except urllib.error.HTTPError as error:
-            if error.code != 404:
-                raise
-        else:
-            if not existing["draft"]:
-                return []
-        return [{"tag": "commit-" + commit, "commit": commit, "release_tag": local}]
-    rows = []
-    page = 1
-    latest_stable_seen = False
-    while True:
-        releases = api(f"repos/NVIDIAGameWorks/dxvk-remix/releases?per_page=100&page={page}")
-        if not releases:
-            break
-        for release in releases:
-            if release["draft"] or release["prerelease"]:
-                continue
-            # Bootstrap from the newest stable release, then track future releases.
-            include = not latest_stable_seen or release["published_at"] >= "2026-10-05T00:00:00Z"
-            latest_stable_seen = True
-            if not include:
-                continue
-            tag = release["tag_name"]
-            if not re.fullmatch(r"[A-Za-z0-9_.-]+", tag):
-                raise ValueError(f"Unsupported upstream tag: {tag!r}")
-            local = "bridge-" + tag
-            try:
-                existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{local}")
-            except urllib.error.HTTPError as error:
-                if error.code != 404:
-                    raise
-            else:
-                if not existing["draft"]:
-                    continue
-            commit = api(f"repos/NVIDIAGameWorks/dxvk-remix/commits/{tag}")["sha"]
-            rows.append({"tag": tag, "commit": commit, "release_tag": local})
-        page += 1
-    # Start with the oldest missing versions; subsequent runs drain the backlog.
-    return list(reversed(rows))[:8]
+        ref, branch = manual, "manual"
+    else:
+        branch = api(UPSTREAM)["default_branch"]
+        ref = branch
+    commit = api(f"{UPSTREAM}/commits/{urllib.parse.quote(ref, safe='')}")["sha"]
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("Invalid resolved upstream SHA")
+    local = "bridge-commit-" + commit
+    try:
+        existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{local}")
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise
+    else:
+        if not existing["draft"]:
+            print(f"Already built upstream {branch}: {commit}")
+            return []
+    return [{"tag": "commit-" + commit, "commit": commit,
+             "release_tag": local, "branch": branch}]
 
 
 if __name__ == "__main__":

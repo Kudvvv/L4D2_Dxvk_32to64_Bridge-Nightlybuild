@@ -1,4 +1,4 @@
-"""Offline checks for release tracking, duplicate detection and API failures."""
+"""Offline checks for branch HEAD tracking and safe retry/deduplication."""
 import importlib.util
 import os
 from pathlib import Path
@@ -9,44 +9,58 @@ from urllib.error import HTTPError
 spec = importlib.util.spec_from_file_location("detect", Path(__file__).parents[1] / "scripts/detect_release.py")
 detect = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(detect)
+SHA = "a" * 40
 
 
-class ReleaseDetection(unittest.TestCase):
-    def run_case(self, releases, existing=None, failure=None):
+class HeadDetection(unittest.TestCase):
+    def run_case(self, existing=None, failure=None, manual="", branch="main"):
+        calls = []
         def api(path):
-            if "releases?" in path:
-                return releases if path.endswith("&page=1") else []
+            calls.append(path)
+            if path == detect.UPSTREAM:
+                return {"default_branch": branch}
             if "/commits/" in path:
-                return {"sha": "a" * 40}
+                return {"sha": SHA}
             if failure:
                 raise HTTPError(path, failure, "failure", {}, None)
-            if existing:
+            if existing is not None:
                 return existing
             raise HTTPError(path, 404, "missing", {}, None)
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": ""}), patch.object(detect, "api", api):
-            return detect.pending()
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": manual}), patch.object(detect, "api", api):
+            rows = detect.pending()
+        return rows, calls
 
-    def test_bootstrap_and_skip_historical(self):
-        self.assertEqual([r["tag"] for r in self.run_case([
-            release("v2", "2026-09-01T00:00:00Z"), release("v1", "2025-01-01T00:00:00Z")])], ["v2"])
+    def test_tracks_latest_default_branch(self):
+        rows, calls = self.run_case()
+        self.assertEqual(rows[0]["commit"], SHA)
+        self.assertEqual(rows[0]["branch"], "main")
+        self.assertIn(detect.UPSTREAM + "/commits/main", calls)
+        self.assertFalse(any("releases?" in p for p in calls))
 
-    def test_missed_releases_and_prerelease(self):
-        rows = self.run_case([release("rc", prerelease=True), release("v3"), release("v2")])
-        self.assertEqual([r["tag"] for r in rows], ["v2", "v3"])
+    def test_default_branch_changes(self):
+        rows, calls = self.run_case(branch="dev/bridge")
+        self.assertEqual(rows[0]["branch"], "dev/bridge")
+        self.assertIn(detect.UPSTREAM + "/commits/dev%2Fbridge", calls)
 
-    def test_existing_and_draft_retry(self):
-        self.assertEqual(self.run_case([release("v1")], {"draft": False}), [])
-        self.assertEqual(len(self.run_case([release("v1")], {"draft": True})), 1)
+    def test_existing_success_skipped(self):
+        self.assertEqual(self.run_case(existing={"draft": False})[0], [])
 
-    def test_api_failures_are_not_missing_releases(self):
+    def test_draft_retried(self):
+        self.assertEqual(len(self.run_case(existing={"draft": True})[0]), 1)
+
+    def test_api_failure_not_mistaken_for_new_commit(self):
         with self.assertRaises(HTTPError):
-            self.run_case([release("v1")], failure=403)
+            self.run_case(failure=403)
 
+    def test_manual_override(self):
+        rows, calls = self.run_case(manual=SHA)
+        self.assertEqual(rows[0]["branch"], "manual")
+        self.assertNotIn(detect.UPSTREAM, calls)
 
-def release(tag, date="2026-10-05T01:00:00Z", prerelease=False):
-    return {"tag_name": tag, "published_at": date, "draft": False, "prerelease": prerelease}
+    def test_invalid_manual_input(self):
+        with self.assertRaises(ValueError):
+            self.run_case(manual="main; echo unsafe")
 
 
 if __name__ == "__main__":
     unittest.main()
-
