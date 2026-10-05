@@ -24,6 +24,8 @@ def machine(path):
 
 
 def package(source, dxvk, output, dxvk_x86=None):
+    if dxvk_x86 is None:
+        raise ValueError("The v1.1 full release requires --dxvk-x86 and the matching x86 Host build")
     client_output = output.parent / "l4d2-client-only"
     host_output = output.parent / "l4d2-host-only"
     cpu_output = output.parent / "l4d2-cpu-update"
@@ -35,6 +37,10 @@ def package(source, dxvk, output, dxvk_x86=None):
         "bin/.l4d2bridge/L4D2Bridge64.exe": (source / "bridge/_compDebugOptimized_x64/src/server/L4D2Bridge64.exe", 0x8664),
         "bin/.l4d2bridge/d3d9vk_x64.dll": (dxvk, 0x8664),
     }
+    inputs.update({
+        "bin/.l4d2bridge/L4D2Bridge32.exe": (source / "bridge/_compDebugOptimized_x86_server/src/server/L4D2Bridge32.exe", 0x14c),
+        "bin/.l4d2bridge/d3d9vk_x86.dll": (dxvk_x86, 0x14c),
+    })
     comparison_inputs = {}
     if dxvk_x86 is not None:
         comparison_inputs = {
@@ -72,6 +78,9 @@ def package(source, dxvk, output, dxvk_x86=None):
     shutil.copy2(ROOT / "config/dxvk-memory-1.0.1.conf", output / "dxvk-memory-1.0.1.conf")
     # Preserve the README's relative documentation and patch links in the package.
     shutil.copytree(ROOT / "docs", output / "docs")
+    shutil.copytree(ROOT / "config", output / "config")
+    for mode in ("X86-HOST.conf", "X64-HOST.conf", "OVERLAY-INPUT.conf"):
+        shutil.copy2(ROOT / "config" / mode, output / mode)
     shutil.copytree(ROOT / "patches", output / "patches")
     licenses = output / "licenses"
     licenses.mkdir()
@@ -192,6 +201,16 @@ def package(source, dxvk, output, dxvk_x86=None):
     overlay_guide = (ROOT / "docs/OVERLAY-INPUT-EXPERIMENT.md").read_text(encoding="utf-8").replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
     (overlay_output / "OVERLAY-INPUT-EXPERIMENT.md").write_text(overlay_guide, encoding="utf-8")
     shutil.copy2(ROOT / "config/OVERLAY-INPUT.conf", overlay_output / "OVERLAY-INPUT.conf")
+    shutil.copy2(comparison_output / "BACKEND-SOURCES.json", output / "BACKEND-SOURCES.json")
+    # Keep newly added validation links usable in standalone update packages.
+    for destination in (readback_output, retention_output, comparison_output, overlay_output):
+        shutil.copy2(ROOT / "docs/V1.1-VALIDATION.md", destination / "V1.1-VALIDATION.md")
+        for guide in destination.glob("*.md"):
+            text = guide.read_text(encoding="utf-8").replace(
+                "(../README.md)",
+                "(https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/main/README.md)",
+            )
+            guide.write_text(text, encoding="utf-8")
     print(f"L4D2 D3D9 Bridge v{(ROOT / 'VERSION').read_text().strip()}: {output}")
     print(f"Client-only update: {client_output}; preserves the installed host and DXVK")
     print(f"Host diagnostics update: {host_output}; preserves the installed client, DXVK and configuration")
@@ -204,7 +223,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--dxvk", type=Path, required=True)
-    parser.add_argument("--dxvk-x86", type=Path)
+    parser.add_argument("--dxvk-x86", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "dist/l4d2-bridge")
     args = parser.parse_args()
     package(args.source.resolve(), args.dxvk.resolve(), args.output.resolve(), args.dxvk_x86.resolve() if args.dxvk_x86 else None)

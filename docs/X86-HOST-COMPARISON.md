@@ -1,6 +1,8 @@
-# 32 位桥服务器 / DXVK 内存对照实验
+# v1.1 x86 Host：使用、实现与历史对照方法
 
-本包用于直接比较同一桥客户端、同一转发逻辑下，32 位和 64 位服务器搭配官方 DXVK 2.6.1 时的内存表现。它不是正式的 32→64 发布更新，不预先假定哪一端更省内存。游戏测试结果决定结论。
+**v1.1 状态：**x86 Host 已实机确认正常启动/进图，现为正式可选模式。完整包同时包含 x86/x64 Host 和官方 DXVK 2.6.1 两种位数；一般使用保持 `learned-aggressive`，仅切换 `client.testX86Server`。作者观察到优化后 x86 总系统 RAM 约 16.7 GB、无桥约 16.5 GB；不是固定 +0.2 GB 保证。正常安装见 [README](../README.md)，证据见 [验证记录](V1.1-VALIDATION.md)。
+
+以下保留独立对照包及 KEEP 控制变量测试方法，**不是 v1.1 推荐配置的替代说明**。
 
 ## 安装与切换
 
@@ -94,7 +96,7 @@ CI 构建实际 x86 / x64 服务器，校验每个 EXE / DLL 的 PE 架构与 x8
 
 # x86 bridge host / DXVK memory comparison
 
-This experimental package compares an x86 host with official x86 DXVK 2.6.1 against an x64 host with official x64 DXVK 2.6.1, using the same x86 bridge client and command forwarding logic. It makes no claim about memory savings before an actual game test.
+The x86 Host is a hardware-tested optional v1.1 mode; ordinary setup is in the [README](../README.md), with measured results in [validation](V1.1-VALIDATION.md). The following preserves the historical comparison-package methodology, including KEEP for controlled comparisons. This package compares an x86 host with official x86 DXVK 2.6.1 against an x64 host with official x64 DXVK 2.6.1, using the same x86 bridge client and command forwarding logic. The current author-reported x86 learned-aggressive result is approximately 16.7 GB total system RAM versus 16.5 GB without Bridge, not a fixed overhead guarantee.
 
 Close the game and hosts, back up `bin/dxvk_d3d9.dll` and `bin/.l4d2bridge`, then merge the package's `bin` directory into the game installation. The package preserves your existing `bridge.conf`. Both supplied DXVK DLLs are unmodified official files; use them for the comparison instead of mixing the x86 official backend with an x64 customized backend.
 

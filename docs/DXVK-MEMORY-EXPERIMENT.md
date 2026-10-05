@@ -4,6 +4,8 @@
 
 # v1.0.1 可选 DXVK 内存修复 mem1 / Optional memory fix
 
+**v1.1 状态：**继续提供同一基于官方 DXVK 2.6.1 x64 的可选 mem1 小幅优化版；当前构建 artifact 名为 `l4d2-bridge-memory-update-v1.1`，配置文件保留历史名 `dxvk-memory-1.0.1.conf`。完整包提供官方 2.6.1 x32/x64，用户也可按自己的 GPU/驱动兼容性选择其他官方版本。下文 `v1.0.1` artifact 名与数据描述原来的硬件验证/发布；不表示新实现或新的 benchmark。
+
 这是 1.0.1 保留的可选后端修复，针对退图后映射内存的大块保留，已由项目作者在 Intel Arc B580 上完成两轮进退图验证。默认完整包仍使用官方 DXVK 2.6.1；本包是明确标识的修改版，不是官方二进制。支持范围由 DXVK/Vulkan 功能决定，没有 GPU 厂商白名单。
 
 在 [Build optional DXVK memory fix](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/workflows/build-dxvk-experiment.yml) 的成功运行中下载 `l4d2-bridge-memory-update-v1.0.1`。本包只含后端 DLL、配置示例、源码补丁及许可；首次安装先使用完整桥包。已经运行实测 mem1 + 16 MiB 设置的用户无需重新替换 DLL，本版本保留相同后端实现。

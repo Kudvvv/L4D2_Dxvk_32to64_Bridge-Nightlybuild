@@ -19,12 +19,12 @@
 ## DXVK
 
 - 来源：https://github.com/doitsujin/dxvk
-- 第一版默认随包使用官方 v2.6.1 的 x64 `d3d9.dll`，仅改名为 `d3d9vk_x64.dll`，不修改该 DLL。
+- v1.1 完整包随附官方 v2.6.1 的 x32/x64 `d3d9.dll`，分别仅改名为 `d3d9vk_x86.dll` / `d3d9vk_x64.dll`，不修改这些 DLL。用户也可按 GPU/驱动兼容性自行选择匹配位数的其他官方版本。
 - 原版权归 Philip Rebohle、Joshua Ashton、Robin Kertels、Jeffrey Ellison 及对应贡献者。
 - zlib/libpng 许可原文：[licenses/DXVK-LICENSE.txt](licenses/DXVK-LICENSE.txt)。
 - 发布归档 SHA-256：`7ee0bef415910c943d3bda47d9d6821b9c8ca7a74f1e9f6151707d268cf3ce7f`，CI 在解压前检查。
 
-1.0.1 保留的可选 [DXVK 内存修复 mem1](docs/DXVK-MEMORY-EXPERIMENT.md) 是基于官方 v2.6.1 提交 `2b1a284f8453baa2bd193709b67e5183074c74ba` 的明确标识修改版，通过独立补丁构建，不替换完整包的官方默认后端。原 DXVK 继续遵循其 zlib/libpng 许可；本项目新增实现遵循根目录 MIT 许可及上述生成来源声明。独立后端更新包保存上游源提交与原许可证，并保留 libdisplay-info Contributors 的 MIT、Khronos SPIRV-Headers 原许可、Vulkan-Headers 各文件的 Apache-2.0／MIT 声明、Valve Corporation 的 OpenVR BSD-3-Clause、Steve Reid 的 SHA-1 Public Domain 声明、MinGW 头文件和编译器运行库的原通知；具体源地址、固定提交和原文见包内 `UPSTREAM-SOURCES.json`、`licenses/`。其中 source checkout 的部分头文件供其他平台使用，不表示全部编入该 Windows DLL。Vulkan-Headers 的 [原始声明](https://github.com/KhronosGroup/Vulkan-Headers/blob/234c4b7370a8ea3239a214c9e871e4b17c89f4ab/LICENSE.md) 按文件适用不同条款，其中核心 C 头文件为 Apache-2.0，部分 C++ 文件允许 Apache-2.0 OR MIT，不归属本项目原创。
+从 1.0.1 延续至 v1.1 的可选 [DXVK 内存修复 mem1](docs/DXVK-MEMORY-EXPERIMENT.md) 是基于官方 v2.6.1 提交 `2b1a284f8453baa2bd193709b67e5183074c74ba` 的明确标识修改版，通过独立补丁构建，不替换完整包的官方默认后端。原 DXVK 继续遵循其 zlib/libpng 许可；本项目新增实现遵循根目录 MIT 许可及上述生成来源声明。独立后端更新包保存上游源提交与原许可证，并保留 libdisplay-info Contributors 的 MIT、Khronos SPIRV-Headers 原许可、Vulkan-Headers 各文件的 Apache-2.0／MIT 声明、Valve Corporation 的 OpenVR BSD-3-Clause、Steve Reid 的 SHA-1 Public Domain 声明、MinGW 头文件和编译器运行库的原通知；具体源地址、固定提交和原文见包内 `UPSTREAM-SOURCES.json`、`licenses/`。其中 source checkout 的部分头文件供其他平台使用，不表示全部编入该 Windows DLL。Vulkan-Headers 的 [原始声明](https://github.com/KhronosGroup/Vulkan-Headers/blob/234c4b7370a8ea3239a214c9e871e4b17c89f4ab/LICENSE.md) 按文件适用不同条款，其中核心 C 头文件为 Apache-2.0，部分 C++ 文件允许 Apache-2.0 OR MIT，不归属本项目原创。
 
 ## Microsoft Detours
 

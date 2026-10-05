@@ -6,6 +6,8 @@
 
 此配置开关只执行保留参考副本的第一阶段：从实际 x64 D3D9/DXVK resource 恢复内容，验证它是否与仍保留的客户端 backing 等价。**不删除正式 backing，不改变正常 retention policy，不添加真实 LRU、ResourceKey、持久化数据库、白名单或自动 promotion。** 不承诺降低当前内存占用。
 
+**v1.1 状态：**Phase 1 已通过 13 个资源、39/39 mip0 比较。它仍是开发者诊断，正常使用设 `client.testReadbackRecovery=False`；真实客户端淘汰由已实机使用的 learned-aggressive 策略另行处理。两阶段和实际 DXVK CPU buffer / GPU image 的边界见 [验证记录](V1.1-VALIDATION.md)。
+
 ## 安装和测试
 
 从本次成功 Bridge 构建下载 **`l4d2-bridge-readback-experiment`**，完全退出游戏与 Host，备份并同时替换：

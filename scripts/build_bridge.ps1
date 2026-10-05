@@ -4,7 +4,7 @@
 
 param(
   [Parameter(Mandatory = $true)][string]$DxvkDll,
-  [string]$Dxvk32Dll = '',
+  [Parameter(Mandatory = $true)][string]$Dxvk32Dll,
   [string]$VcVarsVer = '14.29'
 )
 $ErrorActionPreference = 'Stop'

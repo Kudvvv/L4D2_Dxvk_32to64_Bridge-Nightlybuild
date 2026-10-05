@@ -1,6 +1,6 @@
-# Vulkan 叠加层输入实验 / Vulkan overlay input experiment
+# v1.1 ReShade 输入修复 / Input fix and retained experiment notes
 
-本实验针对 Windows、窗口模式、标准 DXVK，以及 Vulkan ReShade 6.0.1。功能默认关闭，正常资源保留策略和 DXVK 后端不变。完整 Steam Shift+Tab 叠加层尚未验证，不能把本实验视为已完成 Steam 修复。
+**v1.1 状态：**Windows 窗口模式、标准 x64 DXVK、Vulkan ReShade 6.0.1 的 Home / 公开接口开关已经过实机验证；功能仍按需启用，正常资源策略不变。完整 Steam Shift+Tab 实机不可用，v1.1 不支持/不继续修复。鼠标操作、长期运行、其他版本与 Reset 仍按各自验证范围判断。正常安装见 [README](../README.md)，下文保留实现、回退和实验方法。
 
 ## 安装与启用
 
@@ -21,7 +21,7 @@ client.DirectInput.forward.keyboardPolicy = 0
 ```
 
 4. 保持 `server.useVanillaDxvk = True`、`exposeRemixApi = False`，64 位正常使用时保持 `client.testX86Server = False`。ReShade 仍使用 Vulkan 安装方式，不在客户端假 D3D9 设备上安装 ReShade D3D9 代理。
-5. 进入菜单，按 Home，检查能否打开、点击、关闭 ReShade，以及关闭后游戏鼠标/键盘是否恢复。再进图、退回菜单，测试 Alt+Tab、窗口尺寸变化。Steam Shift+Tab 单独记录“能否显示”和“能否操作”。
+5. 进入菜单，按 Home，检查能否打开、点击、关闭 ReShade，以及关闭后游戏鼠标/键盘是否恢复。再进图、退回菜单，测试 Alt+Tab、窗口尺寸变化。Steam Shift+Tab 已确认不可用，不是本版本的验收成功项。
 
 请提供 `bridge64.log`、`ReShade.log` 和实际表现，不需要采样其他程序。日志应包含 `L4D2_OVERLAY event=presenter`，其中 `owner_pid` 等于 `host_pid`；`event=reshade-api registered=1` 表示公开事件注册成功。`steam-modules` 分别检测 `vulkan32` / `vulkan64` 和 renderer，并在延迟加载状态变化时重新记录；仅表示模块加载，不能证明 Steam UI 已工作。`steam-hotkey posted=1 reshade_capture=0` 表示游戏前台的 Shift+Tab 已成功投递且 ReShade 未捕获输入。旧包的 `vulkan_layer=0` 只检查了 32 位命名，不能用于判定 64 位 Vulkan 层缺失。
 
@@ -41,19 +41,19 @@ ReShade 6.0.1 的 `input::register_window` 拒绝其他进程拥有的 HWND。�
 
 参考固定提交 [`7d466d794926ce26c113d810172c2abc37058319`](https://github.com/tianxiaols/TXVK/tree/7d466d794926ce26c113d810172c2abc37058319)。公开 Host 二进制的字符串和反汇编引用显示服务器呈现窗口、`server.presenterInput`、`server.substituteFocusWindow` 和独立 presenter 线程；这支持窗口归属方案，但不代表已恢复其完整源码。本项目独立实现，不分发 TXVK 二进制。
 
-该版本 README 明确标注完整 Steam 叠加层不可用，以好友邀请面板替代。我们没有复制替代面板或伪造 `IsOverlayEnabled`。本实验保留正常 Steam Vulkan 层，检查服务器窗口与输入改善能否让其显示；若仍无 UI，需要继续调查 Steam 的进程/游戏身份和注入路径，不能把好友面板当作 Shift+Tab 修复。
+该版本 README 明确标注完整 Steam 叠加层不可用，以好友邀请面板替代。我们没有复制替代面板或伪造 `IsOverlayEnabled`。本实验保留正常 Steam Vulkan 层，仅保留诊断，不继续实施 Steam 修复；如未来重启该目标，需要另外调查 Steam 的进程/游戏身份和注入路径，不能把好友面板当作 Shift+Tab 修复。
 
 ReShade 参考：https://github.com/crosire/reshade/tree/v6.0.1 。作者 Patrick Mours，SDK 标识 BSD-3-Clause OR MIT；本实验仅参考公开 ABI。上游版权和许可见 [THIRD_PARTY.md](../THIRD_PARTY.md)，本项目新增实现遵循 [MIT](../LICENSE)。
 
 ## English
 
-This opt-in experiment gives the Bridge a server-owned child presentation window. ReShade 6.0.1 rejects input registration for windows owned by another process; the original game-owned HWND crosses this boundary. CreateDevice, Reset, additional swapchains and non-null Present overrides now consistently target the host-owned child in windowed vanilla-DXVK mode.
+The v1.1 optional, hardware-confirmed Home fix gives the Bridge a server-owned child presentation window. ReShade 6.0.1 rejects input registration for windows owned by another process; the original game-owned HWND crosses this boundary. CreateDevice, Reset, additional swapchains and non-null Present overrides now consistently target the host-owned child in windowed vanilla-DXVK mode.
 
-Merge the supplied `bin` folder into the game directory after backing up the client and host. Preserve your installed DXVK backend, ReShade, retention database and policy. Merge the settings above into `bin/.l4d2bridge/bridge.conf`, removing duplicate keys. Test Home, overlay mouse interaction, closing the overlay, entering/leaving a map, Alt+Tab and resizing. Report Steam Shift+Tab separately. Submit `bridge64.log` and `ReShade.log`; profiling other processes is unnecessary.
+Merge the supplied `bin` folder into the game directory after backing up the client and host. Preserve your installed DXVK backend, ReShade, retention database and policy. Merge the settings above into `bin/.l4d2bridge/bridge.conf`, removing duplicate keys. Test Home, overlay mouse interaction, closing the overlay, entering/leaving a map, Alt+Tab and resizing. Steam Shift+Tab is a known unsupported limitation, not a passed validation item. Submit `bridge64.log` and `ReShade.log`; profiling other processes is unnecessary.
 
 Keyboard forwarding is limited to the foreground game and does not record keys. ReShade's public API 10 overlay event controls capture; registration failure is logged. The optional Home fallback estimates state and requires closing via Home. Other add-ons can veto the observed event. Disable `server.presenterWindow` and restore the previous input settings to roll back.
 
-Steam's full overlay remains unverified. Latest TXVK also documents that it is unavailable and provides a separate friends invitation UI. This experiment does not substitute that UI or fake Steam overlay availability. Native tests cover cross-process ownership, capture switching, override routing, resizing and teardown; real GPU/input validation remains necessary.
+Steam's full overlay was confirmed nonfunctional and is not supported in v1.1. Latest TXVK also documents that it is unavailable and provides a separate friends invitation UI. This experiment does not substitute that UI or fake Steam overlay availability. Native tests cover cross-process ownership, capture switching, override routing, resizing and teardown; real GPU/input validation remains necessary.
 
 All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
 
