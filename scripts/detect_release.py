@@ -1,0 +1,59 @@
+"""Emit a matrix of all stable upstream releases not yet published locally."""
+import json
+import os
+import re
+import urllib.error
+import urllib.request
+
+
+def api(path):
+    request = urllib.request.Request("https://api.github.com/" + path, headers={
+        "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    })
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return json.load(response)
+
+
+def pending():
+    rows = []
+    page = 1
+    latest_stable_seen = False
+    while True:
+        releases = api(f"repos/NVIDIAGameWorks/dxvk-remix/releases?per_page=100&page={page}")
+        if not releases:
+            break
+        for release in releases:
+            if release["draft"] or release["prerelease"]:
+                continue
+            # Bootstrap from the newest stable release, then track future releases.
+            include = not latest_stable_seen or release["published_at"] >= "2026-10-05T00:00:00Z"
+            latest_stable_seen = True
+            if not include:
+                continue
+            tag = release["tag_name"]
+            if not re.fullmatch(r"[A-Za-z0-9_.-]+", tag):
+                raise ValueError(f"Unsupported upstream tag: {tag!r}")
+            local = "bridge-" + tag
+            try:
+                existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{local}")
+            except urllib.error.HTTPError as error:
+                if error.code != 404:
+                    raise
+            else:
+                if not existing["draft"]:
+                    continue
+            commit = api(f"repos/NVIDIAGameWorks/dxvk-remix/commits/{tag}")["sha"]
+            rows.append({"tag": tag, "commit": commit, "release_tag": local})
+        page += 1
+    # Start with the oldest missing versions; subsequent runs drain the backlog.
+    return list(reversed(rows))[:8]
+
+
+if __name__ == "__main__":
+    rows = pending()
+    with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+        output.write("matrix=" + json.dumps({"include": rows}) + "\n")
+        output.write("pending=" + str(bool(rows)).lower() + "\n")
+    print(json.dumps(rows, indent=2))

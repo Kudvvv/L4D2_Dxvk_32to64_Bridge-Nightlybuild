@@ -1,0 +1,8 @@
+{
+  "name": "DXVK-GPLALL",
+  "version": "2.6.8-2",
+  "variant": "GCC-WinMacLinux-SSE2-O3-LTO",
+  "release": "https://github.com/Digger1955/dxvk-gplall/releases/tag/DXVK-GPLALL-2.6.8-2",
+  "url": "https://github.com/Digger1955/dxvk-gplall/releases/download/DXVK-GPLALL-2.6.8-2/DXVK-GPLALL-GCC-WinMacLinux-SSE2-O3-LTO.2.6.8-2.zip",
+  "sha256": "4391b1da19230ac1754a80ab073123edd98231876151fa66e745c5453fa74729"
+}
