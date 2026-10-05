@@ -62,6 +62,16 @@ Host 内存日志仍位于 `bin/.l4d2bridge/l4d2-host-memory.log`，游戏客户
 
 ## 实现与验证边界
 
+ATI1/ATI2（BC4/BC5）纹理的游戏可见 `LockRect.Pitch` 保留官方 DXVK 2.6.1 的兼容值，实际上传和返回数据使用真正的 4×4 压缩块布局。1024×1024 ATI1 上传 512 KiB，ATI2 上传 1 MiB，服务器不再用兼容 Pitch 乘以像素高度计算复制大小。客户端 backing 保持兼容布局的空间，并确保小 mip 至少能容纳一个完整压缩块；这项修复不会启用 DROP 或更改 retention policy。
+
+部分区域的 `pBits` 字节偏移遵循官方 DXVK 的 ATI 特例，行复制使用实际压缩存储跨度。范围超出实际压缩存储时，客户端返回 `D3DERR_INVALIDCALL`；服务器也验证 descriptor、payload 大小与 Pitch，拒绝不匹配的上传。通用 surface 返回路径同样按实际压缩布局复制。普通 DXT 和未压缩纹理沿用既有路径。
+
+首次成功处理每种 ATI 格式时，服务器记录一条 `L4D2_ATI_UPLOAD event=success`，包含资源 ID、格式、尺寸、API/storage Pitch、行数和字节数。失败记录 `event=rejected` 及原因。安装此修复时必须同时更新客户端 `bin/dxvk_d3d9.dll` 和两个服务器 EXE；旧客户端的 ATI1 payload 与新服务器不匹配，不能只替换服务器。
+
+验证包括 x86/x64 原生受保护内存页测试：1×1 至 4096×4096 mip 尺寸、非方形纹理、完整与部分区域、shared heap 对应的存储复制，以及上传/返回的数据一致性和截短 buffer 拒绝。它们验证内存边界和复制内容，不代替 Arc B580 上的实际 Vulkan 游戏验证。进图是否正常、是否出现纹理异常，以及稳定内存占用仍需同地图测试。
+
+ATI1/ATI2 (BC4/BC5) transfers preserve upstream DXVK 2.6.1's game-visible compatibility Pitch while copying actual 4×4 compressed blocks. A 1024×1024 ATI1 upload carries 512 KiB; ATI2 carries 1 MiB. Small mips allocate at least one complete block. Partial locks follow DXVK's ATI byte-offset convention and reject ranges outside compressed storage. Upload and surface-return paths validate and copy the real layout on both host architectures. The first successful transfer per format emits `L4D2_ATI_UPLOAD event=success`; rejected transfers log their reason. Update the client DLL and both host EXEs together. Guard-page tests on native x86/x64 cover full mips, partial regions, shared storage and returned bytes; actual Vulkan gameplay on the target GPU still needs verification. Retention policy and the official DXVK DLLs are unchanged.
+
 客户端对零宽度 / 零高度的 `CreateTexture` 返回 `D3DERR_INVALIDCALL`，输出指针为 null，并记录 `L4D2 CreateTexture rejected on client` 的原始调用参数，不创建包装对象，也不改写成 1 像素。服务器对其他 `CreateTexture` 失败保留真实 HRESULT，记录 `L4D2 CreateTexture failed`，包含命令 UID、资源 / 设备 ID、尺寸、mip 数、usage、format、pool 和位数，并强制写入 `event=create-texture-failed` 内存快照。创建失败作为 D3D9 API 结果返回游戏，不触发桥的成功断言。客户端收到失败响应后置空输出、释放包装对象，且不向服务器发送不存在资源的 Destroy；如果响应超时，仍发送排在 CreateTexture 后的 Destroy，以清理可能已创建的资源。
 
 失败快照中的 `address_free_bytes` 是可用虚拟地址空间总量，`address_largest_free_block` 是最大连续空闲地址块，均不代表可用 RAM 或显存。请在再次启动前保存客户端 / 服务器日志、DXVK 日志和 Host 内存日志。20:20 的失败日志实际记录 `4×0`、`D3DERR_INVALIDCALL`，当时工作集约 67 MiB、可用地址空间约 3.48 GiB；这次失败不能归因于内存耗尽，也不能作为地图内 x86 / x64 内存对照结果。客户端记录用于确认零尺寸是否直接来自游戏调用。
