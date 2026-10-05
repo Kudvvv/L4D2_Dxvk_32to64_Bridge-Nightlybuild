@@ -51,6 +51,9 @@ jobs:
       - name: Load the official x86 DXVK DLL in a native x86 process
         shell: powershell
         run: ./scripts/test_x86_backend.ps1
+      - name: Test native x86 and x64 adapter identifiers and Shader capability transport
+        shell: powershell
+        run: ./scripts/test_adapter_information.ps1
       - name: Test command queue idle CPU and x86 to x64 wakeups
         shell: powershell
         run: ./scripts/test_command_queue.ps1
