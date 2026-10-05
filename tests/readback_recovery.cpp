@@ -120,6 +120,10 @@ static int policyTests(const wchar_t* executable) {
   const auto db = directory / L"retention.db";
   const auto baseline = l4d2_memory::surfaceBackingBytes.load();
   std::string log; uint32_t mode = 0;
+  Digest known {};
+  const uint8_t abc[] = { 'a', 'b', 'c' };
+  if (FAILED(hashBytes(abc, sizeof(abc), known))
+    || std::string(digestText(known).data()) != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") { return 72; }
   if (!requiresPreserve(0, true) || !requiresPreserve(D3DLOCK_READONLY, true)
     || requiresPreserve(D3DLOCK_DISCARD, true) || !requiresPreserve(D3DLOCK_DISCARD, false)) { return 41; }
   for (uint32_t run = 0; run < 3; ++run) {
@@ -198,6 +202,30 @@ static int policyTests(const wchar_t* executable) {
     PagefileShadow backing; Parent parent(c, 6, 256, 256, 1, format, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 7, backing);
     if (!upload(parent, backing, 0, format, 256) || !backing.recoveryMissing()
       || !parent.beforeLock(0, D3DLOCK_READONLY, RECT { 0, 0, 256, 256 }) || c.hashMatches != 1 || c.promotions != 1) { return 69; }
+  }
+  {
+    Context c; if (!setupPolicy(c, executable, directory / L"unsupported.db", mode, log)) { return 73; }
+    for (uint32_t sample = 0; sample < 4; ++sample) {
+      PagefileShadow backing;
+      const uint32_t format = sample == 0 ? kDxt3 : kDxt5;
+      Parent parent(c, 6, 256, 256, 1, format, sample == 1 ? D3DUSAGE_DYNAMIC : 0u,
+        sample == 2 ? D3DPOOL_DEFAULT : D3DPOOL_MANAGED, sample == 3 ? "" : "shader.dll:1234:10000:0:800;");
+      parent.attach(0, 7, backing);
+      if (!upload(parent, backing, 0, format, 256) || backing.recoveryMissing() || c.drops || c.eligible || c.attempts) { return 74; }
+    }
+  }
+  {
+    Context c; if (!setupPolicy(c, executable, db, mode, log)) { return 75; }
+    PagefileShadow backing; Parent parent(c, 6, 256, 256, 3, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;");
+    PagefileShadow others[2];
+    parent.attach(0, 7, backing); parent.attach(1, 8, others[0]); parent.attach(2, 9, others[1]);
+    Layout l; layout(256, 256, kDxt5, l);
+    auto* bytes = backing.acquire(l.bytes, 0); if (!bytes) { return 76; }
+    for (uint32_t i = 0; i < l.bytes; ++i) { bytes[i] = static_cast<uint8_t>(pixel(i) ^ 1); }
+    Digest altered {}; if (FAILED(hashBytes(bytes, l.bytes, altered))) { return 77; }
+    backing.release(0); parent.uploaded(0, true, altered, S_OK);
+    if (!upload(parent, others[0], 1, kDxt5, 128) || !upload(parent, others[1], 2, kDxt5, 64)
+      || !backing.recoveryMissing() || c.strongHits || c.contentHits || c.drops != 1) { return 78; }
   }
   if (l4d2_memory::surfaceBackingBytes != baseline) { return 70; }
   for (const auto* required : { "event=backing-evicted", "cpu_backing_present=0", "cpu_backing_bytes=0", "event=retention-miss", "event=real-miss-validation",
