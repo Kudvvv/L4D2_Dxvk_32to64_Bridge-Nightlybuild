@@ -114,6 +114,11 @@ jobs:
         run: |
           printf 'Experimental L4D2 Bridge build.\n\n分类 tag: %s\nUpstream commit: %s\nBuild recipe: %s\n\nBoth x86 client and matching x64 Host are included. The DXVK backend is independently pinned by config/backend.json. Compilation and diagnostic tests passed; L4D2 gameplay compatibility has not been verified. Back up your installation before testing.\n' "$UPSTREAM_TAG" "$UPSTREAM_COMMIT" "$RECIPE_COMMIT" > notes.md
           printf '\nBuild type: %s\nCommits after upstream tag: %s\nSource branch: %s\n' "$BUILD_KIND" "$COMMITS_AFTER_TAG" "$UPSTREAM_BRANCH" >> notes.md
+          printf '\n### 上游依据\n\n- 上游项目：[NVIDIA dxvk-remix](https://github.com/NVIDIAGameWorks/dxvk-remix)\n- 基础版本 tag：`%s`\n- 实际构建提交：[`%s`](https://github.com/NVIDIAGameWorks/dxvk-remix/commit/%s)\n- 本仓库构建配置：[`%s`](https://github.com/%s/commit/%s)\n' "$UPSTREAM_TAG" "$UPSTREAM_COMMIT" "$UPSTREAM_COMMIT" "$RECIPE_COMMIT" "$GH_REPO" "$RECIPE_COMMIT" >> notes.md
+          if [ "$UPSTREAM_TAG" != "untagged" ]; then
+            printf -- '- 上游版本地址：[%s](https://github.com/NVIDIAGameWorks/dxvk-remix/tree/%s)\n- 相对版本变化：[tag → 构建提交](https://github.com/NVIDIAGameWorks/dxvk-remix/compare/%s...%s)\n' "$UPSTREAM_TAG" "$UPSTREAM_TAG" "$UPSTREAM_TAG" "$UPSTREAM_COMMIT" >> notes.md
+          fi
+          printf '\nNightly 基于上述版本 tag 后的源码提交，并非该 tag 的原始发布二进制。完整 SHA 对应真正编译的上游源码。\n' >> notes.md
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --target "$RECIPE_COMMIT" --title "$RELEASE_TITLE" --notes-file notes.md --prerelease --draft
           fi
