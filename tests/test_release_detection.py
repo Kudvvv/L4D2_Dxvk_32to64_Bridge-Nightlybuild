@@ -16,7 +16,7 @@ SHA = "a" * 40
 
 
 class HeadDetection(unittest.TestCase):
-    def run_case(self, existing=None, failure=None, manual="", branch="main"):
+    def run_case(self, existing=None, failure=None, manual="", branch="main", force=False):
         calls = []
         def api(path):
             calls.append(path)
@@ -31,7 +31,7 @@ class HeadDetection(unittest.TestCase):
             if existing is not None:
                 return existing
             raise HTTPError(path, 404, "missing", {}, None)
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": manual}), patch.object(detect, "api", api), patch.object(detect, "classify", return_value={"group":"untagged", "release_tag":"bridge-test"}):
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": manual, "FORCE_REBUILD": str(force).lower()}), patch.object(detect, "api", api), patch.object(detect, "classify", return_value={"group":"untagged", "release_tag":"bridge-test"}):
             rows = detect.pending()
         return rows, calls
 
@@ -49,6 +49,15 @@ class HeadDetection(unittest.TestCase):
 
     def test_existing_success_skipped(self):
         self.assertEqual(self.run_case(existing={"draft": False})[0], [])
+
+    def test_force_rebuild_bypasses_all_published_release_checks(self):
+        rows, calls = self.run_case(existing={"draft": False}, force=True)
+        self.assertEqual(rows[0]["commit"], SHA)
+        self.assertFalse(any("/releases" in path for path in calls))
+
+    def test_force_manual_commit(self):
+        rows, calls = self.run_case(manual=SHA, force=True)
+        self.assertEqual(rows[0]["branch"], "manual")
 
     def test_draft_retried(self):
         self.assertEqual(len(self.run_case(existing={"draft": True})[0]), 1)

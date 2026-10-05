@@ -29,6 +29,7 @@ def api(path):
 
 
 def pending():
+    force = os.environ.get("FORCE_REBUILD", "false").lower() == "true"
     manual = os.environ.get("UPSTREAM_COMMIT", "").strip()
     if manual:
         if not re.fullmatch(r"[0-9a-fA-F]{40}", manual):
@@ -41,30 +42,34 @@ def pending():
     commit = info["sha"]
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Invalid resolved upstream SHA")
-    local = "bridge-commit-" + commit
-    try:
-        existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{local}")
-    except urllib.error.HTTPError as error:
-        if error.code != 404:
-            raise
-    else:
-        if not existing["draft"]:
-            print(f"Already built upstream {branch}: {commit}")
-            return []
-    releases = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases?per_page=100")
-    for release in releases:
-        if not release["draft"] and f"Upstream commit: {commit}" in (release.get("body") or ""):
-            print(f"Already published upstream commit {commit} as {release['tag_name']}")
-            return []
+    if not force:
+        local = "bridge-commit-" + commit
+        try:
+            existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{local}")
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+        else:
+            if not existing["draft"]:
+                print(f"Already built upstream {branch}: {commit}")
+                return []
+        releases = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases?per_page=100")
+        for release in releases:
+            if not release["draft"] and f"Upstream commit: {commit}" in (release.get("body") or ""):
+                print(f"Already published upstream commit {commit} as {release['tag_name']}")
+                return []
     names = classify(api, UPSTREAM, commit, info["commit"]["committer"]["date"])
-    try:
-        existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{names['release_tag']}")
-    except urllib.error.HTTPError as error:
-        if error.code != 404:
-            raise
+    if not force:
+        try:
+            existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{names['release_tag']}")
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+        else:
+            if not existing["draft"]:
+                return []
     else:
-        if not existing["draft"]:
-            return []
+        print(f"Force rebuild enabled for upstream {branch}: {commit}")
     return [{"tag": names["group"], "commit": commit, "branch": branch, **names}]
 
 
