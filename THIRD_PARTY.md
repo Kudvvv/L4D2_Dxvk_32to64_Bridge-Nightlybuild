@@ -47,3 +47,10 @@ TXVK（https://github.com/tianxiaols/TXVK，作者 tianxiaols）的公开文档�
 TXVK 自身的 [LICENSE](https://github.com/tianxiaols/TXVK/blob/main/LICENSE) 为 MIT，保留其 `Copyright (c) 2026 TXVK contributors` 归属。它随附的 Bridge、DXVK、Detours 仍遵循相应上游许可；参考 TXVK 不会将这些代码的版权归到本项目名下。
 
 L4D2 与 Steam 属于 Valve，游戏及平台不包含在本项目的授权范围内。显卡驱动亦遵循各厂商自己的许可。
+
+## ReShade 接口参考
+
+- 来源：https://github.com/crosire/reshade/tree/v6.0.1
+- 作者：Patrick Mours；SDK 标注 `Copyright (C) 2021 Patrick Mours`、`BSD-3-Clause OR MIT`。
+- 使用范围：核对输入窗口所有权检查及 API 10 的公开插件 ABI、overlay 事件编号与签名。只新增独立的动态接口绑定，不复制或分发 SDK 实现、头文件或 ReShade DLL；不把 ReShade 代码归为本项目原创。
+- 窗口/输入方案还参考 TXVK 固定提交 `7d466d794926ce26c113d810172c2abc37058319` 的公开说明与二进制静态分析，参考范围与上文归属一致。

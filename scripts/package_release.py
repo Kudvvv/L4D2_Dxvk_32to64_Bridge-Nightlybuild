@@ -46,7 +46,7 @@ def package(source, dxvk, output, dxvk_x86=None):
     for path, expected in {**inputs, **comparison_inputs}.values():
         if machine(path) != expected:
             raise ValueError(f"Wrong architecture: {path}")
-    destinations = [output, client_output, host_output, cpu_output, readback_output, retention_output]
+    destinations = [output, client_output, host_output, cpu_output, readback_output, retention_output, output.parent / "l4d2-overlay-input-experiment"]
     if comparison_inputs:
         host32 = comparison_inputs["bin/.l4d2bridge/L4D2Bridge32.exe"][0].read_bytes()
         pe_offset = struct.unpack_from("<I", host32, 60)[0]
@@ -187,6 +187,11 @@ def package(source, dxvk, output, dxvk_x86=None):
             "files": {"x32/d3d9.dll": "bin/.l4d2bridge/d3d9vk_x86.dll", "x64/d3d9.dll": "bin/.l4d2bridge/d3d9vk_x64.dll"},
         }, indent=2) + "\n")
         print(f"x86/x64 host comparison: {comparison_output}; official DXVK 2.6.1, switch the host with client.testX86Server")
+    overlay_output = output.parent / "l4d2-overlay-input-experiment"
+    shutil.copytree(cpu_output, overlay_output)
+    overlay_guide = (ROOT / "docs/OVERLAY-INPUT-EXPERIMENT.md").read_text(encoding="utf-8").replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (overlay_output / "OVERLAY-INPUT-EXPERIMENT.md").write_text(overlay_guide, encoding="utf-8")
+    shutil.copy2(ROOT / "config/OVERLAY-INPUT.conf", overlay_output / "OVERLAY-INPUT.conf")
     print(f"L4D2 D3D9 Bridge v{(ROOT / 'VERSION').read_text().strip()}: {output}")
     print(f"Client-only update: {client_output}; preserves the installed host and DXVK")
     print(f"Host diagnostics update: {host_output}; preserves the installed client, DXVK and configuration")

@@ -57,6 +57,9 @@ jobs:
       - name: Test ATI1 and ATI2 guarded texture transfers on x86 and x64
         shell: powershell
         run: ./scripts/test_ati_texture_layout.ps1
+      - name: Test cross-process overlay presentation windows and input capture
+        shell: powershell
+        run: ./scripts/test_overlay_presenter.ps1
       - name: Test command queue idle CPU and x86 to x64 wakeups
         shell: powershell
         run: ./scripts/test_command_queue.ps1
@@ -102,5 +105,11 @@ jobs:
         with:
           name: l4d2-bridge-cpu-update
           path: dist/l4d2-cpu-update/
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-overlay-input-experiment
+          path: dist/l4d2-overlay-input-experiment/
           include-hidden-files: true
           if-no-files-found: error

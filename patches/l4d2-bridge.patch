@@ -3155,7 +3155,7 @@ index 0000000..c6ccbb1
 +};
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..f5d7316 100644
+index 86434ec..aaa3476 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -3166,17 +3166,68 @@ index 86434ec..f5d7316 100644
  /*
   * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -24,6 +28,9 @@
+@@ -24,6 +28,10 @@
  #include "version.h"
  #include "module_processing.h"
  #include "remix_api.h"
 +#include "host_memory_diagnostics.h"
 +#include "readback_backend.h"
 +#include "ati_texture_layout.h"
++#include "overlay_presenter.h"
  
  #include "util_bridge_assert.h"
  #include "util_circularbuffer.h"
-@@ -152,6 +159,31 @@ std::unordered_map<uint32_t, IDirect3DPixelShader9*> gpD3DPixelShaders;
+@@ -109,6 +117,49 @@ using namespace remixapi::util;
+ // https://docs.microsoft.com/en-us/windows/win32/winprog64/interprocess-communication?redirectedfrom=MSDN
+ #define TRUNCATE_HANDLE(type, input) (type)(size_t)(input)
+ 
++// NV-DXVK start: opt-in server-owned window for Vulkan overlay input.
++static std::unique_ptr<l4d2_overlay::Presenter> gOverlayPresenter;
++static HWND configureOverlayPresenter(D3DPRESENT_PARAMETERS& pp, HWND focus = nullptr) {
++  if (!Config::getOption<bool>("server.presenterWindow", false)
++    || !Config::getOption<bool>("server.useVanillaDxvk", false)
++    || GlobalOptions::getExposeRemixApi() || !pp.Windowed) { return focus; }
++  if (!gOverlayPresenter) {
++    gOverlayPresenter.reset(new l4d2_overlay::Presenter(
++      Config::getOption<bool>("server.presenterInput", true),
++      Config::getOption<uint32_t>("server.presenterOverlayKey", VK_HOME),
++      Config::getOption<bool>("server.presenterHotkeyFallback", false),
++      [](const char* message) { Logger::info(message); }));
++  }
++  const HWND parent = pp.hDeviceWindow ? pp.hDeviceWindow : focus;
++  const HWND child = gOverlayPresenter->window(parent);
++  if (!child) {
++    Logger::err("L4D2_OVERLAY event=window-error reason=create-failed-or-unsupported-parent");
++    return focus;
++  }
++  if (pp.hDeviceWindow != child) {
++    DWORD pid = 0; GetWindowThreadProcessId(child, &pid);
++    Logger::info(format_string("L4D2_OVERLAY event=presenter parent=%p child=%p owner_pid=%lu host_pid=%lu", parent, child, pid, GetCurrentProcessId()));
++  }
++  pp.hDeviceWindow = child;
++  return focus ? child : focus;
++}
++static HWND overlayPresentWindow(HWND original) {
++  if (!gOverlayPresenter) { return original; }
++  static ULONGLONG nextCheck = 0;
++  const ULONGLONG now = GetTickCount64();
++  if (now >= nextCheck) {
++    nextCheck = now + 1000;
++    gOverlayPresenter->findReShade();
++    static bool logged = false;
++    if (!logged) {
++      Logger::info(format_string("L4D2_OVERLAY event=steam-modules vulkan_layer=%u renderer64=%u renderer32=%u", GetModuleHandleW(L"SteamOverlayVulkanLayer.dll") != nullptr, GetModuleHandleW(L"GameOverlayRenderer64.dll") != nullptr, GetModuleHandleW(L"GameOverlayRenderer.dll") != nullptr));
++      logged = true;
++    }
++  }
++  return gOverlayPresenter->route(original);
++}
++// NV-DXVK end
++
+ bool bDxvkModuleLoaded = false;
+ std::chrono::steady_clock::time_point gTimeStart;
+ 
+@@ -152,6 +203,31 @@ std::unordered_map<uint32_t, IDirect3DPixelShader9*> gpD3DPixelShaders;
  std::unordered_map<uint32_t, IDirect3DSwapChain9*> gpD3DSwapChains;
  std::unordered_map<uint32_t, IDirect3DQuery9*> gpD3DQuery;
  std::unordered_map<uint32_t, void*> gMapRemixApi;
@@ -3208,7 +3259,7 @@ index 86434ec..f5d7316 100644
  
  // Global state
  bool gbBridgeRunning = true;
-@@ -242,17 +274,39 @@ HRESULT ReturnSurfaceDataToClient(IDirect3DSurface9* pReturnSurfaceData, HRESULT
+@@ -242,17 +318,39 @@ HRESULT ReturnSurfaceDataToClient(IDirect3DSurface9* pReturnSurfaceData, HRESULT
    }
  
    // Sending raw surface buffer details to client
@@ -3253,21 +3304,37 @@ index 86434ec..f5d7316 100644
      c.end_data_blob();
    }
  
-@@ -375,7 +429,13 @@ void ProcessDeviceCommandQueue() {
+@@ -338,9 +436,10 @@ void ProcessDeviceCommandQueue() {
+         uint32_t* rawPresentationParameters = nullptr;
+         DeviceBridge::get_data((void**) &rawPresentationParameters);
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
++        const HWND overlayFocus = configureOverlayPresenter(PresentationParameters, TRUNCATE_HANDLE(HWND, hFocusWindow));
+ 
+         IDirect3DDevice9Ex* pD3DDevice = nullptr;
+-        const auto hresult = ((IDirect3D9Ex*) gpD3D)->CreateDeviceEx(IN Adapter, IN DeviceType, IN TRUNCATE_HANDLE(HWND, hFocusWindow), IN BehaviorFlags, IN OUT & PresentationParameters, IN pFullscreenDisplayMode, OUT & pD3DDevice);
++        const auto hresult = ((IDirect3D9Ex*) gpD3D)->CreateDeviceEx(IN Adapter, IN DeviceType, IN overlayFocus, IN BehaviorFlags, IN OUT & PresentationParameters, IN pFullscreenDisplayMode, OUT & pD3DDevice);
+         if (!SUCCEEDED(hresult)) {
+           std::stringstream ss;
+           ss << format_string("CreateDeviceEx() call failed with error code 0x%x", hresult) << std::endl;
+@@ -373,9 +472,16 @@ void ProcessDeviceCommandQueue() {
+         uint32_t* rawPresentationParameters = nullptr;
+         DeviceBridge::get_data((void**) &rawPresentationParameters);
+         D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
++        const HWND overlayFocus = configureOverlayPresenter(PresentationParameters, TRUNCATE_HANDLE(HWND, hFocusWindow));
  
          IDirect3DDevice9* pD3DDevice = nullptr;
+-        const auto hresult = gpD3D->CreateDevice(IN Adapter, IN DeviceType, IN TRUNCATE_HANDLE(HWND, hFocusWindow), IN BehaviorFlags, IN OUT & PresentationParameters, OUT & pD3DDevice);
 +        Logger::info(format_string(
 +          "L4D2 CreateDevice: focus=%p window=%p adapter=%u windowed=%u size=%ux%u flags=0x%x",
 +          TRUNCATE_HANDLE(HWND, hFocusWindow), PresentationParameters.hDeviceWindow,
 +          Adapter, PresentationParameters.Windowed, PresentationParameters.BackBufferWidth,
 +          PresentationParameters.BackBufferHeight, BehaviorFlags));
-         const auto hresult = gpD3D->CreateDevice(IN Adapter, IN DeviceType, IN TRUNCATE_HANDLE(HWND, hFocusWindow), IN BehaviorFlags, IN OUT & PresentationParameters, OUT & pD3DDevice);
++        const auto hresult = gpD3D->CreateDevice(IN Adapter, IN DeviceType, IN overlayFocus, IN BehaviorFlags, IN OUT & PresentationParameters, OUT & pD3DDevice);
 +        Logger::info(format_string("L4D2 CreateDevice result: 0x%08x", hresult));
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
            ss << format_string("CreateDevice() call failed with error code 0x%x", hresult) << std::endl;
-@@ -383,6 +443,10 @@ void ProcessDeviceCommandQueue() {
+@@ -383,6 +489,10 @@ void ProcessDeviceCommandQueue() {
          } else {
            Logger::info("Server side D3D9 Device created successfully!");
            gpD3DDevices[pHandle] = (IDirect3DDevice9Ex*) pD3DDevice;
@@ -3278,7 +3345,7 @@ index 86434ec..f5d7316 100644
            if(GlobalOptions::getExposeRemixApi()) {
              remixapi::g_device = (IDirect3DDevice9Ex*) pD3DDevice;
              remixapi::g_remix.dxvk_RegisterD3D9Device(remixapi::g_device);
-@@ -429,6 +493,7 @@ void ProcessDeviceCommandQueue() {
+@@ -429,6 +539,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateRenderTargetEx(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr, IN Usage);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
@@ -3286,7 +3353,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -447,6 +512,7 @@ void ProcessDeviceCommandQueue() {
+@@ -447,6 +558,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateOffscreenPlainSurfaceEx(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr, IN Usage);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
@@ -3294,7 +3361,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -467,6 +533,7 @@ void ProcessDeviceCommandQueue() {
+@@ -467,6 +579,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateDepthStencilSurfaceEx(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr, IN Usage);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
@@ -3302,7 +3369,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -496,6 +563,7 @@ void ProcessDeviceCommandQueue() {
+@@ -496,6 +609,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->GetBackBuffer(0, index, D3DBACKBUFFER_TYPE_MONO, &pBackbuffer);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pBackbuffer;
@@ -3310,7 +3377,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -508,6 +576,7 @@ void ProcessDeviceCommandQueue() {
+@@ -508,6 +622,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->GetDepthStencilSurface(&pDepthStencil);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pDepthStencil;
@@ -3318,7 +3385,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -561,8 +630,14 @@ void ProcessDeviceCommandQueue() {
+@@ -561,8 +676,14 @@ void ProcessDeviceCommandQueue() {
        {
  
          GET_RES(pD3DDevice, gpD3DDevices);
@@ -3334,7 +3401,40 @@ index 86434ec..f5d7316 100644
          BRIDGE_ASSERT_LOG(SUCCEEDED(hresult), "Issue retrieving D3D9 device specific information");
          {
            ServerMessage c(Commands::Bridge_Response, currentUID);
-@@ -746,6 +821,7 @@ void ProcessDeviceCommandQueue() {
+@@ -632,6 +753,7 @@ void ProcessDeviceCommandQueue() {
+         uint32_t* rawPresentationParameters = nullptr;
+         DeviceBridge::get_data((void**) &rawPresentationParameters);
+         D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
++        configureOverlayPresenter(PresentationParameters);
+         IDirect3DSwapChain9* pSwapChain = nullptr;
+         const auto hresult = pD3DDevice->CreateAdditionalSwapChain(&PresentationParameters, &pSwapChain);
+         if (SUCCEEDED(hresult)) {
+@@ -664,6 +786,7 @@ void ProcessDeviceCommandQueue() {
+         uint32_t* rawPresentationParameters = nullptr;
+         DeviceBridge::get_data((void**) &rawPresentationParameters);
+         D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
++        configureOverlayPresenter(PresentationParameters);
+         if (!PresentationParameters.Windowed && !bDxvkModuleLoaded) {
+           bridge_util::Logger::err("Fullscreen is not yet supported for non-DXVK uses of the bridge. This is not recoverable. Exiting.");
+           done = true;
+@@ -689,6 +812,7 @@ void ProcessDeviceCommandQueue() {
+         PULL_DATA(sizeof(D3DDISPLAYMODEEX), pFullscreenDisplayMode);
+ 
+         D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
++        configureOverlayPresenter(PresentationParameters);
+         if (!PresentationParameters.Windowed && !bDxvkModuleLoaded) {
+           bridge_util::Logger::err("Fullscreen is not yet supported for non-DXVK uses of the bridge. This is not recoverable. Exiting.");
+           done = true;
+@@ -717,7 +841,7 @@ void ProcessDeviceCommandQueue() {
+         PULL(uint32_t, hDestWindowOverride);
+         PULL_OBJ(RGNDATA, pDirtyRegion);
+ 
+-        HWND hwnd = TRUNCATE_HANDLE(HWND, hDestWindowOverride);
++        HWND hwnd = overlayPresentWindow(TRUNCATE_HANDLE(HWND, hDestWindowOverride));
+ 
+         const auto hresult = pD3DDevice->Present(pSourceRect, pDestRect, hwnd, pDirtyRegion);
+         if (!SUCCEEDED(hresult)) {
+@@ -746,6 +870,7 @@ void ProcessDeviceCommandQueue() {
          assert(SUCCEEDED(hresult));
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pBackbuffer;
@@ -3342,7 +3442,7 @@ index 86434ec..f5d7316 100644
          }
          break;
        }
-@@ -787,13 +863,23 @@ void ProcessDeviceCommandQueue() {
+@@ -787,13 +912,23 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -3369,7 +3469,7 @@ index 86434ec..f5d7316 100644
          break;
        }
        case IDirect3DDevice9Ex_CreateVolumeTexture:
-@@ -811,6 +897,7 @@ void ProcessDeviceCommandQueue() {
+@@ -811,6 +946,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateVolumeTexture(IN Width, IN Height, IN Depth, IN Levels, IN Usage, IN Format, IN Pool, OUT & pVolumeTexture, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pVolumeTexture;
@@ -3377,7 +3477,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -829,6 +916,7 @@ void ProcessDeviceCommandQueue() {
+@@ -829,6 +965,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateCubeTexture(IN EdgeLength, IN Levels, IN Usage, IN Format, IN Pool, OUT & pCubeTexture, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pCubeTexture;
@@ -3385,7 +3485,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -846,6 +934,7 @@ void ProcessDeviceCommandQueue() {
+@@ -846,6 +983,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateVertexBuffer(IN Length, IN Usage, IN FVF, IN Pool, OUT & pVertexBuffer, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pVertexBuffer;
@@ -3393,7 +3493,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -863,6 +952,7 @@ void ProcessDeviceCommandQueue() {
+@@ -863,6 +1001,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateIndexBuffer(IN Length, IN Usage, IN Format, IN Pool, OUT & pIndexBuffer, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pIndexBuffer;
@@ -3401,7 +3501,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -882,6 +972,7 @@ void ProcessDeviceCommandQueue() {
+@@ -882,6 +1021,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateRenderTarget(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
@@ -3409,7 +3509,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -901,6 +992,7 @@ void ProcessDeviceCommandQueue() {
+@@ -901,6 +1041,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateDepthStencilSurface(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
@@ -3417,7 +3517,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -1005,6 +1097,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1005,6 +1146,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->CreateOffscreenPlainSurface(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
@@ -3425,7 +3525,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -1037,6 +1130,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1037,6 +1179,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->GetRenderTarget(RenderTargetIndex, &pRenderTarget);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pRenderTarget;
@@ -3433,7 +3533,7 @@ index 86434ec..f5d7316 100644
          }
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          assert(SUCCEEDED(hresult));
-@@ -1067,6 +1161,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1067,6 +1210,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->GetDepthStencilSurface(&pZStencilSurface);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pZStencilSurface;
@@ -3441,7 +3541,16 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -1793,6 +1888,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1767,7 +1911,7 @@ void ProcessDeviceCommandQueue() {
+         PULL_OBJ(RGNDATA, pDirtyRegion);
+         PULL(uint32_t, dwFlags);
+ 
+-        HWND hwnd = TRUNCATE_HANDLE(HWND, hDestWindowOverride);
++        HWND hwnd = overlayPresentWindow(TRUNCATE_HANDLE(HWND, hDestWindowOverride));
+ 
+         const auto hresult = pSwapChain->Present(pSourceRect, pDestRect, hwnd, pDirtyRegion, dwFlags);
+ 
+@@ -1793,6 +1937,7 @@ void ProcessDeviceCommandQueue() {
          auto hresult = pSwapChain->GetFrontBufferData(pDestSurface);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pDestSurfaceHandle] = pDestSurface;
@@ -3449,7 +3558,7 @@ index 86434ec..f5d7316 100644
          }
          hresult = ReturnSurfaceDataToClient(pDestSurface, hresult, currentUID);
          assert(SUCCEEDED(hresult));
-@@ -1808,6 +1904,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1808,6 +1953,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pSwapChain->GetBackBuffer(iBackBuffer, Type, &pBackbuffer);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pBackbuffer;
@@ -3457,7 +3566,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -2019,6 +2116,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2019,6 +2165,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pHandle];
          safeDestroy(pTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3465,7 +3574,7 @@ index 86434ec..f5d7316 100644
          break;
        }
        case IDirect3DTexture9_GetDevice:
-@@ -2077,6 +2175,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2077,6 +2224,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pTexture->GetSurfaceLevel(IN Level, OUT & pSurfaceLevel);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pSurfaceLevel;
@@ -3473,7 +3582,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2120,6 +2219,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2120,6 +2268,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
          safeDestroy(pVolumeTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3481,7 +3590,7 @@ index 86434ec..f5d7316 100644
          break;
        }
        case IDirect3DVolumeTexture9_GetDevice:
-@@ -2259,6 +2359,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2259,6 +2408,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pHandle];
          safeDestroy(pCubeTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3489,7 +3598,7 @@ index 86434ec..f5d7316 100644
          break;
        }
        case IDirect3DCubeTexture9_GetDevice:
-@@ -2318,6 +2419,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2318,6 +2468,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pCubeTexture->GetCubeMapSurface(IN FaceType, IN Level, OUT & pCubeMapSurface);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pCubeMapSurfaceHandle] = pCubeMapSurface;
@@ -3497,7 +3606,7 @@ index 86434ec..f5d7316 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2362,6 +2464,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2362,6 +2513,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pVertexBuffer = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
          safeDestroy(pVertexBuffer, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3505,7 +3614,7 @@ index 86434ec..f5d7316 100644
          break;
        }
        case IDirect3DVertexBuffer9_GetDevice:
-@@ -2448,6 +2551,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2448,6 +2600,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pIndexBuffer = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
          safeDestroy(pIndexBuffer, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3513,7 +3622,7 @@ index 86434ec..f5d7316 100644
          break;
        }
        case IDirect3DIndexBuffer9_GetDevice:
-@@ -2533,6 +2637,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2533,6 +2686,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
          safeDestroy(pSurface, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3521,7 +3630,7 @@ index 86434ec..f5d7316 100644
          break;
        }
        case IDirect3DSurface9_GetDevice:
-@@ -2563,6 +2668,51 @@ void ProcessDeviceCommandQueue() {
+@@ -2563,6 +2717,51 @@ void ProcessDeviceCommandQueue() {
          assert(SUCCEEDED(hresult));
          break;
        }
@@ -3573,7 +3682,7 @@ index 86434ec..f5d7316 100644
        case IDirect3DSurface9_LockRect:
        {
          // Currently we only recieve calls for LockRect in cases where backbuffer data is to be copied for screenshots
-@@ -2578,6 +2728,61 @@ void ProcessDeviceCommandQueue() {
+@@ -2578,6 +2777,61 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RECT, pRect);
          PULL_D(Flags);
          const auto pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
@@ -3635,7 +3744,7 @@ index 86434ec..f5d7316 100644
          // Now lock the rect so we can copy the data into it
          D3DLOCKED_RECT lockedRect;
          auto hresult = pSurface->LockRect(OUT & lockedRect, IN pRect, IN Flags);
-@@ -2585,8 +2790,6 @@ void ProcessDeviceCommandQueue() {
+@@ -2585,8 +2839,6 @@ void ProcessDeviceCommandQueue() {
          // Copy the data over
          const uint32_t width = pRect->right - pRect->left;
          const uint32_t height = pRect->bottom - pRect->top;
@@ -3644,7 +3753,7 @@ index 86434ec..f5d7316 100644
          const D3DFORMAT format = (D3DFORMAT) dFormat;
          const size_t rowSize = bridge_util::calcRowSize(width, format);
          void* pData = nullptr;
-@@ -2806,6 +3009,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2806,6 +3058,7 @@ void ProcessDeviceCommandQueue() {
        {
          GET_HND(pHandle);
          gpD3DResources.erase(pHandle);
@@ -3652,7 +3761,7 @@ index 86434ec..f5d7316 100644
          break;
        }
        case Bridge_UnlinkVolumeResource:
-@@ -3209,6 +3413,9 @@ void ProcessDeviceCommandQueue() {
+@@ -3209,6 +3462,9 @@ void ProcessDeviceCommandQueue() {
  
      const auto count = DeviceBridge::end_read_data();
  
@@ -3662,7 +3771,7 @@ index 86434ec..f5d7316 100644
  #ifdef ENABLE_DATA_BATCHING_TRACE
      Logger::trace(format_string("Finished batch data read with %d data items.", count));
  #endif
-@@ -3268,14 +3475,26 @@ bool InitializeD3D() {
+@@ -3268,14 +3524,26 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -3692,7 +3801,7 @@ index 86434ec..f5d7316 100644
      // Since vanilla dxvk is diabled attempt loading regular d3d9.dll which
      // could be either the system d3d9 one or our own Remix dxvk flavor of it.
      ghModule = LoadLibraryExA("d3d9.dll", nullptr,
-@@ -3285,6 +3504,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3553,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -3703,7 +3812,7 @@ index 86434ec..f5d7316 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3534,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3583,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -3714,7 +3823,7 @@ index 86434ec..f5d7316 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3488,12 +3715,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3488,12 +3764,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    ExceptionHandler::get().init();
  
    // Identify yourself
@@ -3733,7 +3842,7 @@ index 86434ec..f5d7316 100644
  #endif
  
    BRIDGE_ASSERT_LOG((argCount >= 2), "Command line argument count received to launch server is not as expected");
-@@ -3554,6 +3784,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3554,6 +3833,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    }
    const SentryShutdownOnExit sentryShutdownOnExit;
  
@@ -3742,7 +3851,7 @@ index 86434ec..f5d7316 100644
    // (3) Send ACK to Client. Connection has been established
    Logger::info("Sync request received, sending ACK response...");
    ServerMessage { Commands::Bridge_Ack, (uintptr_t) gpClientMessageChannel->getWorkerThreadId() };
-@@ -3589,6 +3821,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3589,12 +3870,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    bSignalDone.store(true);
    moduleCmdProcessingThread.join();
  
@@ -3751,7 +3860,14 @@ index 86434ec..f5d7316 100644
    if (!dumpLeakedObjects()) {
      bridge_util::Logger::debug("No leaked objects dicovered at Direct3D module eviction.");
    }
-@@ -3624,4 +3858,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+ 
+   // Command processing finished, clean up and exit
+   Logger::info("Command processing loop finished, cleaning up and exiting...");
++  if (gOverlayPresenter) { gOverlayPresenter->stop(); gOverlayPresenter.reset(); }
+   if (ghModule) {
+     // Skip unloading the d3d9.dll for now, since it seems to be doing more harm than good
+     // especially with other dependencies loaded by dxvk and threads that may deadlock due
+@@ -3624,4 +3908,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;
@@ -3759,7 +3875,7 @@ index 86434ec..f5d7316 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/server/meson.build b/bridge/src/server/meson.build
-index 908d93f..b3f1650 100644
+index 908d93f..41709e7 100644
 --- a/bridge/src/server/meson.build
 +++ b/bridge/src/server/meson.build
 @@ -1,3 +1,7 @@
@@ -3770,10 +3886,11 @@ index 908d93f..b3f1650 100644
  #############################################################################
  # Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
  #
-@@ -27,7 +31,10 @@ server_src = files([
+@@ -27,7 +31,11 @@ server_src = files([
  ])
  
  server_header = files([
++  'overlay_presenter.h',
 +	'host_memory_details.h',
 +	'host_memory_diagnostics.h',
  	'module_processing.h',
@@ -3781,7 +3898,7 @@ index 908d93f..b3f1650 100644
  	'server_options.h',
  	'remix_api.h'
  ])
-@@ -46,17 +53,25 @@ server_resource = windows.compile_resources('NvRemixBridge.rc',
+@@ -46,17 +54,25 @@ server_resource = windows.compile_resources('NvRemixBridge.rc',
  	depend_files : ['NvRemixBridge.ico']
  )
  
@@ -3810,7 +3927,7 @@ index 908d93f..b3f1650 100644
  	else
  		server_output_dir = output_dir + '.trex_arm64'
  	endif
-@@ -66,6 +81,6 @@ if (cpu_family == 'x86_64') or (cpu_family == 'aarch64')
+@@ -66,6 +82,6 @@ if (cpu_family == 'x86_64') or (cpu_family == 'aarch64')
  		output           : ['copy_server_to_output'],
  		build_by_default : true,
  		depends          : [ server_exe ],
@@ -3864,6 +3981,259 @@ index 33c7d79..1ada33a 100644
          BRIDGE_ASSERT_LOG(SUCCEEDED(hresult), "Issue retrieving D3D9 device specific information");
          {
            ModuleServerCommand c(Commands::Bridge_Response, currentUID);
+diff --git a/bridge/src/server/overlay_presenter.h b/bridge/src/server/overlay_presenter.h
+new file mode 100644
+index 0000000..3e9d416
+--- /dev/null
++++ b/bridge/src/server/overlay_presenter.h
+@@ -0,0 +1,247 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include <windows.h>
++#include <tlhelp32.h>
++#include <atomic>
++#include <cstdint>
++#include <cstring>
++#include <functional>
++#include <thread>
++
++namespace l4d2_overlay {
++// Public ReShade 6.0.1 SDK ABI (Patrick Mours, BSD-3-Clause OR MIT).
++// No SDK implementation or ReShade binary is included.
++constexpr uint32_t kReShadeApi = 10, kOpenOverlayEvent = 86;
++
++class Presenter {
++  inline static std::atomic<Presenter*> s_active { nullptr };
++  static constexpr UINT kMode = WM_APP + 210;
++  std::atomic<HWND> m_window { nullptr };
++  HWND m_parent = nullptr;
++  HANDLE m_ready = nullptr;
++  std::thread m_thread;
++  std::atomic<DWORD> m_threadId { 0 };
++  std::atomic<bool> m_capture { false }, m_stop { false };
++  bool m_input = true, m_fallback = false, m_keyDown = false;
++  UINT m_hotkey = VK_HOME, m_uiMessage = 0;
++  int m_cursorChanges = 0;
++  HHOOK m_keyboard = nullptr;
++  std::atomic<HMODULE> m_reshade { nullptr };
++  HMODULE m_attempted = nullptr;
++  using RegisterAddon = bool(*)(HMODULE, uint32_t);
++  using RegisterEvent = void(*)(uint32_t, void*);
++  using UnregisterAddon = void(*)(HMODULE);
++  RegisterEvent m_unregisterEvent = nullptr;
++  UnregisterAddon m_unregisterAddon = nullptr;
++  std::function<void(const char*)> m_log;
++
++  template<class T> static T proc(HMODULE module, const char* name) {
++    const FARPROC raw = GetProcAddress(module, name);
++    T result = nullptr;
++    static_assert(sizeof(result) == sizeof(raw), "Win32 procedure size");
++    std::memcpy(&result, &raw, sizeof(result));
++    return result;
++  }
++  static void* callback() {
++    auto function = &onOverlay;
++    void* result = nullptr;
++    static_assert(sizeof(result) == sizeof(function), "Win32 callback size");
++    std::memcpy(&result, &function, sizeof(result));
++    return result;
++  }
++  static bool onOverlay(void*, bool open, uint32_t) {
++    if (auto* self = s_active.load()) { self->capture(open); }
++    return false;
++  }
++  bool foreground() const {
++    const HWND window = GetForegroundWindow();
++    return window && GetAncestor(window, GA_ROOT) == GetAncestor(m_parent, GA_ROOT);
++  }
++  void resize() {
++    RECT rect {};
++    const HWND window = m_window.load();
++    if (window && IsWindow(m_parent) && GetClientRect(m_parent, &rect)) {
++      RECT current {};
++      GetClientRect(window, &current);
++      if (current.right != rect.right || current.bottom != rect.bottom) {
++        SetWindowPos(window, HWND_TOP, 0, 0, rect.right, rect.bottom, SWP_NOACTIVATE);
++      }
++    }
++  }
++  void applyMode() {
++    const bool active = m_capture.load();
++    EnableWindow(m_window.load(), active);
++    if (active && !m_cursorChanges) {
++      do { ++m_cursorChanges; } while (ShowCursor(TRUE) < 0 && m_cursorChanges < 16);
++    } else if (!active) {
++      while (m_cursorChanges) { ShowCursor(FALSE); --m_cursorChanges; }
++    }
++  }
++  static LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
++    auto* self = reinterpret_cast<Presenter*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
++    if (message == WM_NCCREATE) {
++      self = static_cast<Presenter*>(reinterpret_cast<CREATESTRUCTW*>(lParam)->lpCreateParams);
++      SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
++    }
++    if (self) {
++      if (message == kMode) { self->applyMode(); return 0; }
++      if (message == WM_TIMER) { self->resize(); return 0; }
++      if (message == WM_MOUSEACTIVATE) { return MA_NOACTIVATE; }
++      if (message == WM_ERASEBKGND) { return 1; }
++      if (message == WM_SETCURSOR && self->m_capture.load()) { SetCursor(LoadCursor(nullptr, IDC_ARROW)); return TRUE; }
++      if (message == WM_DESTROY) { PostQuitMessage(0); return 0; }
++    }
++    return DefWindowProcW(hwnd, message, wParam, lParam);
++  }
++  static LRESULT CALLBACK keyHook(int code, WPARAM wParam, LPARAM lParam) {
++    auto* self = s_active.load();
++    if (code != HC_ACTION || !self || !self->foreground()) { return CallNextHookEx(nullptr, code, wParam, lParam); }
++    const auto& key = *reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
++    // Preserve operating-system switching shortcuts and ignore injected input.
++    if ((key.flags & LLKHF_INJECTED) || key.vkCode == VK_LWIN || key.vkCode == VK_RWIN
++      || (key.vkCode == VK_TAB && (key.flags & LLKHF_ALTDOWN))) {
++      return CallNextHookEx(nullptr, code, wParam, lParam);
++    }
++    const bool up = (key.flags & LLKHF_UP) != 0;
++    const bool captured = self->m_capture.load();
++    if (key.vkCode == self->m_hotkey) {
++      if (!up && !self->m_keyDown && self->m_fallback && !self->m_reshade) { self->capture(!captured); }
++      self->m_keyDown = !up;
++    }
++    uint32_t bits = 1u | ((key.scanCode & 0xffu) << 16);
++    if (key.flags & LLKHF_EXTENDED) { bits |= 1u << 24; }
++    if (key.flags & LLKHF_ALTDOWN) { bits |= 1u << 29; }
++    if (up) { bits |= 3u << 30; }
++    const HWND window = self->m_window.load();
++    UINT legacyKey = key.vkCode;
++    if (legacyKey == VK_LSHIFT || legacyKey == VK_RSHIFT) { legacyKey = VK_SHIFT; }
++    if (legacyKey == VK_LCONTROL || legacyKey == VK_RCONTROL) { legacyKey = VK_CONTROL; }
++    if (legacyKey == VK_LMENU || legacyKey == VK_RMENU) { legacyKey = VK_MENU; }
++    if (window) { PostMessageW(window, static_cast<UINT>(wParam), legacyKey, static_cast<LPARAM>(bits)); }
++    if (captured || self->m_capture.load()) { return 1; }
++    return CallNextHookEx(nullptr, code, wParam, lParam);
++  }
++  void worker() {
++    m_threadId = GetCurrentThreadId();
++    MSG message {};
++    PeekMessageW(&message, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
++    const HINSTANCE instance = GetModuleHandleW(nullptr);
++    WNDCLASSEXW wc {};
++    wc.cbSize = sizeof(wc); wc.lpfnWndProc = windowProc; wc.hInstance = instance;
++    wc.lpszClassName = L"L4D2BridgeOverlayPresenter";
++    const ATOM atom = RegisterClassExW(&wc);
++    if (!atom && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) { SetEvent(m_ready); return; }
++    RECT rect {};
++    GetClientRect(m_parent, &rect);
++    // Suppress synchronous parent notifications while the game awaits CreateDevice.
++    const HWND window = CreateWindowExW(WS_EX_NOPARENTNOTIFY | WS_EX_NOACTIVATE,
++      wc.lpszClassName, L"L4D2 Bridge Presenter", WS_CHILD | WS_VISIBLE | WS_DISABLED,
++      0, 0, rect.right, rect.bottom, m_parent, nullptr, instance, this);
++    m_window.store(window);
++    if (window && m_input) {
++      DWORD parentPid = 0;
++      const DWORD parentThread = GetWindowThreadProcessId(m_parent, &parentPid);
++      ActivateKeyboardLayout(GetKeyboardLayout(parentThread), 0);
++      m_keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, keyHook, instance, 0);
++      if (m_log) { m_log(m_keyboard ? "L4D2_OVERLAY event=keyboard-hook installed=1" : "L4D2_OVERLAY event=keyboard-hook installed=0"); }
++    }
++    if (window) { SetTimer(window, 1, 250, nullptr); }
++    SetEvent(m_ready);
++    if (!window) { return; }
++    while (!m_stop.load() && GetMessageW(&message, nullptr, 0, 0) > 0) {
++      TranslateMessage(&message);
++      DispatchMessageW(&message);
++    }
++    if (m_keyboard) { UnhookWindowsHookEx(m_keyboard); m_keyboard = nullptr; }
++    m_capture.store(false); applyMode();
++    if (IsWindow(window)) { DestroyWindow(window); }
++    m_window.store(nullptr);
++  }
++public:
++  explicit Presenter(bool input = true, UINT hotkey = VK_HOME, bool fallback = false,
++                     std::function<void(const char*)> log = {})
++    : m_input(input), m_fallback(fallback), m_hotkey(hotkey), m_log(std::move(log)) {
++    m_uiMessage = RegisterWindowMessageW(L"UWM_REMIX_UIACTIVE_MSG");
++  }
++  ~Presenter() { stop(); }
++  Presenter(const Presenter&) = delete;
++  Presenter& operator=(const Presenter&) = delete;
++  HWND window(HWND parent) {
++    if (!IsWindow(parent)) { return nullptr; }
++    if (m_parent) { return m_parent == parent ? m_window.load() : nullptr; }
++    m_parent = parent;
++    m_ready = CreateEventW(nullptr, TRUE, FALSE, nullptr);
++    if (!m_ready) { return nullptr; }
++    s_active.store(this);
++    try { m_thread = std::thread([this] { worker(); }); }
++    catch (...) { if (m_log) { m_log("L4D2_OVERLAY event=window-error reason=thread-start-failed"); } return nullptr; }
++    if (WaitForSingleObject(m_ready, 5000) != WAIT_OBJECT_0) { return nullptr; }
++    return m_window.load();
++  }
++  HWND route(HWND original) const {
++    const HWND window = m_window.load();
++    return original && original == m_parent && window ? window : original;
++  }
++  void capture(bool active) {
++    if (m_capture.exchange(active) == active) { return; }
++    PostMessageW(m_window.load(), kMode, 0, 0);
++    if (m_uiMessage) { PostMessageW(m_parent, m_uiMessage, active ? 1 : 0, 0); }
++    if (m_log) { m_log(active ? "L4D2_OVERLAY event=input-capture active=1" : "L4D2_OVERLAY event=input-capture active=0"); }
++  }
++  bool capturing() const { return m_capture.load(); }
++  bool bindReShade(HMODULE module) {
++    if (m_reshade) { return true; }
++    if (!module || module == m_attempted || !m_window.load() || !m_input) { return false; }
++    auto reg = proc<RegisterAddon>(module, "ReShadeRegisterAddon");
++    auto event = proc<RegisterEvent>(module, "ReShadeRegisterEvent");
++    auto unregEvent = proc<RegisterEvent>(module, "ReShadeUnregisterEvent");
++    auto unreg = proc<UnregisterAddon>(module, "ReShadeUnregisterAddon");
++    if (!reg || !event || !unregEvent || !unreg) { return false; }
++    m_attempted = module;
++    if (!reg(GetModuleHandleW(nullptr), kReShadeApi)) {
++      if (m_log) { m_log("L4D2_OVERLAY event=reshade-api registered=0 reason=addon-registration-rejected"); }
++      return false;
++    }
++    HMODULE pinned = nullptr;
++    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
++      reinterpret_cast<LPCWSTR>(module), &pinned)) {
++      unreg(GetModuleHandleW(nullptr)); return false;
++    }
++    m_unregisterEvent = unregEvent; m_unregisterAddon = unreg;
++    m_reshade = module;
++    event(kOpenOverlayEvent, callback());
++    if (m_log) { m_log("L4D2_OVERLAY event=reshade-api registered=1 api=10 overlay_event=86"); }
++    return true;
++  }
++  bool findReShade() {
++    if (m_reshade) { return true; }
++    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
++    if (snapshot == INVALID_HANDLE_VALUE) { return false; }
++    MODULEENTRY32W entry {}; entry.dwSize = sizeof(entry);
++    bool result = false;
++    if (Module32FirstW(snapshot, &entry)) {
++      do { if (bindReShade(entry.hModule)) { result = true; break; } } while (Module32NextW(snapshot, &entry));
++    }
++    CloseHandle(snapshot);
++    return result;
++  }
++  void stop() {
++    if (m_reshade) {
++      m_unregisterEvent(kOpenOverlayEvent, callback());
++      m_unregisterAddon(GetModuleHandleW(nullptr));
++      HMODULE module = m_reshade.exchange(nullptr);
++      FreeLibrary(module);
++    }
++    capture(false);
++    m_stop.store(true);
++    if (m_threadId.load()) { PostThreadMessageW(m_threadId.load(), WM_QUIT, 0, 0); }
++    if (m_thread.joinable()) { m_thread.join(); }
++    m_threadId.store(0);
++    if (m_ready) { CloseHandle(m_ready); m_ready = nullptr; }
++    if (s_active.load() == this) { s_active.store(nullptr); }
++  }
++};
++}
 diff --git a/bridge/src/server/readback_backend.h b/bridge/src/server/readback_backend.h
 new file mode 100644
 index 0000000..22832fe
