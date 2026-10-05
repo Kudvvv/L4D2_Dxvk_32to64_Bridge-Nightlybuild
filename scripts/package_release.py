@@ -23,22 +23,37 @@ def machine(path):
     return struct.unpack_from("<H", data, offset + 4)[0]
 
 
-def package(source, dxvk, output):
+def package(source, dxvk, output, dxvk_x86=None):
     client_output = output.parent / "l4d2-client-only"
     host_output = output.parent / "l4d2-host-only"
     cpu_output = output.parent / "l4d2-cpu-update"
     readback_output = output.parent / "l4d2-readback-experiment"
     retention_output = output.parent / "l4d2-retention-experiment"
+    comparison_output = output.parent / "l4d2-x86-host-comparison"
     inputs = {
         "bin/dxvk_d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
         "bin/.l4d2bridge/L4D2Bridge64.exe": (source / "bridge/_compDebugOptimized_x64/src/server/L4D2Bridge64.exe", 0x8664),
         "bin/.l4d2bridge/d3d9vk_x64.dll": (dxvk, 0x8664),
     }
+    comparison_inputs = {}
+    if dxvk_x86 is not None:
+        comparison_inputs = {
+            **inputs,
+            "bin/.l4d2bridge/L4D2Bridge32.exe": (source / "bridge/_compDebugOptimized_x86_server/src/server/L4D2Bridge32.exe", 0x14c),
+            "bin/.l4d2bridge/d3d9vk_x86.dll": (dxvk_x86, 0x14c),
+        }
     # Validate all inputs before creating output. Never deploy into a game directory.
-    for path, expected in inputs.values():
+    for path, expected in {**inputs, **comparison_inputs}.values():
         if machine(path) != expected:
             raise ValueError(f"Wrong architecture: {path}")
-    for destination in (output, client_output, host_output, cpu_output, readback_output, retention_output):
+    destinations = [output, client_output, host_output, cpu_output, readback_output, retention_output]
+    if comparison_inputs:
+        host32 = comparison_inputs["bin/.l4d2bridge/L4D2Bridge32.exe"][0].read_bytes()
+        pe_offset = struct.unpack_from("<I", host32, 60)[0]
+        if not struct.unpack_from("<H", host32, pe_offset + 22)[0] & 0x20:
+            raise ValueError("The x86 comparison host must be LARGEADDRESSAWARE")
+        destinations.append(comparison_output)
+    for destination in destinations:
         if destination.exists():
             raise FileExistsError(f"Output already exists; preserve or move it first: {destination}")
     output.mkdir(parents=True, exist_ok=False)
@@ -144,6 +159,34 @@ def package(source, dxvk, output):
         "client.pageBlockRetentionDb = .l4d2bridge/resource-retention.db\n"
         "client.pageBlockDiagnostics = True\n"
         "client.testReadbackRecovery = False\n", encoding="utf-8")
+    if comparison_inputs:
+        comparison_hashes = {}
+        for relative, (path, _) in comparison_inputs.items():
+            destination = comparison_output / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, destination)
+            comparison_hashes[relative] = hashlib.sha256(destination.read_bytes()).hexdigest()
+        shutil.copytree(licenses, comparison_output / "licenses")
+        for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
+            shutil.copy2(readback_output / filename, comparison_output / filename)
+        guide = (ROOT / "docs/X86-HOST-COMPARISON.md").read_text(encoding="utf-8")
+        guide = guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+        (comparison_output / "X86-HOST-COMPARISON.md").write_text(guide, encoding="utf-8")
+        for architecture, enabled in (("X86", "True"), ("X64", "False")):
+            (comparison_output / f"{architecture}-HOST.conf").write_text(
+                "# Merge into bin/.l4d2bridge/bridge.conf; one value per key.\n"
+                "server.useVanillaDxvk = True\nforceX64Server = True\nuseSharedHeap = False\n"
+                f"client.testX86Server = {enabled}\n"
+                "client.pageBlockRetentionPolicy = keep\n"
+                "client.testReadbackRecovery = False\n", encoding="utf-8")
+        (comparison_output / "SHA256.json").write_text(json.dumps(comparison_hashes, indent=2) + "\n")
+        (comparison_output / "BACKEND-SOURCES.json").write_text(json.dumps({
+            "project": "doitsujin/dxvk", "version": "2.6.1", "modified": False,
+            "archive_url": "https://github.com/doitsujin/dxvk/releases/download/v2.6.1/dxvk-2.6.1.tar.gz",
+            "archive_sha256": "7ee0bef415910c943d3bda47d9d6821b9c8ca7a74f1e9f6151707d268cf3ce7f",
+            "files": {"x32/d3d9.dll": "bin/.l4d2bridge/d3d9vk_x86.dll", "x64/d3d9.dll": "bin/.l4d2bridge/d3d9vk_x64.dll"},
+        }, indent=2) + "\n")
+        print(f"x86/x64 host comparison: {comparison_output}; official DXVK 2.6.1, switch the host with client.testX86Server")
     print(f"L4D2 D3D9 Bridge v{(ROOT / 'VERSION').read_text().strip()}: {output}")
     print(f"Client-only update: {client_output}; preserves the installed host and DXVK")
     print(f"Host diagnostics update: {host_output}; preserves the installed client, DXVK and configuration")
@@ -156,6 +199,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--dxvk", type=Path, required=True)
+    parser.add_argument("--dxvk-x86", type=Path)
     parser.add_argument("--output", type=Path, default=ROOT / "dist/l4d2-bridge")
     args = parser.parse_args()
-    package(args.source.resolve(), args.dxvk.resolve(), args.output.resolve())
+    package(args.source.resolve(), args.dxvk.resolve(), args.output.resolve(), args.dxvk_x86.resolve() if args.dxvk_x86 else None)
