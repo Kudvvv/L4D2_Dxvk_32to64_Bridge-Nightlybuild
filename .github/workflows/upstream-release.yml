@@ -73,7 +73,7 @@ jobs:
           $metadata = @{ upstream_tag = $env:UPSTREAM_TAG; upstream_branch = $env:UPSTREAM_BRANCH; build_kind = $env:BUILD_KIND; commits_after_tag = $env:COMMITS_AFTER_TAG; upstream_commit = $env:UPSTREAM_COMMIT; recipe_commit = $env:RECIPE_COMMIT; game_validation = 'Not performed; experimental build' }
           $metadata | ConvertTo-Json | Set-Content dist/l4d2-bridge/UPSTREAM.json -Encoding utf8
           $archive = $env:ARCHIVE_NAME
-          python scripts/archive_release.py dist/l4d2-bridge $archive
+          python scripts/archive_runtime.py dist/l4d2-bridge $archive
           if ($LASTEXITCODE -ne 0) { throw 'Archive failed' }
           "$((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower())  $archive" | Set-Content "$archive.sha256" -Encoding ascii
       - uses: actions/upload-artifact@v4
