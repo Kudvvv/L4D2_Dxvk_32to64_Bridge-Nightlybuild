@@ -1,5 +1,7 @@
 # L4D2 Bridge Nightly
 
+**简体中文** | [English](README.en.md)
+
 基于 [NVIDIA dxvk-remix Bridge](https://github.com/NVIDIAGameWorks/dxvk-remix)，沿用 [L4D2 原项目](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge) 的补丁，自动构建适用于 32 位《求生之路 2》的 x86 客户端与 x64 Host。
 
 ## 与上游的区别
