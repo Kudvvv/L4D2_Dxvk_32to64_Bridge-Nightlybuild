@@ -79,7 +79,7 @@ static bool launch(const wchar_t* executable, const Request& request, uint32_t m
 static bool setupPolicy(l4d2_retention::Context& c, const wchar_t* executable, const std::filesystem::path& path, uint32_t& mode, std::string& log) {
   c.enabled = true;
   c.log = [&log](const char* line) { log += line; log += '\n'; };
-  c.exchange = [executable, &mode](const Request& request, Temporary& temporary, Response& response, uint64_t& elapsed) {
+  c.exchange = [executable, &mode](const Request& request, Temporary& temporary, Response& response, uint64_t& elapsed) -> HRESULT {
     HRESULT hr = temporary.create(request);
     if (FAILED(hr)) { return hr; }
     PROCESS_INFORMATION process {};
