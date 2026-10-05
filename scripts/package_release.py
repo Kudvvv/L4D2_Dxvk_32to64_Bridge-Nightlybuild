@@ -28,6 +28,7 @@ def package(source, dxvk, output):
     host_output = output.parent / "l4d2-host-only"
     cpu_output = output.parent / "l4d2-cpu-update"
     readback_output = output.parent / "l4d2-readback-experiment"
+    retention_output = output.parent / "l4d2-retention-experiment"
     inputs = {
         "bin/dxvk_d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
         "bin/.l4d2bridge/L4D2Bridge64.exe": (source / "bridge/_compDebugOptimized_x64/src/server/L4D2Bridge64.exe", 0x8664),
@@ -37,7 +38,7 @@ def package(source, dxvk, output):
     for path, expected in inputs.values():
         if machine(path) != expected:
             raise ValueError(f"Wrong architecture: {path}")
-    for destination in (output, client_output, host_output, cpu_output, readback_output):
+    for destination in (output, client_output, host_output, cpu_output, readback_output, retention_output):
         if destination.exists():
             raise FileExistsError(f"Output already exists; preserve or move it first: {destination}")
     output.mkdir(parents=True, exist_ok=False)
@@ -123,6 +124,8 @@ def package(source, dxvk, output):
     recovery_guide = (ROOT / "docs/READBACK-RECOVERY-EXPERIMENT.md").read_text(encoding="utf-8")
     recovery_guide = recovery_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
     (readback_output / "READBACK-RECOVERY-EXPERIMENT.md").write_text(recovery_guide, encoding="utf-8")
+    learned_guide = (ROOT / "docs/LEARNED-RETENTION-EXPERIMENT.md").read_text(encoding="utf-8").replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (readback_output / "LEARNED-RETENTION-EXPERIMENT.md").write_text(learned_guide, encoding="utf-8")
     shutil.copytree(licenses, readback_output / "licenses")
     for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
         shutil.copy2(ROOT / filename, readback_output / filename)
@@ -132,11 +135,21 @@ def package(source, dxvk, output):
     )
     (readback_output / "THIRD_PARTY.md").write_text(third_party, encoding="utf-8")
     (readback_output / "SHA256.json").write_text(json.dumps(cpu_hashes, indent=2) + "\n")
+    shutil.copytree(readback_output, retention_output)
+    retention_guide = (ROOT / "docs/LEARNED-RETENTION-EXPERIMENT.md").read_text(encoding="utf-8")
+    retention_guide = retention_guide.replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
+    (retention_output / "LEARNED-RETENTION-EXPERIMENT.md").write_text(retention_guide, encoding="utf-8")
+    (retention_output / "LEARNED-RETENTION.conf").write_text(
+        "client.pageBlockRetentionPolicy = learned-aggressive\n"
+        "client.pageBlockRetentionDb = .l4d2bridge/resource-retention.db\n"
+        "client.pageBlockDiagnostics = True\n"
+        "client.testReadbackRecovery = False\n", encoding="utf-8")
     print(f"L4D2 D3D9 Bridge v{(ROOT / 'VERSION').read_text().strip()}: {output}")
     print(f"Client-only update: {client_output}; preserves the installed host and DXVK")
     print(f"Host diagnostics update: {host_output}; preserves the installed client, DXVK and configuration")
     print(f"CPU queue update: {cpu_output}; update both bridge binaries together")
     print(f"Forced readback experiment: {readback_output}; matching client/Host, no backend or configuration overwrite")
+    print(f"Learned retention experiment: {retention_output}; matching client/Host, opt-in configuration snippet")
 
 
 if __name__ == "__main__":

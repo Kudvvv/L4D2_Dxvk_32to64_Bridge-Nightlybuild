@@ -4,11 +4,17 @@
 
 # 更新记录 / Changelog
 
+## Learned-aggressive 真实 retention 实验 / Real retention experiment
+
+Phase 1 的实际 L4D2 测试取得 39/39 byte-for-byte 一致。新增默认保持原策略的 `client.pageBlockRetentionPolicy` 开关；启用 learned-aggressive 后，支持的 MANAGED 静态 2D texture 按完整初始 mip chain／描述／归一化 callsite 生成 SHA-256 两级 fingerprint，UNKNOWN 真正 DROP。自然 preserve miss 从服务器恢复全部缺失 mip，验证并重建后持久 KEEP。追加式数据库保留上游许可；严重失败触发本局 KEEP fallback，未恢复的 Lock 返回错误。详见 [实验说明](docs/LEARNED-RETENTION-EXPERIMENT.md)。新自动策略尚需游戏验证，不作为已通过的正式内存修复。
+
+Adds an opt-in real backing retention policy after 39/39 actual phase-one comparisons. Eligible unknown textures are genuinely evicted after complete initial mip uploads and stable fingerprints; preserve misses restore, validate and rebuild all missing mips before persistent KEEP promotion. Includes monotonic Strong/Content DB lookup and session fallback on failure. Default remains `keep`; automatic policy gameplay validation is pending.
+
 ## Readback 前置实验 / Readback prerequisite experiment
 
-新增默认关闭的 `client.testReadbackRecovery`：匹配的客户端和 Host 从当前 DXVK MANAGED 2D mip0 resource 恢复完整逻辑内容到独立临时 section，随后才读取原 backing 逐字节验证。支持 DXT1/3/5 与普通 32 位色彩、确定性尺寸槽及同资源重复测试，记录显式 event-query FLUSH/等待和延迟。不改变正常 backing 保留，不实现真实淘汰或持久化策略。真实删除后的 hash 验证阶段等待第一阶段实际 L4D2 结果通过。安装及验证边界见 [实验说明](docs/READBACK-RECOVERY-EXPERIMENT.md)。
+新增默认关闭的 `client.testReadbackRecovery`：匹配的客户端和 Host 从当前 DXVK MANAGED 2D mip0 resource 恢复完整逻辑内容到独立临时 section，随后才读取原 backing 逐字节验证。支持 DXT1/3/5 与普通 32 位色彩、确定性尺寸槽及同资源重复测试，记录显式 event-query FLUSH/等待和延迟。不改变正常 backing 保留，不实现真实淘汰或持久化策略。真实删除后的 hash 验证现作为独立 learned-aggressive 策略的首次自然 miss 执行。安装及验证边界见 [实验说明](docs/READBACK-RECOVERY-EXPERIMENT.md)。
 
-Adds an opt-in matched client/Host forced-readback test. It reads the current backend resource into an independent temporary section, then compares logical bytes against retained ground truth, with deterministic format/size sampling, repetition and explicit event-query synchronization. It does not evict normal backing or add retention policy. Actual-deletion/hash recovery remains conditional on real-game phase-one validation.
+Adds an opt-in matched client/Host forced-readback test. It reads the current backend resource into an independent temporary section, then compares logical bytes against retained ground truth, with deterministic format/size sampling, repetition and explicit event-query synchronization. It does not evict normal backing or add retention policy. Actual-deletion/hash validation now runs on the first natural miss in the separate learned retention policy.
 
 ## 诊断更新 / Diagnostic update
 

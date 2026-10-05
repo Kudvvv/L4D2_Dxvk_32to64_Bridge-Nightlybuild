@@ -4,7 +4,7 @@
 
 # Forced readback recovery：保留参考副本的前置实验
 
-当前只实现第一阶段：从实际 x64 D3D9/DXVK resource 恢复内容，验证它是否与仍保留的客户端 backing 等价。**不删除正式 backing，不改变正常 retention policy，不添加真实 LRU、ResourceKey、持久化数据库、白名单或自动 promotion。** 不承诺降低当前内存占用。
+此配置开关只执行保留参考副本的第一阶段：从实际 x64 D3D9/DXVK resource 恢复内容，验证它是否与仍保留的客户端 backing 等价。**不删除正式 backing，不改变正常 retention policy，不添加真实 LRU、ResourceKey、持久化数据库、白名单或自动 promotion。** 不承诺降低当前内存占用。
 
 ## 安装和测试
 
@@ -78,9 +78,7 @@ PB_READBACK_TEST event=result resource_id=... repeat=1 success=1 bytes=... exact
 
 ## 第二阶段依赖
 
-**真实删除 backing 的第二阶段尚未实现或启用。** 按实验顺序，先检查本阶段真实 L4D2 日志及布局／同步正确性，再增加保存小 hash、删除该测试 backing、稍后只从 backend 恢复并验证 hash 的独立阶段。当前没有 `event=real-miss-recovery`，即使所有 memcmp 一致，也只能证明保留 reference 时的恢复，不能声称 backing 真删除已通过。
-
-后续阶段不得保存完整参考副本，只允许小 verification hash，并必须处理失败后游戏行为、设备失效与资源版本。它仍不是正常 retention policy 的变更，更不是 learned-aggressive policy 已验证。
+真实删除后的 hash-only 验证现已接入独立的 learned-aggressive 策略，在第一次自然 preserve miss 时执行。详见 [真实淘汰实验](LEARNED-RETENTION-EXPERIMENT.md)。本文件的 `testReadbackRecovery=True` 仍保留原 backing；两个模式不得同时启用。第一阶段实际游戏日志已通过 39/39 byte comparison，真实自动恢复仍需要新策略的游戏日志验收。
 
 ## 自动测试的实际范围
 
@@ -90,7 +88,7 @@ Mock 测试不构成真实 DXVK/GPU 验收。实际生产代码通过 D3D9Backen
 
 ## English
 
-This implements **phase one only**, preserving the original client backing as ground truth. Install the matched client and Host from `l4d2-bridge-readback-experiment`, retaining your existing x64 DXVK/mem1 backend and configuration. Enable `client.testReadbackRecovery=True`, optionally max resources 20 and repeats 3. Save `bin/l4d2-readback.log` before restarting; disable the flag after testing.
+This switch executes **phase one**, preserving the original client backing as ground truth. Install the matched client and Host from `l4d2-bridge-readback-experiment`, retaining your existing x64 DXVK/mem1 backend and configuration. Enable `client.testReadbackRecovery=True`, optionally max resources 20 and repeats 3. Save `bin/l4d2-readback.log` before restarting; disable the flag after testing.
 
 Eligible resources are fully uploaded, non-MSAA MANAGED 2D mip0 textures with Usage=0. Selection is deterministic: one per supported format/maximum-edge-size slot, among DXT1/3/5 and A8R8G8B8/X8R8G8B8, with edges 256/1024/2048/4096 and at most 64 MiB per resource. Untested slots are not counted as coverage. This does not validate a full mip chain.
 
@@ -98,7 +96,7 @@ The client requests recovery into a separate temporary named section. No origina
 
 `PB_READBACK_TEST` logs config/start/sync/result/mismatch/summary. Success=1 means comparison completed; exact_match must also be 1. Readback latency includes IPC and explicit synchronization; backend time, sync time, layout, mismatch count and first expected/actual byte are separate. FLUSH is recorded as a request, and DXVK-internal waits are explicitly unobservable through the public interface. Late completion uses only the temporary event/section, not the normal response queue.
 
-Phase two (hash-only reference, actual deletion and delayed recovery) remains pending until actual L4D2 phase-one results pass. No real-miss recovery or aggressive policy is claimed. CI cross-process tests use an independent mock backend, not a real GPU; hardware validation requires the game logs.
+Actual deletion and hash-only validation are now implemented in the separately enabled [learned retention experiment](LEARNED-RETENTION-EXPERIMENT.md). Its first natural preserve miss provides phase-two validation. Do not enable both modes. Phase one passed 39/39 actual-game comparisons; the new automatic policy still requires game validation. CI cross-process tests use an independent mock backend, not a real GPU; hardware validation requires the game logs.
 
 ## License and Credits
 

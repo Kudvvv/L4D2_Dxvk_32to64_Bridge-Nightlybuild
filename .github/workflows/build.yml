@@ -48,13 +48,19 @@ jobs:
       - name: Test command queue idle CPU and x86 to x64 wakeups
         shell: powershell
         run: ./scripts/test_command_queue.ps1
-      - name: Test forced readback layout and x86 to x64 independent recovery
+      - name: Test readback, real backing eviction, recovery and persistent retention
         shell: powershell
         run: ./scripts/test_readback_recovery.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: l4d2-bridge-v${{ env.L4D2_PROJECT_VERSION }}
           path: dist/l4d2-bridge/
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-learned-retention-experiment
+          path: dist/l4d2-retention-experiment/
           include-hidden-files: true
           if-no-files-found: error
       - uses: actions/upload-artifact@v4

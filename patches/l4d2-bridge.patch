@@ -28,7 +28,7 @@ index 9de506f..c9e97f1 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
-index 300aaf5..ade1342 100644
+index 300aaf5..dc7b177 100644
 --- a/bridge/src/client/d3d9_lss.cpp
 +++ b/bridge/src/client/d3d9_lss.cpp
 @@ -1,3 +1,7 @@
@@ -39,15 +39,16 @@ index 300aaf5..ade1342 100644
  /*
   * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -37,6 +41,7 @@
+@@ -37,6 +41,8 @@
  #include "remix_state.h"
  #include "window.h"
  #include "message_channels.h"
 +#include "readback_recovery.h"
++#include "retention_runtime.h"
  
  #include "util_bridge_assert.h"
  #include "util_bridge_state.h"
-@@ -128,7 +133,7 @@ bool gbBridgeRunning = true;
+@@ -128,7 +134,7 @@ bool gbBridgeRunning = true;
  std::string gRemixFolder = "";
  std::mutex gSwapChainMapMutex;
  SwapChainMap gSwapChainMap;
@@ -56,7 +57,7 @@ index 300aaf5..ade1342 100644
  
  static fspath GetServerExecutablePath() {
    ONCE(Logger::info(std::string("Native arch: ") + getNativeArchString()));
-@@ -524,22 +529,25 @@ bool RemixAttach(HMODULE hModule) {
+@@ -524,22 +530,25 @@ bool RemixAttach(HMODULE hModule) {
  
      // Setup Remix folder first hand
      if (!InitRemixFolder(hModule)) {
@@ -87,18 +88,19 @@ index 300aaf5..ade1342 100644
  
      DInputHookAttach();
  
-@@ -606,6 +614,9 @@ void RemixDetach() {
+@@ -606,6 +615,10 @@ void RemixDetach() {
      // Clean up resources
      delete gpPresent;
  
 +    l4d2_pageblock::summary(true);
 +    l4d2_readback::summary();
++    l4d2_retention::summary();
 +
      Logger::info("Shutdown cleanup successful, exiting now!");
      BridgeState::setClientState(BridgeState::ProcessState::Exited);
  
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
-index e54aec5..28ed6cf 100644
+index e54aec5..323cf2f 100644
 --- a/bridge/src/client/d3d9_surface.cpp
 +++ b/bridge/src/client/d3d9_surface.cpp
 @@ -1,3 +1,7 @@
@@ -128,7 +130,7 @@ index e54aec5..28ed6cf 100644
  
  Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
                                             const D3DSURFACE_DESC& desc, bool isBackBuffer)
-@@ -38,6 +54,31 @@ Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDev
+@@ -38,21 +54,41 @@ Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDev
    , m_desc(desc)
    , m_isBackBuffer(isBackBuffer)
  {
@@ -160,7 +162,10 @@ index e54aec5..28ed6cf 100644
  }
  
  Direct3DSurface9_LSS::~Direct3DSurface9_LSS() {
-@@ -45,14 +86,6 @@ Direct3DSurface9_LSS::~Direct3DSurface9_LSS() {
++  // NV-DXVK start: Remove the non-owning policy view before destroying its backing.
++  if (m_retention) { m_retention->detach(m_readbackMip); }
++  // NV-DXVK end
+   if (m_bUseSharedHeap) {
      if (m_bufferId != SharedHeap::kInvalidId) {
        SharedHeap::deallocate(m_bufferId);
      }
@@ -175,7 +180,7 @@ index e54aec5..28ed6cf 100644
    }
  }
  
-@@ -220,18 +253,20 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
+@@ -220,18 +256,26 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
      lockedRect.pBits = getBufPtr(lockedRect.Pitch, rect);
      m_lockInfoQueue.push({ lockedRect, rect, flags, m_bufferId, discardBufId });
    } else {
@@ -186,7 +191,13 @@ index e54aec5..28ed6cf 100644
 -                                  "(size: %zd, total surface shadow size: %zd)",
 -                                  this, surfaceSize, g_totalSurfaceShadow));
 -    }
-+    auto* shadow = m_shadow.acquire(surfaceSize, surfaceShadowBudget());
++    // NV-DXVK start: Missing contents are restored before publishing a client Lock pointer.
++    if (m_retention && !m_retention->beforeLock(m_readbackMip, flags, rect)) { return false; }
++    // NV-DXVK end
++    const bool fullOverwrite = rect.left == 0 && rect.top == 0
++      && rect.right == static_cast<LONG>(m_desc.Width) && rect.bottom == static_cast<LONG>(m_desc.Height)
++      && !l4d2_retention::requiresPreserve(flags, true);
++    auto* shadow = m_shadow.acquire(surfaceSize, surfaceShadowBudget(), fullOverwrite);
 +    if (!shadow) { return false; }
 +    l4d2_memory::sample(false, "surface-mapped", l4d2_memory::Kind::Surface, surfaceSize,
 +      m_desc.Width, m_desc.Height, static_cast<unsigned>(m_desc.Format));
@@ -204,14 +215,14 @@ index e54aec5..28ed6cf 100644
    }
    return true;
  }
-@@ -247,6 +282,20 @@ void Direct3DSurface9_LSS::unlock() {
+@@ -247,6 +291,25 @@ void Direct3DSurface9_LSS::unlock() {
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
      sendDataToServer(lockInfo);
    }
 +  if (!m_bUseSharedHeap) {
 +    m_shadow.release(surfaceShadowBudget());
 +    m_shadow.observeUnlock(lockInfo.flags);
-+    // NV-DXVK start: Forced recovery retains the original backing and normal upload.
++    // NV-DXVK start: Optional reference experiment completes before learned retention.
 +    if (!m_readbackAttempted && m_readbackTexture2D && m_readbackMip == 0
 +      && m_lockInfoQueue.empty() && !(lockInfo.flags & D3DLOCK_READONLY)
 +      && lockInfo.rect.left == 0 && lockInfo.rect.top == 0
@@ -220,12 +231,46 @@ index e54aec5..28ed6cf 100644
 +      m_readbackAttempted = true;
 +      l4d2_readback::test(getId(), m_readbackParentId, m_desc, m_shadow);
 +    }
++    if (m_retention && m_lockInfoQueue.empty() && !(lockInfo.flags & D3DLOCK_READONLY)) {
++      const bool full = lockInfo.rect.left == 0 && lockInfo.rect.top == 0
++        && lockInfo.rect.right == static_cast<LONG>(m_desc.Width) && lockInfo.rect.bottom == static_cast<LONG>(m_desc.Height);
++      m_retention->uploaded(m_readbackMip, full, m_uploadHash, m_uploadHashResult);
++    }
 +    // NV-DXVK end
 +  }
  }
  
  RECT Direct3DSurface9_LSS::resolveLockInfoRect(const RECT* const pRect, const D3DSURFACE_DESC& desc) {
-@@ -296,4 +345,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -261,7 +324,14 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
+   return ptr;
+ }
+ 
+-void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
++void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) {
++  // NV-DXVK start: Hash the logical rows in the existing upload loop without a retained copy.
++  const bool full = lockInfo.rect.left == 0 && lockInfo.rect.top == 0
++    && lockInfo.rect.right == static_cast<LONG>(m_desc.Width) && lockInfo.rect.bottom == static_cast<LONG>(m_desc.Height);
++  std::unique_ptr<l4d2_readback::Hasher> hash;
++  m_uploadHashResult = E_FAIL;
++  if (m_retention && m_retention->hashUpload(m_readbackMip, full)) { hash.reset(new (std::nothrow) l4d2_readback::Hasher()); }
++  // NV-DXVK end
+   const auto dataFlag = m_bUseSharedHeap ? Commands::FlagBits::DataInSharedHeap : 0;
+   {
+     ClientMessage c(Commands::IDirect3DSurface9_UnlockRect, getId(), dataFlag);
+@@ -278,10 +348,12 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+       c.send_data(rowSize);
+       if (auto* blobPacketPtr = c.begin_data_blob(totalSize)) {
+         FOR_EACH_RECT_ROW(lockInfo.lockedRect, height, m_desc.Format, {
++          if (hash) { hash->add(ptr, rowSize); }
+           memcpy(blobPacketPtr, ptr, rowSize);
+           blobPacketPtr += rowSize;
+         });
+         c.end_data_blob();
++        if (hash) { m_uploadHashResult = hash->finish(m_uploadHash); }
+       }
+     }
+   }
+@@ -296,4 +368,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
  std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions(const RECT& rect) {
    return { rect.right  - rect.left,
             rect.bottom - rect.top  };
@@ -233,7 +278,7 @@ index e54aec5..28ed6cf 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_surface.h b/bridge/src/client/d3d9_surface.h
-index e4e9d51..ccd8876 100644
+index e4e9d51..abe2347 100644
 --- a/bridge/src/client/d3d9_surface.h
 +++ b/bridge/src/client/d3d9_surface.h
 @@ -1,3 +1,7 @@
@@ -244,16 +289,17 @@ index e4e9d51..ccd8876 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -32,6 +36,8 @@
+@@ -32,6 +36,9 @@
  /*
   * IDirect3DSurface9 LSS Interceptor Class
   */
 +#include "pagefile_shadow.h"
++#include "retention_policy.h"
 +
  class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
    void onDestroy() override;
  
-@@ -48,8 +54,12 @@ class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
+@@ -48,10 +55,21 @@ class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
    };
    std::queue<LockInfo> m_lockInfoQueue;
  
@@ -264,11 +310,20 @@ index e4e9d51..ccd8876 100644
 +  // NV-DXVK start: Experimental readback identity is independent of diagnostics.
 +  uint32_t m_readbackParentId = 0, m_readbackMip = UINT32_MAX;
 +  bool m_readbackTexture2D = false, m_readbackAttempted = false;
++  std::shared_ptr<l4d2_retention::Parent> m_retention;
++  l4d2_readback::Digest m_uploadHash {};
++  HRESULT m_uploadHashResult = E_FAIL;
 +  // NV-DXVK end
  
  public:
++  void attachRetention(const std::shared_ptr<l4d2_retention::Parent>& policy, uint32_t mip) {
++    m_retention = policy;
++    if (m_retention) { m_retention->attach(mip, getId(), m_shadow); }
++  }
    Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
-@@ -65,10 +75,20 @@ public:
+                        const D3DSURFACE_DESC& desc, 
+                        bool isBackBuffer = false);
+@@ -65,10 +83,20 @@ public:
      , m_bUseSharedHeap(GlobalOptions::getUseSharedHeapForTextures())
      , m_desc(desc)
      , m_isBackBuffer(isBackBuffer) {
@@ -289,9 +344,12 @@ index e4e9d51..ccd8876 100644
    /*** IUnknown methods ***/
    STDMETHOD(QueryInterface)(THIS_ REFIID riid, void** ppvObj);
    STDMETHOD_(ULONG, AddRef)(THIS);
-@@ -99,4 +119,4 @@ private:
+@@ -97,6 +125,6 @@ private:
+   void unlock();
+   static RECT resolveLockInfoRect(const RECT* const pRect, const D3DSURFACE_DESC& desc);
    void* getBufPtr(const int pitch, const RECT& rect);
-   void sendDataToServer(const LockInfo& lockInfo) const;
+-  void sendDataToServer(const LockInfo& lockInfo) const;
++  void sendDataToServer(const LockInfo& lockInfo);
    static std::tuple<size_t, size_t> getRectDimensions(const RECT& box);
 -};
 \ No newline at end of file
@@ -333,7 +391,7 @@ index 86a19d4..2db4f68 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_texture.cpp b/bridge/src/client/d3d9_texture.cpp
-index 3f4a64f..896a538 100644
+index 3f4a64f..cf6a668 100644
 --- a/bridge/src/client/d3d9_texture.cpp
 +++ b/bridge/src/client/d3d9_texture.cpp
 @@ -1,3 +1,7 @@
@@ -344,23 +402,70 @@ index 3f4a64f..896a538 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -121,6 +125,9 @@ HRESULT Direct3DTexture9_LSS::GetSurfaceLevel(UINT Level, IDirect3DSurface9** pp
+@@ -121,6 +125,10 @@ HRESULT Direct3DTexture9_LSS::GetSurfaceLevel(UINT Level, IDirect3DSurface9** pp
    GetLevelDesc(Level, &desc);
  
    Direct3DSurface9_LSS* pLssSurface = trackWrapper(new Direct3DSurface9_LSS(m_pDevice, this, desc));
 +  // NV-DXVK start: Identify the shadow's subresource without changing ownership.
 +  pLssSurface->describeShadowParent(getId(), l4d2_shadow::Type::Texture2DLevel, Level, l4d2_shadow::kUnknown);
++  pLssSurface->attachRetention(m_retention, Level);
 +  // NV-DXVK end
    setChild(Level, pLssSurface);
      
    (*ppSurfaceLevel) = pLssSurface;
-@@ -186,4 +193,4 @@ HRESULT Direct3DTexture9_LSS::AddDirtyRect(CONST RECT* pDirtyRect) {
+@@ -186,4 +194,4 @@ HRESULT Direct3DTexture9_LSS::AddDirtyRect(CONST RECT* pDirtyRect) {
      c.send_data(sizeof(RECT), (void*) pDirtyRect);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("AddDirtyRect()", D3DERR_INVALIDCALL, currentUID);
 -}
 \ No newline at end of file
 +}
+diff --git a/bridge/src/client/d3d9_texture.h b/bridge/src/client/d3d9_texture.h
+index 2a4b9e4..9d8e806 100644
+--- a/bridge/src/client/d3d9_texture.h
++++ b/bridge/src/client/d3d9_texture.h
+@@ -1,3 +1,7 @@
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++// Original upstream code and copyright notices remain attributed to their original authors.
++
+ /*
+  * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+  *
+@@ -23,6 +27,7 @@
+ 
+ #include "d3d9_base_texture.h"
+ #include "d3d9_util.h"
++#include "retention_runtime.h"
+ 
+ #include <unknwn.h>
+ #include <d3d9.h>
+@@ -32,11 +37,18 @@
+  */
+ class Direct3DTexture9_LSS: public LssBaseTexture2D<IDirect3DTexture9> {
+   void onDestroy() override;
++  // NV-DXVK start: Parent policy stores only hashes and non-owning subresource metadata.
++  std::shared_ptr<l4d2_retention::Parent> m_retention;
++  // NV-DXVK end
+ 
+ public:
+   Direct3DTexture9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice, const TEXTURE_DESC& desc)
+     : Direct3DBaseTexture9_LSS(pDevice, desc) {
+     m_children.resize(GetLevelCount());
++    // NV-DXVK start: Fingerprint creation stack frames while the game caller is active.
++    m_retention = l4d2_retention::create(getId(), desc.Width, desc.Height, desc.Levels,
++      static_cast<uint32_t>(desc.Format), desc.Usage, static_cast<uint32_t>(desc.Pool));
++    // NV-DXVK end
+   }
+ 
+   D3DSURFACE_DESC getLevelDesc(const UINT level) const;
+@@ -56,4 +68,4 @@ public:
+   STDMETHOD(LockRect)(THIS_ UINT Level, D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags);
+   STDMETHOD(UnlockRect)(THIS_ UINT Level);
+   STDMETHOD(AddDirtyRect)(THIS_ CONST RECT* pDirtyRect);
+-};
+\ No newline at end of file
++};
 diff --git a/bridge/src/client/lockable_buffer.h b/bridge/src/client/lockable_buffer.h
 index fbfc565..2e1218a 100644
 --- a/bridge/src/client/lockable_buffer.h
@@ -570,7 +675,7 @@ index 0000000..f4f8b17
 +}
 +}
 diff --git a/bridge/src/client/meson.build b/bridge/src/client/meson.build
-index 2ad1e79..dc77806 100644
+index 2ad1e79..69a1fb1 100644
 --- a/bridge/src/client/meson.build
 +++ b/bridge/src/client/meson.build
 @@ -1,3 +1,7 @@
@@ -581,7 +686,7 @@ index 2ad1e79..dc77806 100644
  #############################################################################
  # Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
  #
-@@ -85,6 +89,11 @@ d3d9_header = files([
+@@ -85,6 +89,14 @@ d3d9_header = files([
    'framework.h',
    'lockable_buffer.h',
    'message_channels.h',
@@ -589,11 +694,23 @@ index 2ad1e79..dc77806 100644
 +  'pageblock_diagnostics.h',
 +  'pagefile_shadow.h',
 +  'readback_recovery.h',
++  'retention_database.h',
++  'retention_policy.h',
++  'retention_runtime.h',
 +  'shadow_lifetime.h',
    'pch.h',
    'remix_state.h',
    'resource.h',
-@@ -116,4 +125,4 @@ custom_target('copy_d3d9_to_output',
+@@ -102,7 +114,7 @@ thread_dep = dependency('threads')
+ 
+ d3d9_dll = shared_library('d3d9', d3d9_header, d3d9_src, d3d9_res, 
+   sources             : [ bridge_version ],
+-  dependencies        : [ thread_dep, util_dep, lib_version, lib_version, lib_commCtrl, tracy_dep ],
++  dependencies        : [ thread_dep, util_dep, lib_version, lib_version, lib_commCtrl, tracy_dep, bridge_compiler.find_library('bcrypt') ],
+   include_directories : [ bridge_include_path, util_include_path, detours_include_path, public_include_path ],
+   vs_module_defs      : 'd3d9_lss.def')
+ 
+@@ -116,4 +128,4 @@ custom_target('copy_d3d9_to_output',
      build_by_default : true,
      depends          : [ d3d9_dll ],
      command          : [copy_script_path, meson.current_build_dir(), output_dir, 'd3d9*'] )
@@ -838,10 +955,10 @@ index 0000000..2778ec3
 +}
 diff --git a/bridge/src/client/pagefile_shadow.h b/bridge/src/client/pagefile_shadow.h
 new file mode 100644
-index 0000000..a41b39e
+index 0000000..141122a
 --- /dev/null
 +++ b/bridge/src/client/pagefile_shadow.h
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,236 @@
 +// SPDX-License-Identifier: MIT
 +// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -852,6 +969,7 @@ index 0000000..a41b39e
 +#include "memory_diagnostics.h"
 +#include "pageblock_diagnostics.h"
 +#include "../util/readback_layout.h"
++#include "../util/readback_hash.h"
 +#include <memory>
 +
 +// A section keeps CPU-written bytes while unlocked views leave the x86 VA.
@@ -863,11 +981,15 @@ index 0000000..a41b39e
 +  size_t m_viewCost = 0;
 +  unsigned m_locks = 0;
 +  bool m_listed = false;
++  // NV-DXVK start: Only the explicitly enabled real-miss experiment sets this state.
++  bool m_recoveryMissing = false;
++  // NV-DXVK end
 +  PagefileShadow* m_prev = nullptr;
 +  PagefileShadow* m_next = nullptr;
 +  inline static PagefileShadow* s_head = nullptr;
 +  inline static PagefileShadow* s_tail = nullptr;
 +  inline static size_t s_mappedBytes = 0;
++  inline static std::atomic<uint64_t> s_peakBackingBytes { 0 };
 +  inline static std::mutex s_mutex;
 +  std::unique_ptr<l4d2_shadow::Record> m_diagnostics;
 +
@@ -895,6 +1017,12 @@ index 0000000..a41b39e
 +      victim->unmap();
 +      if (victim->m_view) { break; }
 +    }
++  }
++
++  static void noteBackingPeak() {
++    const uint64_t bytes = l4d2_memory::surfaceBackingBytes.load();
++    auto peak = s_peakBackingBytes.load();
++    while (bytes > peak && !s_peakBackingBytes.compare_exchange_weak(peak, bytes)) {}
 +  }
 +
 +public:
@@ -936,6 +1064,11 @@ index 0000000..a41b39e
 +  void observeUnlock(uint32_t flags) { l4d2_pageblock::unlocked(m_diagnostics.get(), flags); }
 +
 +  uint8_t* get() const { return m_view; }
++  static uint64_t peakBackingBytes() { return s_peakBackingBytes.load(); }
++  size_t backingBytes() const {
++    std::lock_guard<std::mutex> guard(s_mutex);
++    return m_section ? m_size : 0;
++  }
 +
 +  // NV-DXVK start: Ground truth is accessed only after independent recovery completes.
 +  HRESULT compareRecovered(const uint8_t* recovered, size_t bytes, l4d2_readback::Comparison& result) const {
@@ -946,11 +1079,62 @@ index 0000000..a41b39e
 +    result = l4d2_readback::compare(reference, recovered, bytes);
 +    return UnmapViewOfFile(reference) ? S_OK : HRESULT_FROM_WIN32(GetLastError());
 +  }
++
++  bool recoveryMissing() const {
++    std::lock_guard<std::mutex> guard(s_mutex);
++    return m_recoveryMissing && !m_section && !m_view && !m_locks;
++  }
++
++  HRESULT hashBacking(size_t bytes, l4d2_readback::Digest& digest) const {
++    std::lock_guard<std::mutex> guard(s_mutex);
++    if (!m_section || m_locks || bytes != m_size) { return E_INVALIDARG; }
++    const auto* reference = static_cast<const uint8_t*>(MapViewOfFile(m_section, FILE_MAP_READ, 0, 0, m_size));
++    if (!reference) { return HRESULT_FROM_WIN32(GetLastError()); }
++    const HRESULT hr = l4d2_readback::hashBytes(reference, bytes, digest);
++    if (!UnmapViewOfFile(reference)) { return HRESULT_FROM_WIN32(GetLastError()); }
++    return hr;
++  }
++
++  HRESULT evictBacking(size_t bytes) {
++    std::lock_guard<std::mutex> guard(s_mutex);
++    if (!m_section || m_recoveryMissing || m_locks || bytes != m_size) { return E_INVALIDARG; }
++    unmap();
++    if (m_view) { return HRESULT_FROM_WIN32(GetLastError()); }
++    if (!CloseHandle(m_section)) { return HRESULT_FROM_WIN32(GetLastError()); }
++    m_section = nullptr;
++    m_recoveryMissing = true;
++    l4d2_memory::surfaceBackingBytes.fetch_sub(m_size);
++    l4d2_memory::surfaceBackingCount.fetch_sub(1);
++    return S_OK;
++  }
++
++  HRESULT restoreRecovered(const uint8_t* recovered, size_t bytes, const l4d2_readback::Digest& expected,
++      l4d2_readback::Digest& rebuilt) {
++    std::lock_guard<std::mutex> guard(s_mutex);
++    if (!m_recoveryMissing || m_section || m_view || m_locks || bytes != m_size || !recovered) { return E_INVALIDARG; }
++    const auto section = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
++      0, static_cast<DWORD>(bytes), nullptr);
++    if (!section) { return HRESULT_FROM_WIN32(GetLastError()); }
++    auto* view = static_cast<uint8_t*>(MapViewOfFile(section, FILE_MAP_ALL_ACCESS, 0, 0, bytes));
++    if (!view) { const auto error = GetLastError(); CloseHandle(section); return HRESULT_FROM_WIN32(error); }
++    std::memcpy(view, recovered, bytes);
++    HRESULT hr = l4d2_readback::hashBytes(view, bytes, rebuilt);
++    if (SUCCEEDED(hr) && rebuilt != expected) { hr = HRESULT_FROM_WIN32(ERROR_CRC); }
++    if (!UnmapViewOfFile(view)) { hr = HRESULT_FROM_WIN32(GetLastError()); }
++    if (FAILED(hr)) { CloseHandle(section); return hr; }
++    m_section = section;
++    m_recoveryMissing = false;
++    l4d2_memory::surfaceBackingBytes.fetch_add(m_size);
++    l4d2_memory::surfaceBackingCount.fetch_add(1);
++    noteBackingPeak();
++    return S_OK;
++  }
 +  // NV-DXVK end
 +
-+  uint8_t* acquire(size_t size, size_t budget) {
++  uint8_t* acquire(size_t size, size_t budget, bool replaceMissing = false) {
 +    std::lock_guard<std::mutex> guard(s_mutex);
-+    if (!size || (m_section && size != m_size)) { return nullptr; }
++    const bool overwrite = m_recoveryMissing && replaceMissing;
++    if (!size || (m_recoveryMissing && !overwrite) || (m_section && size != m_size)) { return nullptr; }
 +    unlink();
 +    if (!m_section) {
 +      SYSTEM_INFO system {};
@@ -970,7 +1154,8 @@ index 0000000..a41b39e
 +      m_size = size;
 +      l4d2_memory::surfaceBackingBytes.fetch_add(size);
 +      l4d2_memory::surfaceBackingCount.fetch_add(1);
-+      l4d2_pageblock::created(m_diagnostics.get(), size);
++      noteBackingPeak();
++      if (!overwrite) { l4d2_pageblock::created(m_diagnostics.get(), size); }
 +    }
 +    if (!m_view) {
 +      trim(m_viewCost >= budget ? 0 : budget - m_viewCost);
@@ -983,6 +1168,11 @@ index 0000000..a41b39e
 +      if (!m_view) {
 +        const auto error = GetLastError();
 +        l4d2_memory::sample(true, "section-map-failed", l4d2_memory::Kind::Surface, size, 0, 0, 0, error);
++        if (overwrite) {
++          CloseHandle(m_section); m_section = nullptr;
++          l4d2_memory::surfaceBackingBytes.fetch_sub(m_size);
++          l4d2_memory::surfaceBackingCount.fetch_sub(1);
++        }
 +        return nullptr;
 +      }
 +      s_mappedBytes += m_viewCost;
@@ -990,6 +1180,7 @@ index 0000000..a41b39e
 +      l4d2_memory::bytes[0].fetch_add(m_size);
 +      l4d2_memory::objects[0].fetch_add(1);
 +    }
++    m_recoveryMissing = false;
 +    ++m_locks;
 +    return m_view;
 +  }
@@ -1167,6 +1358,578 @@ index 0000000..1713c54
 +    c.selection.count(), static_cast<unsigned long long>(c.attempts), static_cast<unsigned long long>(c.recovered),
 +    static_cast<unsigned long long>(c.matches), static_cast<unsigned long long>(c.mismatches), static_cast<unsigned long long>(c.failures));
 +  if (c.log != INVALID_HANDLE_VALUE) { FlushFileBuffers(c.log); }
++}
++}
+diff --git a/bridge/src/client/retention_database.h b/bridge/src/client/retention_database.h
+new file mode 100644
+index 0000000..baf85fd
+--- /dev/null
++++ b/bridge/src/client/retention_database.h
+@@ -0,0 +1,152 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include <algorithm>
++#include <sstream>
++#include <string>
++#include <unordered_map>
++#include <vector>
++#include "../util/readback_hash.h"
++
++namespace l4d2_retention {
++using l4d2_readback::Digest;
++using l4d2_readback::Hasher;
++using l4d2_readback::digestText;
++using l4d2_readback::hashBytes;
++
++inline uint64_t timestamp() {
++  FILETIME now {}; GetSystemTimeAsFileTime(&now);
++  return (static_cast<uint64_t>(now.dwHighDateTime) << 32) | now.dwLowDateTime;
++}
++struct DbRecord {
++  std::string strong, content, reason;
++  uint64_t firstMiss = 0, lastSeen = 0, misses = 0;
++};
++enum class Match { None, Strong, Content };
++
++// Append-only, checksummed KEEP journal. No downgrade, compaction or deletion path exists.
++class Database {
++  HANDLE m_file = INVALID_HANDLE_VALUE;
++  bool m_valid = false;
++  std::unordered_map<std::string, DbRecord> m_strong;
++  std::unordered_map<std::string, std::string> m_content;
++  static constexpr const char* kHeader = "L4D2_RETENTION_SHA256_V1\n";
++
++  bool lock() {
++    OVERLAPPED overlap {};
++    for (uint32_t attempt = 0; attempt < 200; ++attempt) {
++      if (LockFileEx(m_file, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, MAXDWORD, MAXDWORD, &overlap)) { return true; }
++      if (GetLastError() != ERROR_LOCK_VIOLATION) { return false; }
++      Sleep(10);
++    }
++    return false;
++  }
++  void unlock() { OVERLAPPED overlap {}; UnlockFileEx(m_file, 0, MAXDWORD, MAXDWORD, &overlap); }
++  static bool keyValid(const std::string& key) {
++    return key.size() == 64 && key.find_first_not_of("0123456789abcdef") == std::string::npos;
++  }
++  static bool number(const std::string& text, uint64_t& value) {
++    if (text.empty() || text.find_first_not_of("0123456789") != std::string::npos) { return false; }
++    try { size_t count = 0; value = std::stoull(text, &count); return count == text.size(); }
++    catch (...) { return false; }
++  }
++  void merge(DbRecord record) {
++    const auto previous = m_strong.find(record.strong);
++    if (previous != m_strong.end()) {
++      record.firstMiss = (std::min)(record.firstMiss, previous->second.firstMiss);
++      record.lastSeen = (std::max)(record.lastSeen, previous->second.lastSeen);
++      record.misses = (std::max)(record.misses, previous->second.misses);
++      if (previous->second.reason == "recovery-failure") { record.reason = "recovery-failure"; }
++    }
++    m_content[record.content] = record.strong;
++    const auto strong = record.strong;
++    m_strong[strong] = std::move(record);
++  }
++  bool readLocked() {
++    LARGE_INTEGER size {}, zero {};
++    if (!GetFileSizeEx(m_file, &size) || size.QuadPart < 0 || size.QuadPart > 64 * 1024 * 1024) { return false; }
++    if (!SetFilePointerEx(m_file, zero, nullptr, FILE_BEGIN)) { return false; }
++    std::string data(static_cast<size_t>(size.QuadPart), '\0');
++    DWORD read = 0;
++    if (!data.empty() && (!ReadFile(m_file, &data[0], static_cast<DWORD>(data.size()), &read, nullptr) || read != data.size())) { return false; }
++    if (data.empty()) { return true; }
++    if (data.compare(0, std::strlen(kHeader), kHeader) != 0 || data.back() != '\n') { return false; }
++    size_t cursor = std::strlen(kHeader);
++    while (cursor < data.size()) {
++      const size_t end = data.find('\n', cursor);
++      if (end == std::string::npos || end - cursor > 1024) { return false; }
++      const auto line = data.substr(cursor, end - cursor);
++      const size_t checksum = line.rfind('\t');
++      if (checksum == std::string::npos) { return false; }
++      Digest actual {};
++      if (FAILED(hashBytes(reinterpret_cast<const uint8_t*>(line.data()), checksum, actual))
++        || line.substr(checksum + 1) != digestText(actual).data()) { return false; }
++      std::vector<std::string> fields;
++      std::istringstream parser(line.substr(0, checksum)); std::string field;
++      while (std::getline(parser, field, '\t')) { fields.push_back(field); }
++      if (fields.size() != 7 || !keyValid(fields[0]) || !keyValid(fields[1]) || fields[2] != "KEEP"
++        || (fields[3] != "post-upload-preserve-miss" && fields[3] != "recovery-failure")) { return false; }
++      DbRecord record; record.strong = fields[0]; record.content = fields[1]; record.reason = fields[3];
++      if (!number(fields[4], record.firstMiss) || !number(fields[5], record.lastSeen) || !number(fields[6], record.misses)) { return false; }
++      merge(std::move(record)); cursor = end + 1;
++    }
++    return true;
++  }
++  bool appendLocked(const std::string& line) {
++    LARGE_INTEGER zero {};
++    if (!SetFilePointerEx(m_file, zero, nullptr, FILE_END)) { return false; }
++    DWORD written = 0;
++    return WriteFile(m_file, line.data(), static_cast<DWORD>(line.size()), &written, nullptr)
++      && written == line.size() && FlushFileBuffers(m_file);
++  }
++public:
++  Database() = default;
++  Database(const Database&) = delete;
++  Database& operator=(const Database&) = delete;
++  ~Database() { if (m_file != INVALID_HANDLE_VALUE) { CloseHandle(m_file); } }
++  bool open(const std::wstring& path) {
++    if (m_file != INVALID_HANDLE_VALUE) { return false; }
++    m_file = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
++      nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
++    if (m_file == INVALID_HANDLE_VALUE || !lock()) { return false; }
++    m_valid = readLocked();
++    LARGE_INTEGER size {};
++    if (m_valid && GetFileSizeEx(m_file, &size) && !size.QuadPart) { m_valid = appendLocked(kHeader); }
++    unlock(); return m_valid;
++  }
++  bool valid() const { return m_valid; }
++  size_t records() const { return m_strong.size(); }
++  Match lookup(const std::string& strong, const std::string& content) const {
++    if (!m_valid) { return Match::None; }
++    if (m_strong.count(strong)) { return Match::Strong; }
++    return m_content.count(content) ? Match::Content : Match::None;
++  }
++  bool keep(const std::string& strong, const std::string& content, const char* reason, bool miss, bool& added) {
++    added = false;
++    if (!m_valid || !keyValid(strong) || !keyValid(content)) { return false; }
++    if (!lock()) { m_valid = false; return false; }
++    bool ok = readLocked();
++    DbRecord record;
++    const auto existing = m_strong.find(strong);
++    if (existing != m_strong.end()) { record = existing->second; }
++    else {
++      const auto fallback = m_content.find(content);
++      if (fallback != m_content.end()) { record = m_strong.at(fallback->second); }
++      else { record.firstMiss = timestamp(); }
++    }
++    record.strong = strong; record.content = content;
++    if (record.reason.empty() || std::string(reason) == "recovery-failure") { record.reason = reason; }
++    record.lastSeen = timestamp(); record.misses += miss ? 1u : 0u;
++    std::ostringstream line;
++    line << record.strong << '\t' << record.content << "\tKEEP\t" << record.reason << '\t'
++      << record.firstMiss << '\t' << record.lastSeen << '\t' << record.misses;
++    const auto prefix = line.str(); Digest checksum {};
++    if (ok) { ok = SUCCEEDED(hashBytes(reinterpret_cast<const uint8_t*>(prefix.data()), prefix.size(), checksum)); }
++    if (ok) { ok = appendLocked(prefix + '\t' + digestText(checksum).data() + '\n'); }
++    if (ok) { added = existing == m_strong.end(); merge(std::move(record)); }
++    unlock(); m_valid = ok; return ok;
++  }
++};
++}
+diff --git a/bridge/src/client/retention_policy.h b/bridge/src/client/retention_policy.h
+new file mode 100644
+index 0000000..5646070
+--- /dev/null
++++ b/bridge/src/client/retention_policy.h
+@@ -0,0 +1,288 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include <cstdarg>
++#include <cstdio>
++#include <functional>
++#include <memory>
++#include <mutex>
++#include <unordered_set>
++#include <vector>
++#include <d3d9.h>
++#include "pagefile_shadow.h"
++#include "retention_database.h"
++#include "../util/readback_transport.h"
++
++namespace l4d2_retention {
++using namespace l4d2_readback;
++class Parent;
++struct Context {
++  bool enabled = false, fallback = false;
++  Database db;
++  std::recursive_mutex mutex;
++  std::function<HRESULT(const Request&, Temporary&, Response&, uint64_t&)> exchange;
++  std::function<void(const char*)> log;
++  std::unordered_set<Parent*> parents;
++  uint64_t sequence = 0, eligible = 0, unknown = 0, strongHits = 0, contentHits = 0, dbMisses = 0;
++  uint64_t drops = 0, dropBytes = 0, keeps = 0, misses = 0, attempts = 0, recovered = 0, failures = 0;
++  uint64_t hashMatches = 0, hashMismatches = 0, promotions = 0, added = 0, evicted = 0;
++  void write(const char* format, ...) {
++    if (!log) { return; }
++    char line[2048] {};
++    va_list args; va_start(args, format);
++    const int count = vsnprintf_s(line, sizeof(line), _TRUNCATE, format, args); va_end(args);
++    if (count >= 0) { log(line); }
++  }
++  void disable(const char* reason) {
++    if (fallback) { return; }
++    fallback = true;
++    write("PB_POLICY event=session-fallback reason=%s unknown_policy=KEEP real_eviction=disabled", reason);
++  }
++  Request request(uint32_t id, uint32_t parent, uint32_t mip, uint32_t levels, const D3DSURFACE_DESC& desc, uint32_t operation = 0) {
++    Request r; r.resourceId = id; r.parentId = parent; r.mip = mip; r.levels = levels;
++    r.width = desc.Width; r.height = desc.Height; r.format = static_cast<uint32_t>(desc.Format); r.operation = operation;
++    Layout l; layout(r.width, r.height, r.format, l); r.bytes = l.bytes;
++    LARGE_INTEGER nonce {}; QueryPerformanceCounter(&nonce);
++    swprintf_s(r.name, L"Local\\L4D2Recovery-%lu-%llu-%llu", GetCurrentProcessId(),
++      static_cast<unsigned long long>(++sequence), static_cast<unsigned long long>(nonce.QuadPart));
++    return r;
++  }
++};
++
++inline bool responseMatches(const Request& r, const Response& response) {
++  Layout l;
++  return layout(r.width, r.height, r.format, l) && response.version == kVersion && response.stage == Stage::Complete
++    && response.hresult == S_OK && response.bytes == (r.operation ? 0 : r.bytes)
++    && response.width == r.width && response.height == r.height && response.format == r.format && response.mip == r.mip
++    && response.rowBytes == l.rowBytes && response.rows == l.rows && response.blockWidth == l.blockWidth
++    && response.blockHeight == l.blockHeight && response.blockBytes == l.blockBytes && !response.deviceIdle;
++}
++
++inline bool requiresPreserve(uint32_t flags, bool full) {
++  return (flags & D3DLOCK_READONLY) || !(flags & D3DLOCK_DISCARD) || !full;
++}
++
++struct Mip {
++  PagefileShadow* backing = nullptr;
++  uint32_t id = 0;
++  D3DSURFACE_DESC desc {};
++  Digest initial {}, current {};
++  bool uploaded = false;
++};
++
++class Parent {
++  Context& m_context;
++  uint32_t m_id;
++  std::vector<Mip> m_mips;
++  std::string m_site, m_strong, m_content;
++  bool m_eligible = false, m_identified = false, m_keep = false, m_dropped = false;
++
++  void keep(const char* source) {
++    if (!m_keep) { ++m_context.keeps; }
++    m_keep = true;
++    m_context.write("PB_POLICY event=keep parent_id=%u source=%s policy=KEEP", m_id, source);
++  }
++  bool identify() {
++    Hasher content;
++    constexpr char domain[] = "L4D2-RETENTION-CONTENT-1";
++    const auto& desc = m_mips[0].desc;
++    const uint32_t descriptor[] = { D3DRTYPE_TEXTURE, desc.Width, desc.Height, static_cast<uint32_t>(desc.Format),
++      static_cast<uint32_t>(m_mips.size()), desc.Usage, static_cast<uint32_t>(desc.Pool) };
++    if (FAILED(content.add(domain, sizeof(domain))) || FAILED(content.add(descriptor, sizeof(descriptor)))) { return false; }
++    for (uint32_t mip = 0; mip < m_mips.size(); ++mip) {
++      const auto& sub = m_mips[mip]; Layout l;
++      if (!sub.uploaded || !sub.backing || !layout(sub.desc.Width, sub.desc.Height, static_cast<uint32_t>(sub.desc.Format), l)) { return false; }
++      const uint32_t metadata[] = { mip, l.bytes };
++      if (FAILED(content.add(metadata, sizeof(metadata))) || FAILED(content.add(sub.initial.data(), sub.initial.size()))) { return false; }
++    }
++    Digest digest {};
++    if (FAILED(content.finish(digest))) { return false; }
++    m_content = digestText(digest).data();
++    Hasher strong; constexpr char strongDomain[] = "L4D2-RETENTION-STRONG-1";
++    if (FAILED(strong.add(strongDomain, sizeof(strongDomain))) || FAILED(strong.add(digest.data(), digest.size()))
++      || FAILED(strong.add(m_site.data(), m_site.size())) || FAILED(strong.finish(digest))) { return false; }
++    m_strong = digestText(digest).data(); m_identified = true;
++    m_context.write("PB_POLICY event=identified parent_id=%u resource_id=%u strong_key=%s content_key=%s eligible=1 levels=%u hash=sha256",
++      m_id, m_mips[0].id, m_strong.c_str(), m_content.c_str(), static_cast<uint32_t>(m_mips.size()));
++    return true;
++  }
++  void persist(const char* reason, bool miss) {
++    bool added = false;
++    if (!m_context.db.keep(m_strong, m_content, reason, miss, added)) { m_context.disable("persistent-db-write-failed"); }
++    if (added) { ++m_context.added; }
++  }
++  bool probe() {
++    auto& mip = m_mips[0];
++    const auto r = m_context.request(mip.id, m_id, 0, static_cast<uint32_t>(m_mips.size()), mip.desc, 1);
++    Temporary temporary; Response response; uint64_t elapsed = 0;
++    const HRESULT hr = m_context.exchange(r, temporary, response, elapsed);
++    m_context.write("PB_POLICY event=server-confirmed parent_id=%u success=%u hresult=0x%08lx ordered_upload_ack=1 gpu_wait=0 probe_us=%llu",
++      m_id, SUCCEEDED(hr) && responseMatches(r, response) ? 1u : 0u, static_cast<unsigned long>(hr), static_cast<unsigned long long>(elapsed));
++    return SUCCEEDED(hr) && responseMatches(r, response);
++  }
++  bool evict(uint32_t mip) {
++    auto& sub = m_mips[mip]; Layout l;
++    if (!sub.backing || sub.backing->recoveryMissing()) { return true; }
++    if (!layout(sub.desc.Width, sub.desc.Height, static_cast<uint32_t>(sub.desc.Format), l)) { return false; }
++    const HRESULT hr = sub.backing->evictBacking(l.bytes);
++    if (FAILED(hr)) {
++      m_context.write("PB_POLICY event=eviction-failure resource_id=%u parent_id=%u mip=%u hresult=0x%08lx", sub.id, m_id, mip, static_cast<unsigned long>(hr));
++      keep("eviction-failure"); m_context.disable("backing-release-failed"); return false;
++    }
++    m_context.evicted += l.bytes;
++    m_context.write("PB_POLICY event=backing-evicted resource_id=%u parent_id=%u mip=%u bytes=%u backing_present_after=0 cpu_backing_present=0 cpu_backing_bytes=0 server_resource_preserved=1",
++      sub.id, m_id, mip, l.bytes);
++    return true;
++  }
++  bool recover(uint32_t mip) {
++    auto& sub = m_mips[mip];
++    const auto r = m_context.request(sub.id, m_id, mip, static_cast<uint32_t>(m_mips.size()), sub.desc);
++    m_context.write("PB_POLICY event=recovery-start resource_id=%u parent_id=%u mip=%u original_retained=0 real_miss=1 source=server-d3d9-readonly", sub.id, m_id, mip);
++    ++m_context.attempts;
++    Temporary temporary; Response response; uint64_t elapsed = 0;
++    HRESULT hr = m_context.exchange(r, temporary, response, elapsed);
++    const char* stage = "readback";
++    uint64_t rebuildUs = 0;
++    Digest recovered {}, rebuilt {};
++    if (SUCCEEDED(hr) && !responseMatches(r, response)) { hr = E_INVALIDARG; stage = "response-layout"; }
++    if (SUCCEEDED(hr)) {
++      stage = "recovered-hash"; hr = hashBytes(temporary.data(), r.bytes, recovered);
++      const bool equal = SUCCEEDED(hr) && recovered == sub.current;
++      if (SUCCEEDED(hr)) {
++        if (equal) { ++m_context.hashMatches; } else { ++m_context.hashMismatches; }
++      }
++      m_context.write("PB_POLICY event=real-miss-validation resource_id=%u parent_id=%u mip=%u original_retained=0 real_miss=1 original_hash=%s recovered_hash=%s exact_hash_match=%u hash=sha256",
++        sub.id, m_id, mip, digestText(sub.current).data(), digestText(recovered).data(), equal ? 1u : 0u);
++      if (SUCCEEDED(hr) && !equal) { hr = HRESULT_FROM_WIN32(ERROR_CRC); }
++    }
++    if (SUCCEEDED(hr)) {
++      stage = "rebuild";
++      LARGE_INTEGER begin {}, end {}; QueryPerformanceCounter(&begin);
++      hr = sub.backing->restoreRecovered(temporary.data(), r.bytes, sub.current, rebuilt);
++      QueryPerformanceCounter(&end); rebuildUs = microseconds(begin, end);
++      if (SUCCEEDED(hr) && rebuilt != sub.current) { hr = HRESULT_FROM_WIN32(ERROR_CRC); }
++    }
++    temporary.discard();
++    m_context.write("PB_POLICY event=recovery-result resource_id=%u parent_id=%u mip=%u success=%u bytes=%u sync_us=%llu backend_read_us=%llu rebuild_us=%llu readback_us=%llu device_idle=%u queue_flush_requested=%u event_query_wait=%u query_polls=%u backend_internal_wait=unobservable rebuilt_hash=%s temporary_discarded=1",
++      sub.id, m_id, mip, SUCCEEDED(hr) ? 1u : 0u, SUCCEEDED(hr) ? r.bytes : 0u,
++      static_cast<unsigned long long>(response.syncUs), static_cast<unsigned long long>(response.backendReadUs),
++      static_cast<unsigned long long>(rebuildUs), static_cast<unsigned long long>(elapsed), response.deviceIdle,
++      response.flushRequested, response.eventWait, response.queryPolls, digestText(rebuilt).data());
++    if (FAILED(hr)) {
++      ++m_context.failures;
++      m_context.write("PB_POLICY event=recovery-failure resource_id=%u parent_id=%u mip=%u stage=%s backend_stage=%s hresult=0x%08lx lock_result=error silent_zero_fill=0",
++        sub.id, m_id, mip, stage, stageName(response.stage), static_cast<unsigned long>(hr));
++      persist("recovery-failure", true); keep("recovery-failure"); m_context.disable("recovery-failure"); return false;
++    }
++    ++m_context.recovered; return true;
++  }
++public:
++  Parent(Context& context, uint32_t id, uint32_t width, uint32_t height, uint32_t levels, uint32_t format, uint32_t usage, uint32_t pool, std::string site)
++    : m_context(context), m_id(id), m_site(std::move(site)) {
++    std::lock_guard<std::recursive_mutex> guard(context.mutex);
++    Layout l;
++    m_eligible = context.enabled && levels && levels <= 15 && pool == D3DPOOL_MANAGED && !usage
++      && (format == kDxt1 || format == kDxt5 || format == 21 || format == 22) && layout(width, height, format, l) && !m_site.empty();
++    m_mips.resize(levels > 15 ? 0 : levels);
++    for (uint32_t mip = 0; mip < m_mips.size(); ++mip) {
++      m_mips[mip].desc = { static_cast<D3DFORMAT>(format), D3DRTYPE_SURFACE, usage, static_cast<D3DPOOL>(pool),
++        D3DMULTISAMPLE_NONE, 0, (std::max)(1u, width >> mip), (std::max)(1u, height >> mip) };
++    }
++    context.parents.insert(this);
++    if (m_eligible) { ++context.eligible; }
++    else { keep("default-unsupported"); context.write("PB_POLICY event=identified parent_id=%u eligible=0 strong_key=unavailable content_key=unavailable", id); }
++  }
++  ~Parent() { std::lock_guard<std::recursive_mutex> guard(m_context.mutex); m_context.parents.erase(this); }
++  void attach(uint32_t mip, uint32_t id, PagefileShadow& backing) {
++    std::lock_guard<std::recursive_mutex> guard(m_context.mutex);
++    if (mip < m_mips.size()) { m_mips[mip].id = id; m_mips[mip].backing = &backing; }
++  }
++  void detach(uint32_t mip) {
++    std::lock_guard<std::recursive_mutex> guard(m_context.mutex);
++    if (mip < m_mips.size()) { m_mips[mip].backing = nullptr; }
++  }
++  bool hashUpload(uint32_t mip, bool full) {
++    std::lock_guard<std::recursive_mutex> guard(m_context.mutex);
++    return m_eligible && !m_keep && mip < m_mips.size() && full;
++  }
++  void uploaded(uint32_t mip, bool full, const Digest& digest, HRESULT hashResult) {
++    std::lock_guard<std::recursive_mutex> guard(m_context.mutex);
++    if (!m_eligible || m_keep || mip >= m_mips.size()) { return; }
++    auto& sub = m_mips[mip];
++    if (!full || FAILED(hashResult)) { m_eligible = false; keep("unreliable-initial-content-hash"); return; }
++    if (!sub.uploaded) { sub.initial = digest; sub.uploaded = true; }
++    sub.current = digest;
++    if (m_identified) {
++      if (m_context.fallback) { keep("session-fallback"); return; }
++      if (probe()) { evict(mip); }
++      else { keep("server-unavailable"); m_context.disable("server-validation-failed"); }
++      return;
++    }
++    for (const auto& s : m_mips) { if (!s.uploaded) { return; } }
++    if (!identify()) { m_eligible = false; keep("fingerprint-unavailable"); return; }
++    const auto match = m_context.db.lookup(m_strong, m_content);
++    if (match != Match::None) {
++      if (match == Match::Strong) { ++m_context.strongHits; } else { ++m_context.contentHits; }
++      m_context.write("PB_POLICY event=db-hit parent_id=%u strong_key=%s content_key=%s match=%s policy=KEEP",
++        m_id, m_strong.c_str(), m_content.c_str(), match == Match::Strong ? "strong" : "content");
++      keep("db"); persist("post-upload-preserve-miss", false); return;
++    }
++    ++m_context.unknown; ++m_context.dbMisses;
++    if (m_context.fallback || !m_context.db.valid()) { keep("session-fallback"); return; }
++    if (!probe()) { keep("server-unavailable"); m_context.disable("server-validation-failed"); return; }
++    if (!m_dropped) { m_dropped = true; ++m_context.drops; }
++    uint64_t bytes = 0;
++    for (uint32_t level = 0; level < m_mips.size(); ++level) {
++      Layout logical; layout(m_mips[level].desc.Width, m_mips[level].desc.Height, static_cast<uint32_t>(m_mips[level].desc.Format), logical);
++      bytes += logical.bytes;
++      if (!evict(level)) { break; }
++    }
++    m_context.dropBytes += bytes;
++    m_context.write("PB_POLICY event=drop parent_id=%u resource_id=%u backing_bytes=%llu policy=DROP", m_id, m_mips[0].id, static_cast<unsigned long long>(bytes));
++  }
++  bool beforeLock(uint32_t mip, uint32_t flags, const RECT& region) {
++    std::lock_guard<std::recursive_mutex> guard(m_context.mutex);
++    if (mip >= m_mips.size() || !m_mips[mip].backing || !m_mips[mip].backing->recoveryMissing()) { return true; }
++    const auto& sub = m_mips[mip];
++    const bool full = region.left == 0 && region.top == 0 && region.right == static_cast<LONG>(sub.desc.Width) && region.bottom == static_cast<LONG>(sub.desc.Height);
++    if (!requiresPreserve(flags, full)) {
++      m_context.write("PB_POLICY event=overwrite resource_id=%u parent_id=%u mip=%u readback=0 promotion=0", sub.id, m_id, mip);
++      return true;
++    }
++    ++m_context.misses;
++    m_context.write("PB_POLICY event=retention-miss resource_id=%u parent_id=%u mip=%u strong_key=%s content_key=%s lock_flags=0x%x requested_region=%ld,%ld,%ld,%ld cpu_backing_present=0",
++      sub.id, m_id, mip, m_strong.c_str(), m_content.c_str(), flags, region.left, region.top, region.right, region.bottom);
++    for (uint32_t level = 0; level < m_mips.size(); ++level) {
++      if (m_mips[level].backing && m_mips[level].backing->recoveryMissing() && !recover(level)) { return false; }
++    }
++    if (!m_keep) {
++      keep("promotion"); ++m_context.promotions; persist("post-upload-preserve-miss", true);
++      m_context.write("PB_POLICY event=promoted parent_id=%u strong_key=%s content_key=%s reason=post-upload-preserve-miss policy=KEEP all_mips_restored=1",
++        m_id, m_strong.c_str(), m_content.c_str());
++    }
++    return true;
++  }
++  uint64_t retainedBytes() const {
++    if (!m_keep) { return 0; }
++    uint64_t bytes = 0;
++    for (const auto& sub : m_mips) { if (sub.backing) { bytes += sub.backing->backingBytes(); } }
++    return bytes;
++  }
++};
++
++inline void summary(Context& c) {
++  std::lock_guard<std::recursive_mutex> guard(c.mutex);
++  uint64_t retained = 0; for (const auto* parent : c.parents) { retained += parent->retainedBytes(); }
++  c.write("PB_POLICY_SUMMARY eligible_resources=%llu unknown_resources=%llu db_strong_hits=%llu db_content_hits=%llu db_misses=%llu drop_resources=%llu drop_bytes=%llu keep_resources=%llu retained_bytes=%llu retention_misses=%llu recovery_attempts=%llu recovery_success=%llu recovery_failures=%llu real_miss_hash_matches=%llu real_miss_hash_mismatches=%llu promotions=%llu db_records_added=%llu session_fallback_triggered=%u current_backing_bytes=%llu peak_backing_bytes=%llu total_evicted_bytes=%llu db_records=%llu",
++    static_cast<unsigned long long>(c.eligible), static_cast<unsigned long long>(c.unknown), static_cast<unsigned long long>(c.strongHits),
++    static_cast<unsigned long long>(c.contentHits), static_cast<unsigned long long>(c.dbMisses), static_cast<unsigned long long>(c.drops),
++    static_cast<unsigned long long>(c.dropBytes), static_cast<unsigned long long>(c.keeps), static_cast<unsigned long long>(retained),
++    static_cast<unsigned long long>(c.misses), static_cast<unsigned long long>(c.attempts), static_cast<unsigned long long>(c.recovered),
++    static_cast<unsigned long long>(c.failures), static_cast<unsigned long long>(c.hashMatches), static_cast<unsigned long long>(c.hashMismatches),
++    static_cast<unsigned long long>(c.promotions), static_cast<unsigned long long>(c.added), c.fallback ? 1u : 0u,
++    static_cast<unsigned long long>(l4d2_memory::surfaceBackingBytes.load()), static_cast<unsigned long long>(PagefileShadow::peakBackingBytes()),
++    static_cast<unsigned long long>(c.evicted), static_cast<unsigned long long>(c.db.records()));
++}
++}
+diff --git a/bridge/src/client/retention_runtime.h b/bridge/src/client/retention_runtime.h
+new file mode 100644
+index 0000000..8ff1130
+--- /dev/null
++++ b/bridge/src/client/retention_runtime.h
+@@ -0,0 +1,114 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include <cctype>
++#include <filesystem>
++#include <sstream>
++#include "retention_policy.h"
++#include "config/config.h"
++#include "log/log.h"
++#include "util_devicecommand.h"
++
++namespace l4d2_retention {
++inline std::filesystem::path clientDirectory() {
++  wchar_t path[MAX_PATH] {}; HMODULE module = nullptr;
++  if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++    reinterpret_cast<LPCWSTR>(&clientDirectory), &module) || !GetModuleFileNameW(module, path, MAX_PATH)) { return {}; }
++  return std::filesystem::path(path).parent_path();
++}
++
++inline std::string creationSite() {
++  HMODULE own = nullptr;
++  GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++    reinterpret_cast<LPCWSTR>(&creationSite), &own);
++  void* frames[24] {}; const auto count = CaptureStackBackTrace(0, 24, frames, nullptr);
++  std::ostringstream site; uint32_t retained = 0;
++  for (USHORT frame = 0; frame < count && retained < 4; ++frame) {
++    HMODULE module = nullptr;
++    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++      reinterpret_cast<LPCWSTR>(frames[frame]), &module) || module == own) { continue; }
++    wchar_t path[MAX_PATH] {};
++    if (!GetModuleFileNameW(module, path, MAX_PATH)) { continue; }
++    auto name = std::filesystem::path(path).filename().u8string();
++    for (auto& c : name) { c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); }
++    if (name == "kernel32.dll" || name == "kernelbase.dll" || name == "ntdll.dll" || name == "ucrtbase.dll"
++      || name.find("vcruntime") == 0 || name.find("msvcp") == 0 || name.find("msvcr") == 0) { continue; }
++    const auto* base = reinterpret_cast<const uint8_t*>(module);
++    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
++    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0) { continue; }
++    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
++    if (nt->Signature != IMAGE_NT_SIGNATURE) { continue; }
++    site << name << ':' << std::hex << nt->FileHeader.TimeDateStamp << ':' << nt->OptionalHeader.SizeOfImage
++      << ':' << nt->OptionalHeader.CheckSum << ':' << (reinterpret_cast<uintptr_t>(frames[frame]) - reinterpret_cast<uintptr_t>(module)) << ';';
++    ++retained;
++  }
++  return site.str();
++}
++
++struct Runtime {
++  Context context;
++  HANDLE file = INVALID_HANDLE_VALUE;
++  Runtime() {
++    try {
++      context.enabled = bridge_util::Config::getOption<std::string>("client.pageBlockRetentionPolicy", "keep") == "learned-aggressive";
++      if (!context.enabled) { return; }
++      const auto directory = clientDirectory();
++      if (!directory.empty()) {
++        file = CreateFileW((directory / L"l4d2-retention.log").c_str(), GENERIC_WRITE, FILE_SHARE_READ,
++          nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
++      }
++      context.log = [this](const char* message) {
++        if (file == INVALID_HANDLE_VALUE) { return; }
++        char line[2200] {}; SYSTEMTIME now {}; GetLocalTime(&now);
++        const int count = sprintf_s(line, "%02u:%02u:%02u.%03u pid=%lu %s\n", now.wHour, now.wMinute,
++          now.wSecond, now.wMilliseconds, GetCurrentProcessId(), message);
++        if (count > 0) { DWORD written = 0; WriteFile(file, line, static_cast<DWORD>(count), &written, nullptr); }
++      };
++      context.exchange = [](const Request& r, Temporary& temporary, Response& response, uint64_t& elapsed) {
++        HRESULT hr = temporary.create(r);
++        if (FAILED(hr)) { return hr; }
++        LARGE_INTEGER begin {}, end {}; QueryPerformanceCounter(&begin);
++        { ClientMessage command(Commands::Bridge_TestReadbackRecovery, r.resourceId); command.send_data(static_cast<uint32_t>(sizeof(r)), &r); }
++        const auto wait = temporary.wait(20000); QueryPerformanceCounter(&end); elapsed = microseconds(begin, end);
++        if (wait != WAIT_OBJECT_0) { return HRESULT_FROM_WIN32(wait == WAIT_TIMEOUT ? ERROR_TIMEOUT : GetLastError()); }
++        response = temporary.response();
++        return response.hresult;
++      };
++      const auto configured = bridge_util::Config::getOption<std::string>("client.pageBlockRetentionDb", ".l4d2bridge/resource-retention.db");
++      auto path = std::filesystem::u8path(configured);
++      if (path.is_relative()) { path = directory / path; }
++      if (directory.empty() || configured.empty()) { context.disable("database-path-unavailable"); }
++      else {
++        std::error_code error; std::filesystem::create_directories(path.parent_path(), error);
++        if (error || !context.db.open(path.wstring())) { context.disable("persistent-db-open-or-validation-failed"); }
++      }
++      if (file == INVALID_HANDLE_VALUE) { context.disable("policy-log-unavailable"); }
++      if (bridge_util::Config::getOption<bool>("client.testReadbackRecovery", false)) { context.disable("retained-reference-test-active"); }
++      if (bridge_util::Config::getOption<bool>("useSharedHeap", false)
++        || !bridge_util::Config::getOption<bool>("server.useVanillaDxvk", true)) { context.disable("unsupported-shared-heap-or-backend"); }
++      context.write("PB_POLICY event=config policy=learned-aggressive persistent_db=%s unknown_policy=%s real_eviction=%u recovery=server-d3d9-readonly device_idle=0 hash=sha256 db_records=%llu",
++        context.db.valid() ? "enabled" : "unavailable", context.fallback ? "KEEP" : "DROP", context.fallback ? 0u : 1u,
++        static_cast<unsigned long long>(context.db.records()));
++      bridge_util::Logger::info(context.fallback ? "PB_POLICY policy=learned-aggressive session_fallback=1 unknown_policy=KEEP"
++        : "PB_POLICY policy=learned-aggressive persistent_db=enabled unknown_policy=DROP real_eviction=1 recovery=server-d3d9-readonly");
++    } catch (...) { context.disable("policy-initialization-failed"); }
++  }
++};
++inline Runtime& runtime() { static auto* instance = new Runtime(); return *instance; }
++inline bool enabled() { return runtime().context.enabled; }
++inline std::shared_ptr<Parent> create(uint32_t id, uint32_t width, uint32_t height, uint32_t levels,
++    uint32_t format, uint32_t usage, uint32_t pool) {
++  auto& c = runtime().context;
++  if (!c.enabled) { return {}; }
++  try { return std::make_shared<Parent>(c, id, width, height, levels, format, usage, pool, creationSite()); }
++  catch (...) { std::lock_guard<std::recursive_mutex> guard(c.mutex); c.disable("policy-metadata-allocation-failed"); return {}; }
++}
++inline void summary() {
++  auto& r = runtime();
++  if (!r.context.enabled) { return; }
++  summary(r.context);
++  if (r.file != INVALID_HANDLE_VALUE) { FlushFileBuffers(r.file); }
 +}
 +}
 diff --git a/bridge/src/client/shadow_lifetime.h b/bridge/src/client/shadow_lifetime.h
@@ -1855,7 +2618,7 @@ index 0000000..b994ee1
 +};
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..7ac216d 100644
+index 86434ec..a149f08 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -2140,7 +2903,7 @@ index 86434ec..7ac216d 100644
          break;
        }
        case IDirect3DSurface9_GetDevice:
-@@ -2563,6 +2630,46 @@ void ProcessDeviceCommandQueue() {
+@@ -2563,6 +2630,51 @@ void ProcessDeviceCommandQueue() {
          assert(SUCCEEDED(hresult));
          break;
        }
@@ -2162,7 +2925,11 @@ index 86434ec..7ac216d 100644
 +          break;
 +        }
 +        bool enabled = false;
-+        try { enabled = Config::getOption<bool>("client.testReadbackRecovery", false) && ServerOptions::getUseVanillaDxvk(); }
++        try {
++          enabled = (Config::getOption<bool>("client.testReadbackRecovery", false)
++            || Config::getOption<std::string>("client.pageBlockRetentionPolicy", "keep") == "learned-aggressive")
++            && ServerOptions::getUseVanillaDxvk();
++        }
 +        catch (...) { enabled = false; }
 +        IDirect3DSurface9* surface = nullptr;
 +        bool valid = false;
@@ -2173,8 +2940,9 @@ index 86434ec..7ac216d 100644
 +          && parent->second->GetType() == D3DRTYPE_TEXTURE) {
 +          surface = static_cast<IDirect3DSurface9*>(child->second);
 +          IDirect3DSurface9* expected = nullptr;
-+          const HRESULT hr = static_cast<IDirect3DTexture9*>(parent->second)->GetSurfaceLevel(0, &expected);
++          const HRESULT hr = static_cast<IDirect3DTexture9*>(parent->second)->GetSurfaceLevel(request.mip, &expected);
 +          valid = SUCCEEDED(hr) && expected == surface;
++          if (request.levels && static_cast<IDirect3DTexture9*>(parent->second)->GetLevelCount() != request.levels) { valid = false; }
 +          if (expected) { expected->Release(); }
 +        }
 +        l4d2_readback::D3D9Backend backend(surface);
@@ -2187,7 +2955,7 @@ index 86434ec..7ac216d 100644
        case IDirect3DSurface9_LockRect:
        {
          // Currently we only recieve calls for LockRect in cases where backbuffer data is to be copied for screenshots
-@@ -2806,6 +2913,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2806,6 +2918,7 @@ void ProcessDeviceCommandQueue() {
        {
          GET_HND(pHandle);
          gpD3DResources.erase(pHandle);
@@ -2195,7 +2963,7 @@ index 86434ec..7ac216d 100644
          break;
        }
        case Bridge_UnlinkVolumeResource:
-@@ -3209,6 +3317,9 @@ void ProcessDeviceCommandQueue() {
+@@ -3209,6 +3322,9 @@ void ProcessDeviceCommandQueue() {
  
      const auto count = DeviceBridge::end_read_data();
  
@@ -2205,7 +2973,7 @@ index 86434ec..7ac216d 100644
  #ifdef ENABLE_DATA_BATCHING_TRACE
      Logger::trace(format_string("Finished batch data read with %d data items.", count));
  #endif
-@@ -3268,7 +3379,16 @@ bool InitializeD3D() {
+@@ -3268,7 +3384,16 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -2223,7 +2991,7 @@ index 86434ec..7ac216d 100644
      if (ghModule) {
        Logger::info("Non-RTX standard d3d9vk_x64.dll loaded");
      } else {
-@@ -3285,6 +3405,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3410,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -2234,7 +3002,7 @@ index 86434ec..7ac216d 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3435,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3440,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -2245,7 +3013,7 @@ index 86434ec..7ac216d 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3488,12 +3616,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3488,12 +3621,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    ExceptionHandler::get().init();
  
    // Identify yourself
@@ -2264,7 +3032,7 @@ index 86434ec..7ac216d 100644
  #endif
  
    BRIDGE_ASSERT_LOG((argCount >= 2), "Command line argument count received to launch server is not as expected");
-@@ -3554,6 +3685,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3554,6 +3690,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    }
    const SentryShutdownOnExit sentryShutdownOnExit;
  
@@ -2273,7 +3041,7 @@ index 86434ec..7ac216d 100644
    // (3) Send ACK to Client. Connection has been established
    Logger::info("Sync request received, sending ACK response...");
    ServerMessage { Commands::Bridge_Ack, (uintptr_t) gpClientMessageChannel->getWorkerThreadId() };
-@@ -3589,6 +3722,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3589,6 +3727,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    bSignalDone.store(true);
    moduleCmdProcessingThread.join();
  
@@ -2282,7 +3050,7 @@ index 86434ec..7ac216d 100644
    if (!dumpLeakedObjects()) {
      bridge_util::Logger::debug("No leaked objects dicovered at Direct3D module eviction.");
    }
-@@ -3624,4 +3759,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +3764,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;
@@ -2342,10 +3110,10 @@ index 908d93f..857502a 100644
 +endif
 diff --git a/bridge/src/server/readback_backend.h b/bridge/src/server/readback_backend.h
 new file mode 100644
-index 0000000..af981ec
+index 0000000..22832fe
 --- /dev/null
 +++ b/bridge/src/server/readback_backend.h
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,126 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -2416,6 +3184,11 @@ index 0000000..af981ec
 +  }
 +  response.rowBytes = l.rowBytes; response.rows = l.rows;
 +  response.blockWidth = l.blockWidth; response.blockHeight = l.blockHeight; response.blockBytes = l.blockBytes;
++  if (request.operation == 1) {
++    // Ordered acknowledgement: earlier uploads were consumed; no pixel recovery or GPU wait is needed.
++    response.stage = Stage::Complete; response.hresult = S_OK;
++    return response;
++  }
 +  response.hresult = backend.synchronize(response);
 +  if (response.hresult != S_OK) {
 +    if (SUCCEEDED(response.hresult)) { response.hresult = E_FAIL; }
@@ -2454,7 +3227,7 @@ index 0000000..af981ec
 +  if (!done) { return false; }
 +  HANDLE section = OpenFileMappingW(FILE_MAP_WRITE, FALSE, request.name);
 +  uint8_t* view = section ? static_cast<uint8_t*>(MapViewOfFile(section, FILE_MAP_WRITE,
-+    0, 0, sizeof(Response) + request.bytes)) : nullptr;
++    0, 0, sizeof(Response) + (request.operation ? 0 : request.bytes))) : nullptr;
 +  Response response;
 +  if (!view) { response.stage = Stage::Mapping; response.hresult = HRESULT_FROM_WIN32(GetLastError()); }
 +  else if (!enabled) { response.stage = Stage::Disabled; response.hresult = E_ACCESSDENIED; }
@@ -2468,7 +3241,7 @@ index 0000000..af981ec
 +}
 +}
 diff --git a/bridge/src/util/meson.build b/bridge/src/util/meson.build
-index fb5d556..ddff557 100644
+index fb5d556..786371f 100644
 --- a/bridge/src/util/meson.build
 +++ b/bridge/src/util/meson.build
 @@ -1,3 +1,7 @@
@@ -2479,10 +3252,11 @@ index fb5d556..ddff557 100644
  #############################################################################
  # Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
  #
-@@ -38,6 +42,8 @@ util_src = files([
+@@ -38,6 +42,9 @@ util_src = files([
  ])
  
  util_header = files([
++  'readback_hash.h',
 +  'readback_layout.h',
 +  'readback_transport.h',
  	'util_atomiccircularqueue.h',
@@ -2557,9 +3331,85 @@ index 0000000..ee686c7
 +    static_cast<unsigned long long>(s.maxFullWaitMs));
 +}
 +}
+diff --git a/bridge/src/util/readback_hash.h b/bridge/src/util/readback_hash.h
+new file mode 100644
+index 0000000..6a8095d
+--- /dev/null
++++ b/bridge/src/util/readback_hash.h
+@@ -0,0 +1,70 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include <array>
++#include <cstdint>
++#include <windows.h>
++#include <bcrypt.h>
++
++namespace l4d2_readback {
++using Digest = std::array<uint8_t, 32>;
++
++class Hasher {
++  BCRYPT_ALG_HANDLE m_algorithm = nullptr;
++  BCRYPT_HASH_HANDLE m_hash = nullptr;
++  HRESULT m_result = E_FAIL;
++public:
++  Hasher() {
++    NTSTATUS status = BCryptOpenAlgorithmProvider(&m_algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
++    if (status >= 0) { status = BCryptCreateHash(m_algorithm, &m_hash, nullptr, 0, nullptr, 0, 0); }
++    m_result = status >= 0 ? S_OK : HRESULT_FROM_NT(status);
++  }
++  Hasher(const Hasher&) = delete;
++  Hasher& operator=(const Hasher&) = delete;
++  ~Hasher() {
++    if (m_hash) { BCryptDestroyHash(m_hash); }
++    if (m_algorithm) { BCryptCloseAlgorithmProvider(m_algorithm, 0); }
++  }
++  HRESULT add(const void* data, size_t bytes) {
++    if (FAILED(m_result)) { return m_result; }
++    if (!data || bytes > MAXULONG) { return m_result = E_INVALIDARG; }
++    const NTSTATUS status = BCryptHashData(m_hash, const_cast<PUCHAR>(static_cast<const uint8_t*>(data)), static_cast<ULONG>(bytes), 0);
++    return m_result = status >= 0 ? S_OK : HRESULT_FROM_NT(status);
++  }
++  HRESULT finish(Digest& digest) {
++    digest = {};
++    if (FAILED(m_result)) { return m_result; }
++    const NTSTATUS status = BCryptFinishHash(m_hash, digest.data(), static_cast<ULONG>(digest.size()), 0);
++    return m_result = status >= 0 ? S_OK : HRESULT_FROM_NT(status);
++  }
++};
++
++// Windows CNG owns the SHA-256 implementation; only this small digest survives deletion.
++inline HRESULT hashBytes(const uint8_t* data, size_t bytes, Digest& digest) {
++  digest = {};
++  if (!data || !bytes || bytes > MAXULONG) { return E_INVALIDARG; }
++  BCRYPT_ALG_HANDLE algorithm = nullptr;
++  BCRYPT_HASH_HANDLE hash = nullptr;
++  NTSTATUS status = BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
++  if (status >= 0) { status = BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0); }
++  if (status >= 0) {
++    status = BCryptHashData(hash, const_cast<PUCHAR>(data), static_cast<ULONG>(bytes), 0);
++  }
++  if (status >= 0) { status = BCryptFinishHash(hash, digest.data(), static_cast<ULONG>(digest.size()), 0); }
++  if (hash) { BCryptDestroyHash(hash); }
++  if (algorithm) { BCryptCloseAlgorithmProvider(algorithm, 0); }
++  return status >= 0 ? S_OK : HRESULT_FROM_NT(status);
++}
++
++inline std::array<char, 65> digestText(const Digest& digest) {
++  constexpr char alphabet[] = "0123456789abcdef";
++  std::array<char, 65> text {};
++  for (size_t i = 0; i < digest.size(); ++i) {
++    text[i * 2] = alphabet[digest[i] >> 4];
++    text[i * 2 + 1] = alphabet[digest[i] & 15];
++  }
++  return text;
++}
++}
 diff --git a/bridge/src/util/readback_layout.h b/bridge/src/util/readback_layout.h
 new file mode 100644
-index 0000000..f08d207
+index 0000000..a774273
 --- /dev/null
 +++ b/bridge/src/util/readback_layout.h
 @@ -0,0 +1,89 @@
@@ -2574,7 +3424,7 @@ index 0000000..f08d207
 +#include <cstring>
 +
 +namespace l4d2_readback {
-+constexpr uint32_t kVersion = 1;
++constexpr uint32_t kVersion = 2;
 +constexpr uint32_t kMaxBytes = 64u * 1024u * 1024u;
 +constexpr uint32_t kDxt1 = 0x31545844u, kDxt3 = 0x33545844u, kDxt5 = 0x35545844u;
 +
@@ -2654,10 +3504,10 @@ index 0000000..f08d207
 +}
 diff --git a/bridge/src/util/readback_transport.h b/bridge/src/util/readback_transport.h
 new file mode 100644
-index 0000000..f15a308
+index 0000000..aad69f1
 --- /dev/null
 +++ b/bridge/src/util/readback_transport.h
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,117 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -2699,6 +3549,8 @@ index 0000000..f15a308
 +  uint32_t version = kVersion, resourceId = 0, parentId = 0;
 +  uint32_t width = 0, height = 0, format = 0, mip = 0;
 +  uint32_t pool = 1, usage = 0, bytes = 0;
++  uint32_t operation = 0;
++  uint32_t levels = 0;
 +  wchar_t name[96] {};
 +};
 +struct Response {
@@ -2712,7 +3564,7 @@ index 0000000..f15a308
 +  uint64_t syncUs = 0, backendReadUs = 0;
 +};
 +#pragma pack(pop)
-+static_assert(sizeof(Request) == 232, "x86/x64 request layout");
++static_assert(sizeof(Request) == 240, "x86/x64 request layout");
 +static_assert(sizeof(Response) == 88, "x86/x64 response layout");
 +static_assert(offsetof(Response, syncUs) == 72, "x86/x64 response alignment");
 +
@@ -2722,7 +3574,7 @@ index 0000000..f15a308
 +}
 +
 +inline bool requestValid(const Request& request, Layout& l) {
-+  return request.version == kVersion && request.resourceId && request.parentId && request.mip == 0
++  return request.version == kVersion && request.resourceId && request.parentId && request.mip < 15 && request.operation <= 1 && request.levels <= 15
 +    && request.pool == 1 && request.usage == 0
 +    && layout(request.width, request.height, request.format, l) && request.bytes == l.bytes
 +    && request.name[95] == 0 && std::wcsncmp(request.name, L"Local\\L4D2Recovery-", 19) == 0;
@@ -2747,7 +3599,7 @@ index 0000000..f15a308
 +  }
 +  HRESULT create(const Request& request) {
 +    m_section = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
-+      0, request.bytes + static_cast<DWORD>(sizeof(Response)), request.name);
++      0, (request.operation ? 0 : request.bytes) + static_cast<DWORD>(sizeof(Response)), request.name);
 +    const auto sectionError = GetLastError();
 +    if (!m_section || sectionError == ERROR_ALREADY_EXISTS) {
 +      return HRESULT_FROM_WIN32(sectionError ? sectionError : ERROR_INVALID_HANDLE);
@@ -2760,7 +3612,7 @@ index 0000000..f15a308
 +      return HRESULT_FROM_WIN32(eventError ? eventError : ERROR_INVALID_HANDLE);
 +    }
 +    m_view = static_cast<uint8_t*>(MapViewOfFile(m_section, FILE_MAP_ALL_ACCESS, 0, 0,
-+      request.bytes + sizeof(Response)));
++      (request.operation ? 0 : request.bytes) + sizeof(Response)));
 +    if (!m_view) { return HRESULT_FROM_WIN32(GetLastError()); }
 +    const Response pending;
 +    std::memcpy(m_view, &pending, sizeof(pending));

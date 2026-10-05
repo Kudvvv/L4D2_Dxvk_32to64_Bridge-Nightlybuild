@@ -4,7 +4,10 @@
 #define NOMINMAX
 #include "readback_backend.h"
 #include "pagefile_shadow.h"
+#include "retention_policy.h"
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -27,6 +30,7 @@ struct FakeBackend {
         source[static_cast<size_t>(row) * pitch + x] = pixel(static_cast<size_t>(row) * l.rowBytes + x);
       }
     }
+    if (mode == 8) { source[0] ^= 1; }
   }
   HRESULT descriptor(D3DSURFACE_DESC& desc) {
     if (state != 0) { return E_UNEXPECTED; }
@@ -66,14 +70,147 @@ static Request makeRequest(uint32_t format, uint32_t width, uint32_t height) {
 
 static bool launch(const wchar_t* executable, const Request& request, uint32_t mode, PROCESS_INFORMATION& process) {
   wchar_t arguments[2048] {};
-  swprintf_s(arguments, L"\"%ls\" --server \"%ls\" %u %u %u %u", executable,
-    request.name, request.format, request.width, request.height, mode);
+  swprintf_s(arguments, L"\"%ls\" --server \"%ls\" %u %u %u %u %u %u %u %u %u", executable,
+    request.name, request.format, request.width, request.height, mode, request.operation, request.mip, request.levels, request.resourceId, request.parentId);
   STARTUPINFOW startup {}; startup.cb = sizeof(startup); process = {};
   return CreateProcessW(nullptr, arguments, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process) != FALSE;
 }
 
+static bool setupPolicy(l4d2_retention::Context& c, const wchar_t* executable, const std::filesystem::path& path, uint32_t& mode, std::string& log) {
+  c.enabled = true;
+  c.log = [&log](const char* line) { log += line; log += '\n'; };
+  c.exchange = [executable, &mode](const Request& request, Temporary& temporary, Response& response, uint64_t& elapsed) {
+    HRESULT hr = temporary.create(request);
+    if (FAILED(hr)) { return hr; }
+    PROCESS_INFORMATION process {};
+    LARGE_INTEGER begin {}, end {}; QueryPerformanceCounter(&begin);
+    if (!launch(executable, request, mode, process)) { return HRESULT_FROM_WIN32(GetLastError()); }
+    const auto wait = temporary.wait(10000);
+    const auto exitWait = WaitForSingleObject(process.hProcess, 10000);
+    DWORD exit = 1; GetExitCodeProcess(process.hProcess, &exit);
+    CloseHandle(process.hProcess); CloseHandle(process.hThread);
+    QueryPerformanceCounter(&end); elapsed = microseconds(begin, end);
+    if (wait != WAIT_OBJECT_0 || exitWait != WAIT_OBJECT_0 || exit) { return E_FAIL; }
+    response = temporary.response(); return response.hresult;
+  };
+  return c.db.open(path.wstring());
+}
+
+static bool upload(l4d2_retention::Parent& parent, PagefileShadow& backing, uint32_t mip, uint32_t format, uint32_t size, bool overwrite = false) {
+  Layout l;
+  if (!layout(size, size, format, l)) { return false; }
+  auto* bytes = backing.acquire(l.bytes, 0, overwrite);
+  if (!bytes) { return false; }
+  Hasher hash;
+  for (uint32_t row = 0; row < l.rows; ++row) {
+    for (uint32_t x = 0; x < l.rowBytes; ++x) { bytes[static_cast<size_t>(row) * l.rowBytes + x] = pixel(static_cast<size_t>(row) * l.rowBytes + x); }
+    hash.add(bytes + static_cast<size_t>(row) * l.rowBytes, l.rowBytes);
+  }
+  Digest digest {}; const HRESULT hr = hash.finish(digest);
+  backing.release(0);
+  parent.uploaded(mip, true, digest, hr);
+  return true;
+}
+
+static int policyTests(const wchar_t* executable) {
+  using namespace l4d2_retention;
+  wchar_t temporary[MAX_PATH] {}; if (!GetTempPathW(MAX_PATH, temporary)) { return 40; }
+  const auto directory = std::filesystem::path(temporary) / (L"l4d2-policy-" + std::to_wstring(GetCurrentProcessId()));
+  std::filesystem::create_directories(directory);
+  const auto db = directory / L"retention.db";
+  const auto baseline = l4d2_memory::surfaceBackingBytes.load();
+  std::string log; uint32_t mode = 0;
+  if (!requiresPreserve(0, true) || !requiresPreserve(D3DLOCK_READONLY, true)
+    || requiresPreserve(D3DLOCK_DISCARD, true) || !requiresPreserve(D3DLOCK_DISCARD, false)) { return 41; }
+  for (uint32_t run = 0; run < 3; ++run) {
+    Context c; if (!setupPolicy(c, executable, db, mode, log)) { return 42; }
+    PagefileShadow backing[3];
+    Parent parent(c, 6 + run * 100, 256, 256, 3, kDxt5, 0, 1, run == 2 ? "shader.dll:1234:10000:0:900;" : "shader.dll:1234:10000:0:800;");
+    for (uint32_t mip = 0; mip < 3; ++mip) {
+      parent.attach(mip, 7 + run * 100 + mip, backing[mip]);
+      if (!upload(parent, backing[mip], mip, kDxt5, 256 >> mip)) { return 43; }
+      if (run == 0 && mip < 2 && backing[mip].recoveryMissing()) { return 44; }
+    }
+    if (run == 0) {
+      for (auto& sub : backing) {
+        if (!sub.recoveryMissing() || sub.get() || sub.backingBytes() || sub.acquire(4096, 0)) { return 45; }
+      }
+      if (l4d2_memory::surfaceBackingBytes != baseline || c.drops != 1 || c.db.records()) { return 46; }
+      const RECT region { 0, 0, 8, 8 };
+      if (!parent.beforeLock(1, D3DLOCK_READONLY, region)) { return 47; }
+      if (c.misses != 1 || c.promotions != 1 || c.hashMatches != 3 || c.recovered != 3 || c.failures || c.fallback || c.db.records() != 1) { return 48; }
+      for (uint32_t mip = 0; mip < 3; ++mip) {
+        Layout l; layout(256 >> mip, 256 >> mip, kDxt5, l);
+        auto* bytes = backing[mip].acquire(l.bytes, 0);
+        if (!bytes) { return 49; }
+        for (size_t i = 0; i < l.bytes; ++i) { if (bytes[i] != pixel(i)) { return 50; } }
+        backing[mip].release(0);
+      }
+      if (!parent.beforeLock(0, 0, RECT { 0, 0, 256, 256 }) || c.misses != 1) { return 51; }
+    } else {
+      if (c.drops || c.attempts || c.misses || (run == 1 ? c.strongHits != 1 : c.contentHits != 1)) { return 52; }
+      for (auto& sub : backing) { if (sub.recoveryMissing() || !sub.backingBytes()) { return 53; } }
+    }
+    summary(c);
+  }
+  if (l4d2_memory::surfaceBackingBytes != baseline) { return 54; }
+  {
+    Context c; if (!setupPolicy(c, executable, directory / L"overwrite.db", mode, log)) { return 55; }
+    PagefileShadow backing;
+    Parent parent(c, 6, 256, 256, 1, kDxt1, 0, 1, "shader.dll:1234:10000:0:800;");
+    parent.attach(0, 7, backing);
+    if (!upload(parent, backing, 0, kDxt1, 256) || !backing.recoveryMissing()) { return 56; }
+    if (!parent.beforeLock(0, D3DLOCK_DISCARD, RECT { 0, 0, 256, 256 }) || !upload(parent, backing, 0, kDxt1, 256, true)) { return 57; }
+    if (!backing.recoveryMissing() || c.misses || c.attempts || c.promotions || c.db.records()) { return 58; }
+  }
+  for (const auto failure : { 2u, 8u }) {
+    const auto failureDb = directory / (std::to_wstring(failure) + L"-failure.db");
+    {
+      Context c; mode = failure; if (!setupPolicy(c, executable, failureDb, mode, log)) { return 59; }
+      PagefileShadow backing;
+      Parent parent(c, 6, 256, 256, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 7, backing);
+      if (!upload(parent, backing, 0, kDxt5, 256) || !backing.recoveryMissing()) { return 60; }
+      if (parent.beforeLock(0, 0, RECT { 0, 0, 256, 256 }) || !backing.recoveryMissing() || backing.acquire(65536, 0)
+        || !c.fallback || c.failures != 1 || c.db.records() != 1 || (failure == 8 && c.hashMismatches != 1)) { return 61; }
+      PagefileShadow freshBacking;
+      Parent fresh(c, 16, 512, 512, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:801;"); fresh.attach(0, 17, freshBacking);
+      if (!upload(fresh, freshBacking, 0, kDxt5, 512) || freshBacking.recoveryMissing() || c.drops != 1) { return 62; }
+    }
+    {
+      Context c; mode = 0; if (!setupPolicy(c, executable, failureDb, mode, log)) { return 63; }
+      PagefileShadow backing;
+      Parent parent(c, 606, 256, 256, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 607, backing);
+      if (!upload(parent, backing, 0, kDxt5, 256) || c.strongHits != 1 || c.drops || backing.recoveryMissing()) { return 64; }
+    }
+  }
+  {
+    const auto corrupt = directory / L"corrupt.db";
+    { Database d; if (!d.open(corrupt.wstring())) { return 65; } }
+    { std::ofstream out(corrupt, std::ios::app); out << "broken-record\n"; }
+    const auto length = std::filesystem::file_size(corrupt);
+    Context c; if (setupPolicy(c, executable, corrupt, mode, log) || c.db.valid()) { return 66; }
+    c.disable("persistent-db-invalid");
+    PagefileShadow backing; Parent parent(c, 6, 256, 256, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 7, backing);
+    if (!upload(parent, backing, 0, kDxt5, 256) || backing.recoveryMissing() || std::filesystem::file_size(corrupt) != length) { return 67; }
+  }
+  for (const auto format : { kDxt1, kDxt5, 21u, 22u }) {
+    Context c; if (!setupPolicy(c, executable, directory / (std::to_wstring(format) + L"-format.db"), mode, log)) { return 68; }
+    PagefileShadow backing; Parent parent(c, 6, 256, 256, 1, format, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 7, backing);
+    if (!upload(parent, backing, 0, format, 256) || !backing.recoveryMissing()
+      || !parent.beforeLock(0, D3DLOCK_READONLY, RECT { 0, 0, 256, 256 }) || c.hashMatches != 1 || c.promotions != 1) { return 69; }
+  }
+  if (l4d2_memory::surfaceBackingBytes != baseline) { return 70; }
+  for (const auto* required : { "event=backing-evicted", "cpu_backing_present=0", "cpu_backing_bytes=0", "event=retention-miss", "event=real-miss-validation",
+    "original_retained=0", "exact_hash_match=1", "event=promoted", "match=strong", "match=content", "event=recovery-failure", "event=session-fallback", "PB_POLICY_SUMMARY" }) {
+    if (log.find(required) == std::string::npos) { return 71; }
+  }
+  std::filesystem::remove_all(directory);
+  printf("PASS: real backing deletion, hash-only x86-to-x64 recovery, complete mip restoration, permanent KEEP, cross-run Strong/Content DB hits, overwrite without promotion, hash/readback failures and session fallback (independent mock backend)\n");
+  return 0;
+}
+
 int wmain(int argc, wchar_t** argv) {
-  if (argc == 7 && std::wstring(argv[1]) == L"--server") {
+  if (argc == 12 && std::wstring(argv[1]) == L"--server") {
     Request request;
     request.resourceId = 7; request.parentId = 6;
     wcscpy_s(request.name, argv[2]);
@@ -81,6 +218,11 @@ int wmain(int argc, wchar_t** argv) {
     request.width = static_cast<uint32_t>(wcstoul(argv[4], nullptr, 10));
     request.height = static_cast<uint32_t>(wcstoul(argv[5], nullptr, 10));
     const uint32_t mode = static_cast<uint32_t>(wcstoul(argv[6], nullptr, 10));
+    request.operation = static_cast<uint32_t>(wcstoul(argv[7], nullptr, 10));
+    request.mip = static_cast<uint32_t>(wcstoul(argv[8], nullptr, 10));
+    request.levels = static_cast<uint32_t>(wcstoul(argv[9], nullptr, 10));
+    request.resourceId = static_cast<uint32_t>(wcstoul(argv[10], nullptr, 10));
+    request.parentId = static_cast<uint32_t>(wcstoul(argv[11], nullptr, 10));
     Layout l;
     if (!layout(request.width, request.height, request.format, l)) { return 10; }
     request.bytes = l.bytes;
@@ -138,5 +280,5 @@ int wmain(int argc, wchar_t** argv) {
   }
   if (l4d2_memory::surfaceBackingBytes != baseline) { return 16; }
   printf("PASS: %u x86-to-x64 independent mock readbacks, reference-only corruption detection, failure stages and original backing retained\n", checked);
-  return 0;
+  return policyTests(argv[1]);
 }
