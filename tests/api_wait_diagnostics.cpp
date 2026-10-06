@@ -98,6 +98,9 @@ int main() {
     && text.find("metric=server_response_wait") != std::string::npos
     && text.find("L4D2_API_WAIT_END snapshot=1") != std::string::npos, "complete snapshot with explicit limits and phase data");
   CloseHandle(writer.file); DeleteFileW(L"api-wait-test.log");
+  // Synthetic scopes above enabled counters directly, without creating a
+  // worker. Restore the startup state before testing real initialization.
+  enabled.store(false);
   require(initialize(true, "client", 1000), "native diagnostic worker initialization");
   wchar_t realLog[100] {};
   swprintf_s(realLog, 100, L"l4d2-api-wait-client-%lu.log", GetCurrentProcessId());
