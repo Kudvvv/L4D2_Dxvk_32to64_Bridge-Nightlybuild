@@ -6,8 +6,8 @@
 #include <cstdint>
 #include <cstring>
 #include "steam_activity_diagnostics.h"
-static l4d2_overlay::SteamActivityDiagnostics* g_steamCallback = nullptr;
-extern "C" void SteamAPI_RegisterCallback(l4d2_overlay::SteamActivityDiagnostics* callback, int id) {
+static l4d2_overlay::SteamCallbackBase* g_steamCallback = nullptr;
+extern "C" void SteamAPI_RegisterCallback(l4d2_overlay::SteamCallbackBase* callback, int id) {
   if (id == 331 && callback && callback->payloadSize() == 1) {
     // Simulate the SDK manager writing the legacy base's registration fields.
     auto* bytes = reinterpret_cast<uint8_t*>(callback);

@@ -65,6 +65,8 @@ Commit `33e8cb2` also changed Host keyboard state before dispatch and moved focu
 
 The current observer additionally records `sdk_flags` and `sdk_callback` after `SteamAPI_RegisterCallback`. `registered` now reflects the SDK-written registration bit rather than merely successful export lookup/calling. The registration export returns void: reaching it did not itself prove acceptance. Missing activation events must be investigated independently of the Host capture path.
 
+The initial registration-field test exposed a 32-bit layout mismatch in the standalone callback declaration (64-bit passed). The observer now inherits from a separate legacy callback base containing only the three virtual functions, byte flags and integer callback ID. Its size is asserted as 12 bytes on x86 and 16 on x64; SDK-manager writes to that base are tested independently from the derived C++ function objects. Events include `base_bytes` and `diagnostics_revision=2`. This repairs the ABI declaration and the reliability of registration-field observation; it does not prove that the earlier missing activation events were caused by that layout mismatch.
+
 To restore normal input, set **both** `steamOverlayInput` options to `False` and restart. Keep diagnostic flags enabled for the short reproduction below. The normal release configuration and main branch remain unchanged.
 
 ### Confirmed failed correction run: 22:47–22:48
