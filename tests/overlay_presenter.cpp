@@ -25,7 +25,9 @@ int main(int argc, char** argv) {
     l4d2_overlay::SuppressionDiagnostics suppression;
     auto appendSuppression = [&](const char* line) { diagnosticLog += line; diagnosticLog += "\n"; };
     const void* knownCaller = reinterpret_cast<const void*>(GetModuleHandleW(nullptr));
+    SetLastError(0x1234);
     suppression.observe("test-api", knownCaller, "neutralize", appendSuppression);
+    require(GetLastError() == 0x1234, "module lookup and diagnostic logging preserve caller error state");
     require(diagnosticLog.find("caller_path=unresolved") == std::string::npos
       && diagnosticLog.find("scope=immediate-caller") != std::string::npos,
       "suppression observer resolves the actual module containing the address");
