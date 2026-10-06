@@ -1,6 +1,6 @@
 # Steam Overlay input investigation after v1.1
 
-Status: **opt-in input correction experiment; Steam support is not yet hardware-validated or released.**
+Status: **passive diagnostics after an input-regression rollback; Steam support is not fixed or released.**
 
 The new hardware report changes the scope: normal Shift+Tab does nothing, but L4D2's Join Server / Steam Group action can open a visible overlay. The visible UI accepts no mouse input and Shift+Tab cannot close it. This establishes that activation and rendering can work in this installation. Do not replace them or add a second Steam API activation path as an input workaround.
 
@@ -59,13 +59,27 @@ server.steamOverlayInput = True
 
 It requires the existing windowed presenter configuration (`server.presenterWindow=True`, `server.presenterInput=True`) and existing client input hooks. Use the matching client and x64 Host update together. Preserve the current working ReShade settings, DXVK backend and retention policy. The packaged `STEAM-INPUT-DIAGNOSTICS.conf` now includes both correction and diagnostic flags; merge it rather than replacing the complete configuration.
 
-The client forwards actual callback state to the Host-owned presenter through a registered Win32 message, carrying the game HWND. The Host checks that it matches the presenter's parent. Steam and ReShade have independent capture sources; their union enables the presenter and suppresses gameplay through the existing UI-active message and hooks. When Steam is active and the game is foreground, the presenter thread sets keyboard focus to its own child, allowing native keyboard messages and queue state instead of posting duplicate keys. It does not change the foreground root or attach additional input queues. On Steam close, focus is restored only if it still belongs to that presenter. Background activation does not steal focus from another application.
+The state-forwarding/capture experiment remains available only for isolated development tests. It forwards actual callback state to the Host-owned presenter, with independent Steam/ReShade capture sources. It is **not recommended for users**. The packaged diagnostic snippet explicitly disables both correction flags.
 
-When the game retains focus, the existing shortcut forwarding remains in use. Before dispatching its legacy key messages, the Host updates its thread keyboard state to match the key transition while preserving other state bits. This addresses the observed Tab-state discrepancy at dispatch; it does not guarantee compatibility with an earlier Steam GetMessage hook or a different input API.
+Commit `33e8cb2` also changed Host keyboard state before dispatch and moved focus to the child. The subsequent hardware test failed and reported gameplay input becoming unreliable. Those keyboard-state writes and focus changes have been removed. Current diagnostics only read keyboard state; the original v1.1 keyboard-hook behavior is restored. Disabling the two experiment flags preserves the normal ReShade input path.
 
-New events: `steam-forward`, `steam-capture`, and `keyboard-state`. The unchanged state diagnostics must verify whether mouse messages and focus actually move to the Host in the hardware test. Native tests cover activation-message delivery, capture union and restoring capture only after both overlays close. These tests do not establish actual Steam input support.
+The current observer additionally records `sdk_flags` and `sdk_callback` after `SteamAPI_RegisterCallback`. `registered` now reflects the SDK-written registration bit rather than merely successful export lookup/calling. The registration export returns void: reaching it did not itself prove acceptance. Missing activation events must be investigated independently of the Host capture path.
 
-To roll back the experiment, set **both** `steamOverlayInput` options to `False` and restart. Diagnostic flags can remain enabled for comparison. The normal release configuration and main branch remain unchanged.
+To restore normal input, set **both** `steamOverlayInput` options to `False` and restart. Keep diagnostic flags enabled for the short reproduction below. The normal release configuration and main branch remain unchanged.
+
+### Confirmed failed correction run: 22:47–22:48
+
+The client logged `state_forwarding=1`, and the Host logged numerous `keyboard-state updated=1` events. This confirms execution of the correction build, unlike the earlier run. The tester reported ReShade working, Steam visible but unusable, and gameplay movement/Esc/clicks responding unreliably. No client `steam-active` or `steam-forward` event was recorded despite the visible Steam page. Host `steam-capture active=0` appears only during teardown; there is no activation transition. ReShade capture toggled at `22:48:00.233` / `22:48:00.597`.
+
+The keyboard-state modification failed to make Steam respond and introduced a reported input regression. The logs do not show the Steam focus/capture branch executing, so it cannot explain this run through a Steam activation transition. A Host-owned child can share an input queue with its cross-process parent; writing keyboard state at forwarded-message dispatch can affect input processing in that shared queue. This is a plausible explanation for the regression, not a completed A/B causal proof. The failed writes and the unvalidated focus changes are rolled back rather than expanded. Native capture-union tests did not validate real gameplay input or proprietary Steam hooks.
+
+Current acceptance for the rollback build: ordinary movement/clicks/Esc work, ReShade Home works, and a game-requested Steam opening is recorded with its real callback/registration diagnostics. Continued Steam input failure is expected to remain unresolved. Do not use this rollback as evidence that Steam input has been fixed.
+
+### Follow-up run: 22:42–22:43
+
+The tester reported ReShade working and all Steam interactions still failing. Both logs list `client.steamOverlayInput=True` and `server.steamOverlayInput=True`. However, registration still reports `capture_changed=0`, rather than the correction branch's `state_forwarding=1`. The client receives `active=1` at `22:43:11.977`, but no `steam-forward` event follows. Host shortcut dispatches retain `tab_queue=0` and have no `keyboard-state` correction events; no `steam-capture` event is present. ReShade capture toggles at `22:42:39.233` / `22:42:39.699`.
+
+This run establishes continued failure and no observable execution of the correction paths. It does not yet establish failure of those paths after activation. First compare the installed client and Host SHA-256 against artifact `11392840438` (commit `33e8cb2`, run `37419352518`). The verified artifact contains the correction option names and event strings. Older diagnostic binaries accept/log arbitrary configuration keys without implementing the new correction. A version/loading mismatch is consistent with these observations; installed binary hashes and, if necessary, actual loaded module paths are required before asserting its cause or changing the input design again.
 
 Back up the current client/Host binaries. Install the matching diagnostic client and Host together; keep the existing DXVK backend, ReShade and database. Stay in the main menu, preferably outside a live multiplayer session.
 

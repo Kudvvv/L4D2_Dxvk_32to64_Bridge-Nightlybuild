@@ -53,6 +53,8 @@ int main(int argc, char** argv) {
     require(activityLog.find("registered=1 callback=331 payload_bytes=1") != std::string::npos
       && activityLog.find("active=1 callback=331") != std::string::npos
       && activityLog.find("active=0 callback=331") != std::string::npos, "observe both Steam transitions");
+    require(activityLog.find("sdk_flags=1 sdk_callback=331") != std::string::npos,
+      "report SDK-written registration fields on both architectures");
     require(!presenter.capturing(), "Steam diagnostics do not change capture policy");
     const HWND child = presenter.window(parent);
     require(child != nullptr, "cross-process child creation");

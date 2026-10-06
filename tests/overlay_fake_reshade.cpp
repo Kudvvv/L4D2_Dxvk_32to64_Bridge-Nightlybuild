@@ -8,7 +8,14 @@
 #include "steam_activity_diagnostics.h"
 static l4d2_overlay::SteamActivityDiagnostics* g_steamCallback = nullptr;
 extern "C" void SteamAPI_RegisterCallback(l4d2_overlay::SteamActivityDiagnostics* callback, int id) {
-  if (id == 331 && callback && callback->payloadSize() == 1) { g_steamCallback = callback; }
+  if (id == 331 && callback && callback->payloadSize() == 1) {
+    // Simulate the SDK manager writing the legacy base's registration fields.
+    auto* bytes = reinterpret_cast<uint8_t*>(callback);
+    bytes[sizeof(void*)] |= 1;
+    const size_t idOffset = (sizeof(void*) + 1 + 3) & ~size_t(3);
+    std::memcpy(bytes + idOffset, &id, sizeof(id));
+    g_steamCallback = callback;
+  }
 }
 extern "C" bool TestSteamActive(bool active) {
   if (!g_steamCallback) { return false; }
