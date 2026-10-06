@@ -12,7 +12,7 @@ if ($CompileArchitecture) {
   SetupVS -Platform $CompileArchitecture -VcVarsVer '14.29'
   Push-Location $testDir
   try {
-    & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /LD "$repoRoot/tests/overlay_fake_reshade.cpp" "/Fe:fake-$CompileArchitecture.dll" /link "/DEF:$repoRoot/tests/overlay_fake_reshade.def"
+    & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /LD "/I$source/bridge/src/util" "$repoRoot/tests/overlay_fake_reshade.cpp" "/Fe:fake-$CompileArchitecture.dll" /link "/DEF:$repoRoot/tests/overlay_fake_reshade.def"
     if ($LASTEXITCODE -ne 0) { throw "ReShade ABI test double compilation failed for $CompileArchitecture" }
     & cl.exe /nologo /std:c++17 /EHsc /W4 /WX "/I$source/bridge/src/server" "/I$source/bridge/src/util" "$repoRoot/tests/overlay_presenter.cpp" user32.lib "/Fe:overlay-$CompileArchitecture.exe"
     if ($LASTEXITCODE -ne 0) { throw "Overlay presenter compilation failed for $CompileArchitecture" }

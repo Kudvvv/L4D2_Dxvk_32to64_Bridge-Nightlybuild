@@ -31,7 +31,11 @@ logServerCommands = False
 
 Merge [the snippet](../config/STEAM-INPUT-DIAGNOSTICS.conf) into the existing `bin/.l4d2bridge/bridge.conf`. Preserve the current Host selection, presenter, ReShade and retention options. The normal shipped configuration is unchanged.
 
-The same diagnostic helper runs inside both processes. It samples at most once per second from Present, including when the game stops receiving ordinary input messages. It does not activate Steam, register an unofficial Steam callback ABI, change capture, enable a window, inject input or alter resource policy.
+The window diagnostic helper runs inside both processes. It samples at most once per second from Present, including when the game stops receiving ordinary input messages. The next diagnostic build additionally observes the legacy public Steamworks activation callback in the client and the shortcut's keyboard state in the presenter thread. It does not activate Steam, change capture, enable a window, inject additional input or alter resource policy.
+
+- `event=steam-callback`: registers callback 331 only when `client.steamInputDiagnostics=True` and the game's existing `steam_api.dll` exports `SteamAPI_RegisterCallback`. The independent ABI declaration follows Valve's Steamworks SDK 1.51: three callback virtual methods and the one-byte legacy `GameOverlayActivated_t` payload. It includes no SDK implementation, modern optional payload fields or Steam binaries. The observer/code modules stay alive for the process lifetime to avoid a callback pointing into unloaded code. It uses the game's own callback pump; it never calls `SteamAPI_Init`, `RunCallbacks`, `Shutdown` or an activation API. Registration is not proof of callback delivery on this installation.
+- `event=steam-active`: records real callback delivery with `active=1/0`. This is distinct from the existing ReShade/Bridge `capture` flag. No capture transition is performed in this build.
+- `event=tab-dispatch`: for presenter Tab keydown messages only, records Shift/Tab from `GetKeyState`, `GetKeyboardState` and `GetAsyncKeyState` immediately before TranslateMessage/DispatchMessage. A mismatch establishes a queue-state difference, not proof that Steam uses a particular Win32 API. It logs no text or unrelated key identities. Earlier GetMessage hooks may consume messages before this observation.
 
 - `event=modules`: process role, PID/architecture and actual presence of `GameOverlayRenderer.dll`, `GameOverlayRenderer64.dll`, `SteamOverlayVulkanLayer.dll`, `SteamOverlayVulkanLayer64.dll`, `steam_api.dll` and `steam_api64.dll`. Delayed load/unload is detected. Presence alone is not activity or rendering proof.
 - `event=state`: game/presenter HWND ownership, presenter enabled/capture state, foreground root, foreground thread active/focus/capture HWNDs, local game/presenter thread GUI state, cursor hit-test HWND ownership, clip rectangle size and local WndProc address/module. `downstream` / `downstream_module` identify the client's saved game WndProc. The client observes the actual WndProc through the existing original API trampoline, bypassing Bridge's virtualized GetWindowLong result. `gui_ok=0` or `local_gui_ok=0` means that thread observation was unavailable. Host `capture` denotes ReShade/Bridge capture, **not Steam's active state**.
@@ -50,9 +54,25 @@ Back up the current client/Host binaries. Install the matching diagnostic client
 4. Move the mouse, attempt one click, press Shift+Tab once to close, and wait 5 seconds. Report which actions worked. If it remains stuck, terminate the game as before; this diagnostic build does not promise an escape key or a fix.
 5. Send `bridge32.log` and `bridge64.log` for x64 Host, or `bridge32.log` and `bridge-host32.log` for x86 Host. Preserve this failed run before restarting; the logs can be overwritten. Include the current presenter/ReShade settings and the times of opening/closing attempts.
 
+For the activation/keyboard-state build, wait five seconds after opening through the game action, then make two deliberate Shift+Tab attempts (hold Shift first, tap Tab, release both; wait two seconds between attempts). Try one mouse click. Do not repeatedly hold Tab, since auto-repeat obscures individual attempts. Keep all existing settings and the renderer backend unchanged. If the overlay cannot close, preserve the logs after terminating. A missing `steam-active` transition despite successful callback registration is itself a useful result; do not compensate by assuming visibility from the hotkey.
+
 One short reproduction is enough for the first diagnosis; no ETL/system-wide profiling is needed. Disable both flags after testing. If a presenter-on/off A/B is necessary, choose that after inspecting this run, rather than changing several input policies at once.
 
 ## Next fix and acceptance gate
+
+### Paired hardware reproduction: 21:29–21:30
+
+The tester explicitly confirmed entering a server and opening Steam through the Steam Group UI. The overlay rendered, but mouse clicks continued to operate L4D2 behind it and Shift+Tab did not close it. This run therefore includes a visible-overlay failure, unlike the preceding run whose visible-overlay state was unconfirmed.
+
+- Client PID 3612 loaded `GameOverlayRenderer.dll` and `steam_api.dll`. Host PID 21280 loaded `GameOverlayRenderer64.dll` and `SteamOverlayVulkanLayer64.dll`; neither Steam API DLL was loaded in the Host. Vulkan presentation runs in the Host, but these module observations do not isolate which Steam component draws each UI element.
+- Game HWND `0x00260558` belongs to the client; presenter HWND `0x00080FB0` belongs to the Host. All 73 sampled Host states reported `enabled=0 capture=0`. In foreground-game samples, focus and cursor hit testing remained on the game. The counter totals were **0 Host mouse messages**, versus **6642 client mouse observations**. These are diagnostic observation counts, not unique physical events or counts specifically confined to the overlay-open interval.
+- Host counters recorded 90 keyboard messages and 9 Shift+Tab observations. For example, `21:30:20.781` reported `keyboard=8 shift_tab=2`, and `21:30:22.785` reported `keyboard=10 shift_tab=2`, while capture remained off. The shortcut reaches the presenter WndProc; enqueue failure is not the explanation for this reproduction. This does not prove that Steam's input hook accepted it.
+- The client legacy Remix channel remained unready (`remix_channel_ready=0 presenter_delivery=0`). This route does not supply mouse input to the vanilla-DXVK presenter. Client counts can include both message-pump and WndProc observations; twice the Host shortcut count does not establish duplicate injection.
+- Both logs ended with successful shutdown cleanup. No crash was reported in this reproduction.
+
+The established mouse-routing gap is that opening Steam never enables the Host presenter or activates the existing client input-suppression path. The keyboard shortcut is a separate unresolved acceptance problem: posted legacy messages alone do not reproduce a real input-queue keyboard state, raw input or Steam's focus assumptions. These logs do not identify which of those checks Steam uses.
+
+The next focused integration should observe Steam's actual activation/deactivation in the game, then connect that state to the existing presenter capture mechanism independently of ReShade. Steam and ReShade active states must be combined so closing one cannot release the other's capture. Hotkey diagnostics should inspect only Shift/Tab state at the dispatch boundary before choosing a keyboard-state or focus correction. Do not implement hotkey-based guesses of overlay visibility, add another activation/rendering path, or describe this diagnosis as a working fix.
 
 Use the paired observations to identify the actual receiver and missing transition. Prefer the existing presenter/message-channel/game-input suppression infrastructure. Do not infer Steam active state by toggling a boolean on Shift+Tab: Steam can open through game requests, hotkeys can fail and focus can change.
 
@@ -63,5 +83,7 @@ The v1.1 release remains the tested baseline. The investigation does not retroac
 ## Attribution
 
 Existing NVIDIA Bridge notices are retained. Newly added diagnostic code is MIT licensed:
+
+The Steam callback declarations are independently written against Valve's public legacy binary interface, referenced from [Steamworks SDK 1.51 steam_api_common.h](https://github.com/ValveSoftware/Proton/blob/proton_9.0/lsteamclient/steamworks_sdk_151/steam_api_common.h) and [isteamfriends.h](https://github.com/ValveSoftware/Proton/blob/proton_9.0/lsteamclient/steamworks_sdk_151/isteamfriends.h). Valve retains ownership of its Steam/Steamworks components and SDK. Those components are not redistributed or relicensed as project MIT code. Native API test doubles verify observer mechanics, not proprietary Steam compatibility.
 
 `All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.`

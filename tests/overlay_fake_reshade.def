@@ -4,3 +4,5 @@ ReShadeUnregisterAddon
 ReShadeRegisterEvent
 ReShadeUnregisterEvent
 TestToggleOverlay
+SteamAPI_RegisterCallback
+TestSteamActive

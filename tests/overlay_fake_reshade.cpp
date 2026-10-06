@@ -5,6 +5,17 @@
 #include <windows.h>
 #include <cstdint>
 #include <cstring>
+#include "steam_activity_diagnostics.h"
+static l4d2_overlay::SteamActivityDiagnostics* g_steamCallback = nullptr;
+extern "C" void SteamAPI_RegisterCallback(l4d2_overlay::SteamActivityDiagnostics* callback, int id) {
+  if (id == 331 && callback && callback->payloadSize() == 1) { g_steamCallback = callback; }
+}
+extern "C" bool TestSteamActive(bool active) {
+  if (!g_steamCallback) { return false; }
+  uint8_t payload = active ? 1 : 0;
+  g_steamCallback->run(&payload);
+  return true;
+}
 static bool (*g_callback)(void*, bool, uint32_t) = nullptr;
 static bool g_registered = false;
 extern "C" bool ReShadeRegisterAddon(HMODULE module, uint32_t api) { g_registered = module != nullptr && api == 10; return g_registered; }
