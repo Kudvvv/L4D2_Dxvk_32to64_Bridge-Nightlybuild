@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
     disabled.message(WM_LBUTTONDOWN, 0); disabled.sample(parent, nullptr, false);
     require(diagnosticLog.empty(), "diagnostics are inert by default");
     l4d2_overlay::Presenter presenter(true, VK_HOME, false,
-      [&](const char* line) { diagnosticLog += line; diagnosticLog += "\n"; }, true, true);
+      [&](const char* line) { diagnosticLog += line; diagnosticLog += "\n"; }, true, true, true);
     char modulePath[MAX_PATH] {}; require(GetModuleFileNameA(nullptr, modulePath, MAX_PATH) != 0, "test module path");
     std::string fakePath(modulePath); fakePath = fakePath.substr(0, fakePath.find_last_of("\\/")) + (sizeof(void*) == 8 ? "\\fake-x64.dll" : "\\fake-x86.dll");
     HMODULE fake = LoadLibraryA(fakePath.c_str()); require(fake != nullptr, "load API test double");
@@ -86,6 +86,10 @@ int main(int argc, char** argv) {
     const UINT steamMessage = RegisterWindowMessageW(L"L4D2BRIDGE_STEAM_ACTIVE");
     require(PostMessageW(child, steamMessage, 1, reinterpret_cast<LPARAM>(parent)) != FALSE, "post client Steam activation");
     require(enabled(child, true) && presenter.capturing(), "Steam activation enables mouse target");
+    GUITHREADINFO hostGui {}; hostGui.cbSize = sizeof(hostGui);
+    require(GetGUIThreadInfo(GetWindowThreadProcessId(child, nullptr), &hostGui) != FALSE,
+      "observe presenter focus for native input test");
+    require(hostGui.hwndFocus != child, "background Steam activation does not steal focus");
     require(toggle(true) && toggle(false), "ReShade open and close during Steam capture");
     require(presenter.capturing() && enabled(child, true), "ReShade close does not release Steam input capture");
     require(toggle(true), "ReShade captures concurrently");
