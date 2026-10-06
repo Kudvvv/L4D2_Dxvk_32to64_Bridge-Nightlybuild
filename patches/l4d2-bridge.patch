@@ -925,6 +925,152 @@ index 2a4b9e4..9f5118a 100644
 -};
 \ No newline at end of file
 +};
+diff --git a/bridge/src/client/di_hook.cpp b/bridge/src/client/di_hook.cpp
+index bbbd470..f392bcd 100644
+--- a/bridge/src/client/di_hook.cpp
++++ b/bridge/src/client/di_hook.cpp
+@@ -20,6 +20,7 @@
+  * DEALINGS IN THE SOFTWARE.
+  */
+ #include <cstddef>
++#include <intrin.h>
+ 
+ #define DIRECTINPUT_VERSION 0x0800
+ #include <dinput.h>
+@@ -32,10 +33,29 @@
+ #include "util_detourtools.h"
+ #include "di_hook.h"
+ #include "window.h"
++#include "overlay_input_diagnostics.h"
+ 
+ using namespace bridge_util;
+ using namespace DI;
+ 
++// NV-DXVK start: opt-in input suppression caller observations.
++namespace {
++  void observeInputSuppression(const char* api, const void* caller, const char* action = "neutralize") {
++    static const bool enabled = Config::getOption<bool>("client.steamInputDiagnostics", false);
++    if (!enabled) { return; }
++    static thread_local bool observing = false;
++    if (observing) { return; }
++    struct Guard {
++      bool& active;
++      explicit Guard(bool& flag) : active(flag) { active = true; }
++      ~Guard() { active = false; }
++    } guard(observing);
++    static thread_local l4d2_overlay::SuppressionDiagnostics diagnostics;
++    diagnostics.observe(api, caller, action, [](const char* line) { Logger::info(line); });
++  }
++}
++// NV-DXVK end
++
+ // Defining all required GUIDs locally so we do not need to link against the SDK
+ #define _DEFINE_GUID(name, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8) \
+   EXTERN_C const GUID DECLSPEC_SELECTANY name \
+@@ -481,6 +501,7 @@ protected:
+ 
+     if (RemixState::isUIActive()) {
+       // Remix UI is active - wipe input state
++      observeInputSuppression("DirectInput.GetDeviceState", _ReturnAddress());
+       memset(data, 0, size);
+     }
+       
+@@ -531,6 +552,7 @@ protected:
+       // Some games read this state even if hr != DI_OK
+       // So we need to wipe either way
+       if (RemixState::isUIActive()) {
++        observeInputSuppression("DirectInput.GetDeviceData", _ReturnAddress());
+         memset(rgdod, 0, *pdwInOut * cbObjectData);
+         *pdwInOut = 0;
+       }
+@@ -952,6 +974,7 @@ static LRESULT CALLBACK HookedCallWndProc(int nCode, WPARAM wParam, LPARAM lPara
+   
+   if (nCode >= 0) {
+     if (RemixState::isUIActive()) {
++      observeInputSuppression("WH_CALLWNDPROC", _ReturnAddress(), "stop-hook-chain");
+       return 0;
+     }
+   }
+@@ -964,6 +987,7 @@ static LRESULT CALLBACK HookedGetMsgProc(int nCode, WPARAM wParam, LPARAM lParam
+   
+   if (nCode >= 0) {
+     if (RemixState::isUIActive()) {
++      observeInputSuppression("WH_GETMESSAGE", _ReturnAddress(), "stop-hook-chain");
+       return 0;
+     }
+   }
+@@ -976,6 +1000,7 @@ static LRESULT CALLBACK HookedKeyboardProc(int nCode, WPARAM wParam, LPARAM lPar
+ 
+   if (nCode >= 0) {
+     if (RemixState::isUIActive()) {
++      observeInputSuppression("WH_KEYBOARD", _ReturnAddress(), "stop-hook-chain");
+       return 0;
+     }
+   }
+@@ -988,6 +1013,7 @@ static LRESULT CALLBACK HookedLowLevelKeyboardProc(int nCode, WPARAM wParam, LPA
+ 
+   if (nCode >= 0) {
+     if (RemixState::isUIActive()) {
++      observeInputSuppression("WH_KEYBOARD_LL", _ReturnAddress(), "stop-hook-chain");
+       return 0;
+     }
+   }
+@@ -1042,6 +1068,7 @@ static BOOL WINAPI HookedGetCursorPos(LPPOINT lp) {
+   }
+ 
+   if (RemixState::isUIActive()) {
++    observeInputSuppression("GetCursorPos", _ReturnAddress());
+     *lp = g_uiActiveCursorPos;
+     return TRUE;
+   }
+@@ -1059,6 +1086,7 @@ static BOOL WINAPI HookedGetCursorPos(LPPOINT lp) {
+ static BOOL WINAPI HookedSetCursorPos(int X, int Y) {
+   LogStaticFunctionCall();
+   if (RemixState::isUIActive()) {
++    observeInputSuppression("SetCursorPos", _ReturnAddress());
+     // Track the target without moving the real OS cursor, so GetCursorPos can echo it back.
+     g_uiActiveCursorPos.x = X;
+     g_uiActiveCursorPos.y = Y;
+@@ -1080,6 +1108,7 @@ static SHORT WINAPI HookedGetAsyncKeyState(int vk) {
+   LogStaticFunctionCall();
+   // Block if Remix UI is active
+   if (RemixState::isUIActive()) {
++    observeInputSuppression("GetAsyncKeyState", _ReturnAddress());
+     return 0;
+   }
+   return OrigGetAsyncKeyState(vk);
+@@ -1089,6 +1118,7 @@ static SHORT WINAPI HookedGetKeyState(int vk) {
+   LogStaticFunctionCall();
+   // Block if Remix UI is active
+   if (RemixState::isUIActive()) {
++    observeInputSuppression("GetKeyState", _ReturnAddress());
+     return 0;
+   }
+   return OrigGetKeyState(vk);
+@@ -1098,6 +1128,7 @@ static SHORT WINAPI HookedGetKeyboardState(PBYTE lpKeyState) {
+   LogStaticFunctionCall();
+   // Block if Remix UI is active
+   if (RemixState::isUIActive()) {
++    observeInputSuppression("GetKeyboardState", _ReturnAddress());
+     memset(lpKeyState, 0, 256);
+     return TRUE;
+   }
+@@ -1130,6 +1161,7 @@ static UINT WINAPI HookedGetRawInputData(HRAWINPUT hRawInput,
+   }
+ 
+   if (RemixState::isUIActive()) {
++    observeInputSuppression("GetRawInputData", _ReturnAddress());
+     if (raw->header.dwType == RIM_TYPEMOUSE) {
+       // Relative deltas (lLastX/lLastY) are incremental, so zero them rather than replay a stale
+       // sample; absolute-mode position is left as-is.
+@@ -1164,6 +1196,7 @@ static UINT WINAPI HookedGetRawInputBuffer(PRAWINPUT pData, PUINT pcbSize, UINT
+   }
+ 
+   // Drops whole batched reports rather than sanitizing them; see documentation/BridgeInputNeutralization.md.
++  observeInputSuppression("GetRawInputBuffer", _ReturnAddress());
+   UINT res = OrigGetRawInputBuffer(pData, pcbSize, cbSizeHeader);
+   // Keep draining past the caller's buffer capacity so nothing is left queued to replay later.
+   while (res != 0 && res != (UINT) -1) {
 diff --git a/bridge/src/client/lockable_buffer.h b/bridge/src/client/lockable_buffer.h
 index fbfc565..2e1218a 100644
 --- a/bridge/src/client/lockable_buffer.h
@@ -4744,10 +4890,10 @@ index fb5d556..635e4f9 100644
  	'util_bridge_assert.h',
 diff --git a/bridge/src/util/overlay_input_diagnostics.h b/bridge/src/util/overlay_input_diagnostics.h
 new file mode 100644
-index 0000000..392f8ba
+index 0000000..ebfde63
 --- /dev/null
 +++ b/bridge/src/util/overlay_input_diagnostics.h
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,133 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -4755,10 +4901,43 @@ index 0000000..392f8ba
 +#include <windows.h>
 +#include <atomic>
 +#include <cstdio>
++#include <cstring>
 +#include <functional>
 +#include <utility>
 +
 +namespace l4d2_overlay {
++// One instance per input thread; bounded observations of immediate callers only.
++class SuppressionDiagnostics {
++  struct Site { const char* api; const void* caller; };
++  Site m_sites[128] {};
++  size_t m_count = 0;
++  bool m_overflow = false;
++public:
++  template<typename Log>
++  void observe(const char* api, const void* caller, const char* action, Log log) {
++    for (size_t i = 0; i < m_count; ++i) {
++      if (std::strcmp(m_sites[i].api, api) == 0 && m_sites[i].caller == caller) { return; }
++    }
++    if (m_count == 128) {
++      if (!m_overflow) {
++        m_overflow = true;
++        log("L4D2_STEAM_INPUT event=input-suppression-limit sites=128 scope=thread");
++      }
++      return;
++    }
++    m_sites[m_count++] = { api, caller };
++    HMODULE module = nullptr;
++    char path[MAX_PATH] {}, line[1200] {};
++    if (caller && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++      reinterpret_cast<LPCSTR>(caller), &module)) {
++      GetModuleFileNameA(module, path, MAX_PATH);
++    }
++    std::snprintf(line, sizeof(line),
++      "L4D2_STEAM_INPUT event=input-suppression api=%s action=%s thread=%lu caller=%p caller_path=%s scope=immediate-caller",
++      api, action, GetCurrentThreadId(), caller, *path ? path : "unresolved");
++    log(line);
++  }
++};
 +// Observe only the two Bridge processes and their game/presenter HWNDs.
 +// Counts contain no key values, text, cursor coordinates or raw-input payloads.
 +class InputDiagnostics {

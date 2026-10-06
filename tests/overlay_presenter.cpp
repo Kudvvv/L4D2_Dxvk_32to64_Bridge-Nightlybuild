@@ -22,6 +22,25 @@ int main(int argc, char** argv) {
     const HWND parent = reinterpret_cast<HWND>(static_cast<uintptr_t>(std::strtoull(argv[2], nullptr, 10)));
     // Input is enabled to exercise the foreground-scoped hook and public ABI.
     std::string diagnosticLog;
+    l4d2_overlay::SuppressionDiagnostics suppression;
+    auto appendSuppression = [&](const char* line) { diagnosticLog += line; diagnosticLog += "\n"; };
+    const void* knownCaller = reinterpret_cast<const void*>(GetModuleHandleW(nullptr));
+    suppression.observe("test-api", knownCaller, "neutralize", appendSuppression);
+    require(diagnosticLog.find("caller_path=unresolved") == std::string::npos
+      && diagnosticLog.find("scope=immediate-caller") != std::string::npos,
+      "suppression observer resolves the actual module containing the address");
+    const std::string firstCaller = diagnosticLog;
+    suppression.observe("test-api", knownCaller, "neutralize", appendSuppression);
+    require(firstCaller == diagnosticLog, "repeated input polling does not flood suppression logs");
+    for (uintptr_t i = 1; i <= 130; ++i) {
+      suppression.observe("test-api", reinterpret_cast<const void*>(i), "neutralize", appendSuppression);
+    }
+    const std::string boundedCallers = diagnosticLog;
+    require(boundedCallers.find("event=input-suppression-limit") != std::string::npos,
+      "diagnostic saturation is explicit instead of silently claiming complete coverage");
+    suppression.observe("test-api", reinterpret_cast<const void*>(131), "neutralize", appendSuppression);
+    require(boundedCallers == diagnosticLog, "saturated observer remains bounded");
+    diagnosticLog.clear();
     l4d2_overlay::InputDiagnostics disabled(false, "test", [&](const char* line) { diagnosticLog += line; });
     disabled.message(WM_LBUTTONDOWN, 0); disabled.sample(parent, nullptr, false);
     require(diagnosticLog.empty(), "diagnostics are inert by default");

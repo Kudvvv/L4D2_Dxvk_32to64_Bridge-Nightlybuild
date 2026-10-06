@@ -127,6 +127,26 @@ For the activation/keyboard-state build, wait five seconds after opening through
 
 One short reproduction is enough for the first diagnosis; no ETL/system-wide profiling is needed. Disable both flags after testing. If a presenter-on/off A/B is necessary, choose that after inspecting this run, rather than changing several input policies at once.
 
+### Native-input hardware result: 23:54–23:57
+
+The tester reports the experiment still ineffective. The paired logs confirm `server.steamNativeInput=True` and both capture-relay flags enabled. Client PID 6944 receives `steam-active active=1` at `23:56:26.479`, forwarding it to presenter `0x003C102A` at `23:56:26.492`. Host PID 11232 reports `native-focus acquired=1` at `23:56:26.501`. Subsequent **both-process GUI thread observations** confirm focus on that Host-owned presenter, while foreground/active remain the game HWND `0x00121184`. This is actual child keyboard focus, not merely a successful queued request.
+
+Tab dispatches at `23:56:27.781` and `23:56:28.269` report Shift and Tab down in all three observations: queue state, asynchronous state and `GetKeyboardState`. Steam still does not accept input or close according to the tester, and no deactivation callback occurs before shutdown. Moving keyboard focus and delivering matching real OS key state are therefore insufficient in this configuration. This does not prove that Steam reads those APIs on that thread, or that its foreground/root-window conditions are satisfied.
+
+The actual Host WndProc head resolves to **`C:\Windows\system32\OpenGL32.dll`**. The client head resolves to the installed `bin\DXVK_D3D9.DLL`, with saved downstream procedure unresolved. These observations do not enumerate either complete hook chain; the Host path must not be labelled a ReShade proxy. Steam modules remain renderer32 + API32 in the client, renderer64 + VulkanLayer64 in the Host, with no Steam API in the Host.
+
+Mouse capture remains on the **game** HWND in many post-activation samples, even when hit testing and keyboard focus are on the presenter. In sampled intervals after native focus acquisition and before `23:57:00`, client diagnostics count 1447 mouse and 2153 raw-input observations, while Host diagnostics count 38 mouse and 69 keyboard observations. Counts are not unique physical events; first intervals can span activation. The route differs from the earlier capture-only run, and keyboard focus does not establish ownership of mouse capture. Both processes report successful shutdown. There is no claim of focus restoration being verified during normal Steam closure, since closure did not occur.
+
+### Focused client suppression diagnostics
+
+The development build now observes immediate callers at the existing client input-neutralization boundaries when `client.steamInputDiagnostics=True`. It retains all current input behavior and records no key identities, typed text, cursor positions or raw-input payloads. No additional configuration is required to enable these observations in the existing short diagnostic reproduction.
+
+`event=input-suppression` identifies API, action (`neutralize` or `stop-hook-chain`), thread, return address and resolved module path. Covered boundaries are cursor polling/recentering, Win32 keyboard polling, raw-input reads, DirectInput state/data and the client Win32 hook-chain cutoffs. Each API/return-address pair logs once per thread, bounded at 128 sites; saturation emits `event=input-suppression-limit`. Module lookup occurs only on first observation of a site, without creating hooks, loading Steam components, altering data or bypassing gameplay suppression. These are **immediate callers**, not reconstructed call stacks or proof of the ultimate consumer behind a wrapper/trampoline. Absence of a Steam caller cannot establish absence of Steam input activity.
+
+Source inspection shows two concrete boundaries requiring attribution: client Win32 input getters neutralize every caller during UI capture, and `client.overrideCustomWinHooks=True` makes the client hooks return before `CallNextHookEx` while captured. The latest run enabled that option. Stopping a hook chain can hide input from downstream hooks as well as the game; the code does not identify which downstream Steam hooks are installed. The new observations distinguish these boundaries from Host focus failure without yet assuming a Steam-specific bypass is safe. Existing GUI samples continue to report actual mouse-capture ownership.
+
+Use the matched diagnostic client/Host pair, preserving the latest test configuration and backend. Open through Join Server once, try mouse movement/click and Shift+Tab, then preserve both logs. The update is diagnostic, **not a claimed fix**. Disable the three Steam experiment flags and restart to return to normal release input behavior. ReShade's public-interface capture remains separate and unchanged. The next functional change must follow evidence about the actual Steam receiver or hook-chain boundary; repeatedly modifying Host key state is not justified by this failed native-input result.
+
 ## Next fix and acceptance gate
 
 ### Paired hardware reproduction: 21:29–21:30
