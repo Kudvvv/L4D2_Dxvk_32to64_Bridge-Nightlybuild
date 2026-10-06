@@ -5457,7 +5457,7 @@ index 0000000..27897d2
 +}
 diff --git a/bridge/src/util/api_wait_diagnostics.h b/bridge/src/util/api_wait_diagnostics.h
 new file mode 100644
-index 0000000..a967525
+index 0000000..0de6bbd
 --- /dev/null
 +++ b/bridge/src/util/api_wait_diagnostics.h
 @@ -0,0 +1,251 @@
@@ -5695,7 +5695,7 @@ index 0000000..a967525
 +  const size_t remaining = MAX_PATH - static_cast<size_t>(separator + 1 - path);
 +  const wchar_t* filename = role[0] == 'c' ? L"l4d2-api-wait-client-%lu.log" :
 +    sizeof(void*) == 8 ? L"l4d2-api-wait-host64-%lu.log" : L"l4d2-api-wait-host32-%lu.log";
-+  const int size = std::swprintf(separator + 1, remaining, filename, GetCurrentProcessId());
++  const int size = swprintf_s(separator + 1, remaining, filename, GetCurrentProcessId());
 +  if (size < 0 || static_cast<size_t>(size) >= remaining) { return false; }
 +  static Writer writer;
 +  writer.file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

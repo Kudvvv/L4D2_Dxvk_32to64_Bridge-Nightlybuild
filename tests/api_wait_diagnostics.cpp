@@ -98,7 +98,7 @@ int main() {
   CloseHandle(writer.file); DeleteFileW(L"api-wait-test.log");
   require(initialize(true, "client", 1000), "native diagnostic worker initialization");
   wchar_t realLog[100] {};
-  std::swprintf(realLog, 100, L"l4d2-api-wait-client-%lu.log", GetCurrentProcessId());
+  swprintf_s(realLog, 100, L"l4d2-api-wait-client-%lu.log", GetCurrentProcessId());
   bool complete = false;
   const auto deadline = GetTickCount64() + 4000;
   while (!complete && GetTickCount64() < deadline) {

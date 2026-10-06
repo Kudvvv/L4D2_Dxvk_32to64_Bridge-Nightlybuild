@@ -219,6 +219,11 @@ def package(source, dxvk, output, dxvk_x86=None):
     shutil.copytree(licenses, api_wait_output / "licenses")
     for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
         shutil.copy2(ROOT / filename, api_wait_output / filename)
+    attribution = (api_wait_output / "THIRD_PARTY.md").read_text(encoding="utf-8").replace(
+        "(docs/DXVK-MEMORY-EXPERIMENT.md)",
+        "(https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/codex/l4d2-demo/docs/DXVK-MEMORY-EXPERIMENT.md)",
+    )
+    (api_wait_output / "THIRD_PARTY.md").write_text(attribution, encoding="utf-8")
     (api_wait_output / "SHA256.json").write_text(json.dumps(api_wait_hashes, indent=2) + "\n")
     # Keep newly added validation links usable in standalone update packages.
     for destination in (readback_output, retention_output, comparison_output, overlay_output):
