@@ -2721,7 +2721,7 @@ index 0000000..2d99dd4
 +
 +}
 diff --git a/bridge/src/client/window.cpp b/bridge/src/client/window.cpp
-index a6d5a42..339f520 100644
+index a6d5a42..56763da 100644
 --- a/bridge/src/client/window.cpp
 +++ b/bridge/src/client/window.cpp
 @@ -31,6 +31,8 @@
@@ -2764,7 +2764,7 @@ index a6d5a42..339f520 100644
      gpRemixMessageChannel->send(msg, wParam, lParam);
    }
  
-@@ -439,3 +451,14 @@ void prepareForCrashDialog(bool async) {
+@@ -439,3 +451,21 @@ void prepareForCrashDialog(bool async) {
  }
  
  }
@@ -2773,6 +2773,13 @@ index a6d5a42..339f520 100644
 +void WndProc::sampleSteamInput() {
 +  auto& diagnostics = inputDiagnostics();
 +  if (!diagnostics.enabled()) { return; }
++  static int previousReady = -1;
++  const bool ready = gpRemixMessageChannel && gpRemixMessageChannel->canSend();
++  if (previousReady != static_cast<int>(ready)) {
++    previousReady = ready;
++    Logger::info(format_string("L4D2_STEAM_INPUT event=route role=client remix_channel_ready=%d channel_kind=remix-thread-message presenter_delivery=0 hook_message_pump=%d override_custom_hooks=%d",
++      ready, Config::getOption<bool>("client.hookMessagePump", false), Config::getOption<bool>("client.overrideCustomWinHooks", false)));
++  }
 +  // Bypass Bridge's virtualized GetWindowLong result to observe the real hook head.
 +  const LONG_PTR procedure = g_hwnd ? (IsWindowUnicode(g_hwnd)
 +    ? OrigGetWindowLongW(g_hwnd, GWLP_WNDPROC) : OrigGetWindowLongA(g_hwnd, GWLP_WNDPROC)) : 0;
