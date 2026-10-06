@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
     disabled.message(WM_LBUTTONDOWN, 0); disabled.sample(parent, nullptr, false);
     require(diagnosticLog.empty(), "diagnostics are inert by default");
     l4d2_overlay::Presenter presenter(true, VK_HOME, false,
-      [&](const char* line) { diagnosticLog += line; diagnosticLog += "\n"; }, true);
+      [&](const char* line) { diagnosticLog += line; diagnosticLog += "\n"; }, true, true);
     char modulePath[MAX_PATH] {}; require(GetModuleFileNameA(nullptr, modulePath, MAX_PATH) != 0, "test module path");
     std::string fakePath(modulePath); fakePath = fakePath.substr(0, fakePath.find_last_of("\\/")) + (sizeof(void*) == 8 ? "\\fake-x64.dll" : "\\fake-x86.dll");
     HMODULE fake = LoadLibraryA(fakePath.c_str()); require(fake != nullptr, "load API test double");
@@ -81,6 +81,16 @@ int main(int argc, char** argv) {
     require(presenter.capturing() && enabled(child, true), "overlay event captures mouse");
     require(toggle(false), "overlay event allows closing");
     require(!presenter.capturing() && enabled(child, false), "overlay event restores game input");
+    const UINT steamMessage = RegisterWindowMessageW(L"L4D2BRIDGE_STEAM_ACTIVE");
+    require(PostMessageW(child, steamMessage, 1, reinterpret_cast<LPARAM>(parent)) != FALSE, "post client Steam activation");
+    require(enabled(child, true) && presenter.capturing(), "Steam activation enables mouse target");
+    require(toggle(true) && toggle(false), "ReShade open and close during Steam capture");
+    require(presenter.capturing() && enabled(child, true), "ReShade close does not release Steam input capture");
+    require(toggle(true), "ReShade captures concurrently");
+    presenter.steamCapture(false);
+    require(presenter.capturing() && enabled(child, true), "Steam close does not release ReShade input capture");
+    require(toggle(false), "close remaining ReShade capture");
+    require(!presenter.capturing() && enabled(child, false), "both closed restores game input");
     require(SetWindowPos(parent, nullptr, 0, 0, 420, 240, SWP_NOMOVE | SWP_NOZORDER) != FALSE, "resize game window");
     bool resized = false;
     for (int i = 0; i < 100; ++i) {

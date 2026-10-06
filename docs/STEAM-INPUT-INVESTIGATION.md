@@ -1,6 +1,6 @@
 # Steam Overlay input investigation after v1.1
 
-Status: **diagnostic build; Steam input is not yet fixed or hardware-validated.**
+Status: **opt-in input correction experiment; Steam support is not yet hardware-validated or released.**
 
 The new hardware report changes the scope: normal Shift+Tab does nothing, but L4D2's Join Server / Steam Group action can open a visible overlay. The visible UI accepts no mouse input and Shift+Tab cannot close it. This establishes that activation and rendering can work in this installation. Do not replace them or add a second Steam API activation path as an input workaround.
 
@@ -31,10 +31,10 @@ logServerCommands = False
 
 Merge [the snippet](../config/STEAM-INPUT-DIAGNOSTICS.conf) into the existing `bin/.l4d2bridge/bridge.conf`. Preserve the current Host selection, presenter, ReShade and retention options. The normal shipped configuration is unchanged.
 
-The window diagnostic helper runs inside both processes. It samples at most once per second from Present, including when the game stops receiving ordinary input messages. The next diagnostic build additionally observes the legacy public Steamworks activation callback in the client and the shortcut's keyboard state in the presenter thread. It does not activate Steam, change capture, enable a window, inject additional input or alter resource policy.
+The window diagnostic helper runs inside both processes. It samples at most once per second from Present, including when the game stops receiving ordinary input messages. It also observes the legacy public Steamworks activation callback in the client and the shortcut's keyboard state in the presenter thread. With only diagnostic flags enabled, it does not change capture or input. The optional correction flags below enable a separate hardware experiment. Neither mode activates Steam or changes resource policy.
 
 - `event=steam-callback`: registers callback 331 only when `client.steamInputDiagnostics=True` and the game's existing `steam_api.dll` exports `SteamAPI_RegisterCallback`. The independent ABI declaration follows Valve's Steamworks SDK 1.51: three callback virtual methods and the one-byte legacy `GameOverlayActivated_t` payload. It includes no SDK implementation, modern optional payload fields or Steam binaries. The observer/code modules stay alive for the process lifetime to avoid a callback pointing into unloaded code. It uses the game's own callback pump; it never calls `SteamAPI_Init`, `RunCallbacks`, `Shutdown` or an activation API. Registration is not proof of callback delivery on this installation.
-- `event=steam-active`: records real callback delivery with `active=1/0`. This is distinct from the existing ReShade/Bridge `capture` flag. No capture transition is performed in this build.
+- `event=steam-active`: records real callback delivery with `active=1/0`. This is distinct from the combined ReShade/Steam Bridge `capture` flag. Diagnostic-only mode performs no capture transition.
 - `event=tab-dispatch`: for presenter Tab keydown messages only, records Shift/Tab from `GetKeyState`, `GetKeyboardState` and `GetAsyncKeyState` immediately before TranslateMessage/DispatchMessage. A mismatch establishes a queue-state difference, not proof that Steam uses a particular Win32 API. It logs no text or unrelated key identities. Earlier GetMessage hooks may consume messages before this observation.
 
 - `event=modules`: process role, PID/architecture and actual presence of `GameOverlayRenderer.dll`, `GameOverlayRenderer64.dll`, `SteamOverlayVulkanLayer.dll`, `SteamOverlayVulkanLayer64.dll`, `steam_api.dll` and `steam_api64.dll`. Delayed load/unload is detected. Presence alone is not activity or rendering proof.
@@ -45,6 +45,27 @@ The window diagnostic helper runs inside both processes. It samples at most once
 Client counts are observed at the existing Bridge message-processing entry. The forwarding count means the existing message channel's `send` was invoked, not that Steam received it. Host counts are messages that reach the presenter's WndProc; messages consumed earlier by a Steam/ReShade GetMessage hook can be absent. A zero count alone cannot identify a broken route. Without a presenter, no Host window-message counts are collected. The diagnostic reads GUI state for the relevant foreground/window threads but does not profile other applications or hook another application's input.
 
 ## Short hardware reproduction
+
+### Opt-in correction build
+
+The 22:31–22:32 paired logs establish callback delivery: client PID 17584 registered callback 331 at `22:31:03.592` and received `active=1` at `22:31:52.543`. Host PID 20776 nevertheless remained at `enabled=0 capture=0`, with mouse hit testing on the game. Two shortcut attempts at `22:32:05.722` and `22:32:08.554` both reported `shift_queue=1 tab_queue=0 shift_async=1 tab_async=1`; `GetKeyboardState` likewise reported Tab up. No deactivation callback was observed before shutdown. This proves the client activation notification is available and that the forwarded Tab message lacks matching queue state. It does not prove which keyboard API Steam reads.
+
+The correction experiment is off when these options are omitted:
+
+```ini
+client.steamOverlayInput = True
+server.steamOverlayInput = True
+```
+
+It requires the existing windowed presenter configuration (`server.presenterWindow=True`, `server.presenterInput=True`) and existing client input hooks. Use the matching client and x64 Host update together. Preserve the current working ReShade settings, DXVK backend and retention policy. The packaged `STEAM-INPUT-DIAGNOSTICS.conf` now includes both correction and diagnostic flags; merge it rather than replacing the complete configuration.
+
+The client forwards actual callback state to the Host-owned presenter through a registered Win32 message, carrying the game HWND. The Host checks that it matches the presenter's parent. Steam and ReShade have independent capture sources; their union enables the presenter and suppresses gameplay through the existing UI-active message and hooks. When Steam is active and the game is foreground, the presenter thread sets keyboard focus to its own child, allowing native keyboard messages and queue state instead of posting duplicate keys. It does not change the foreground root or attach additional input queues. On Steam close, focus is restored only if it still belongs to that presenter. Background activation does not steal focus from another application.
+
+When the game retains focus, the existing shortcut forwarding remains in use. Before dispatching its legacy key messages, the Host updates its thread keyboard state to match the key transition while preserving other state bits. This addresses the observed Tab-state discrepancy at dispatch; it does not guarantee compatibility with an earlier Steam GetMessage hook or a different input API.
+
+New events: `steam-forward`, `steam-capture`, and `keyboard-state`. The unchanged state diagnostics must verify whether mouse messages and focus actually move to the Host in the hardware test. Native tests cover activation-message delivery, capture union and restoring capture only after both overlays close. These tests do not establish actual Steam input support.
+
+To roll back the experiment, set **both** `steamOverlayInput` options to `False` and restart. Diagnostic flags can remain enabled for comparison. The normal release configuration and main branch remain unchanged.
 
 Back up the current client/Host binaries. Install the matching diagnostic client and Host together; keep the existing DXVK backend, ReShade and database. Stay in the main menu, preferably outside a live multiplayer session.
 
