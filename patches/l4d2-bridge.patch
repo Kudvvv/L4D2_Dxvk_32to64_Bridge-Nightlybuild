@@ -56,7 +56,7 @@ index e26a54b..7d84370 100644
  
  option('tracy_on_demand', type : 'boolean', value : false, description : 'On-demand profiling')
 diff --git a/bridge/src/client/d3d9_cubetexture.cpp b/bridge/src/client/d3d9_cubetexture.cpp
-index 9de506f..c9e97f1 100644
+index 9de506f..9260d0d 100644
 --- a/bridge/src/client/d3d9_cubetexture.cpp
 +++ b/bridge/src/client/d3d9_cubetexture.cpp
 @@ -1,3 +1,7 @@
@@ -67,7 +67,15 @@ index 9de506f..c9e97f1 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -128,6 +132,9 @@ HRESULT Direct3DCubeTexture9_LSS::GetCubeMapSurface(D3DCUBEMAP_FACES FaceType, U
+@@ -20,6 +24,7 @@
+  * DEALINGS IN THE SOFTWARE.
+  */
+ #include "pch.h"
++#include "api_wait_diagnostics.h"
+ 
+ #include "d3d9_cubetexture.h"
+ #include "shadow_map.h"
+@@ -128,6 +133,9 @@ HRESULT Direct3DCubeTexture9_LSS::GetCubeMapSurface(D3DCUBEMAP_FACES FaceType, U
      GetLevelDesc(Level, &desc);
  
      pLssCubeMapSurface = trackWrapper(new Direct3DSurface9_LSS(m_pDevice, this, desc));
@@ -77,7 +85,23 @@ index 9de506f..c9e97f1 100644
      (*ppCubeMapSurface) = (IDirect3DSurface9*) pLssCubeMapSurface;
  
      setChild(surfaceIndex, pLssCubeMapSurface);
-@@ -201,4 +208,4 @@ HRESULT Direct3DCubeTexture9_LSS::AddDirtyRect(D3DCUBEMAP_FACES FaceType, CONST
+@@ -142,6 +150,7 @@ HRESULT Direct3DCubeTexture9_LSS::GetCubeMapSurface(D3DCUBEMAP_FACES FaceType, U
+ }
+ 
+ HRESULT Direct3DCubeTexture9_LSS::LockRect(D3DCUBEMAP_FACES FaceType, UINT Level, D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CubeLockRect);
+   LogFunctionCall();
+ 
+   if (Level >= getDesc().Levels)
+@@ -175,6 +184,7 @@ HRESULT Direct3DCubeTexture9_LSS::LockRect(D3DCUBEMAP_FACES FaceType, UINT Level
+ }
+ 
+ HRESULT Direct3DCubeTexture9_LSS::UnlockRect(D3DCUBEMAP_FACES FaceType, UINT Level) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CubeUnlockRect);
+   LogFunctionCall();
+ 
+   if (Level >= getDesc().Levels)
+@@ -201,4 +211,4 @@ HRESULT Direct3DCubeTexture9_LSS::AddDirtyRect(D3DCUBEMAP_FACES FaceType, CONST
      c.send_data(sizeof(RECT), (void*) pDirtyRect);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("AddDirtyRect()", D3DERR_INVALIDCALL, currentUID);
@@ -85,7 +109,7 @@ index 9de506f..c9e97f1 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_device.cpp b/bridge/src/client/d3d9_device.cpp
-index 1abdf20..08788fd 100644
+index 1abdf20..be6d56f 100644
 --- a/bridge/src/client/d3d9_device.cpp
 +++ b/bridge/src/client/d3d9_device.cpp
 @@ -1,3 +1,7 @@
@@ -96,7 +120,15 @@ index 1abdf20..08788fd 100644
  /*
   * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -31,6 +35,10 @@
+@@ -20,6 +24,7 @@
+  * DEALINGS IN THE SOFTWARE.
+  */
+ #include "pch.h"
++#include "api_wait_diagnostics.h"
+ #include "d3d9_device.h"
+ #include "d3d9_lss.h"
+ #include "d3d9_util.h"
+@@ -31,6 +36,10 @@
  #include "d3d9_surface.h"
  #include "d3d9_swapchain.h"
  #include "d3d9_texture.h"
@@ -107,7 +139,7 @@ index 1abdf20..08788fd 100644
  #include "d3d9_vertexbuffer.h"
  #include "d3d9_vertexdeclaration.h"
  #include "d3d9_vertexshader.h"
-@@ -46,6 +54,9 @@
+@@ -46,6 +55,9 @@
  #include "util_semaphore.h"
  
  #include <wingdi.h>
@@ -117,7 +149,7 @@ index 1abdf20..08788fd 100644
  #include <assert.h>
  
  #define GET_PRES_PARAM() (m_pSwapchain->getPresentationParameters())
-@@ -234,11 +245,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::internalGetDeviceCaps(D3DCAPS9* pCaps
+@@ -234,11 +246,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::internalGetDeviceCaps(D3DCAPS9* pCaps
  
    HRESULT hresult = DeviceBridge::get_data();
    if (SUCCEEDED(hresult)) {
@@ -140,7 +172,39 @@ index 1abdf20..08788fd 100644
    }
    DeviceBridge::pop_front();
  
-@@ -564,15 +583,31 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
+@@ -413,6 +433,7 @@ unsigned int Direct3DDevice9Ex_LSS<EnableSync>::GetNumberOfSwapChains() {
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::Reset(D3DPRESENT_PARAMETERS* pPresentationParameters) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::Reset);
+   ZoneScoped;
+   LogFunctionCall();
+   HRESULT res = S_OK;
+@@ -459,6 +480,7 @@ HRESULT syncOnPresent() {
+ 
+   // If we're syncing with the server on Present() then wait for the semaphore to be released
+   if (GlobalOptions::getPresentSemaphoreEnabled()) {
++    l4d2_api_wait::Span apiPresentWaitTiming(l4d2_api_wait::Metric::PresentWait);
+     const auto maxRetries = GlobalOptions::getCommandRetries();
+     size_t numRetries = 0;
+     while (gbBridgeRunning && RESULT_FAILURE(gpPresent->wait()) && numRetries++ < maxRetries) {
+@@ -481,6 +503,7 @@ HRESULT syncOnPresent() {
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::Present);
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -557,6 +580,7 @@ void Direct3DDevice9Ex_LSS<EnableSync>::GetGammaRamp(UINT iSwapChain, D3DGAMMARA
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture9** ppTexture, HANDLE* pSharedHandle) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateTexture);
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -564,15 +588,31 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
      return D3DERR_INVALIDCALL;
    }
  
@@ -173,7 +237,7 @@ index 1abdf20..08788fd 100644
      (*ppTexture) = pLssTexture;
      {
        ClientMessage c(Commands::IDirect3DDevice9Ex_CreateTexture, getId());
-@@ -580,7 +615,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
+@@ -580,11 +620,30 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
        c.send_many(Width, Height, Levels, Usage, Format, Pool, (uint32_t) pLssTexture->getId());
      }
    }
@@ -200,6 +264,115 @@ index 1abdf20..08788fd 100644
  }
  
  template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVolumeTexture(UINT Width, UINT Height, UINT Depth, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DVolumeTexture9** ppVolumeTexture, HANDLE* pSharedHandle) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateVolumeTexture);
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -613,6 +672,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVolumeTexture(UINT Width, UINT
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateCubeTexture(UINT EdgeLength, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DCubeTexture9** ppCubeTexture, HANDLE* pSharedHandle) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateCubeTexture);
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -641,6 +701,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateCubeTexture(UINT EdgeLength, UI
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool, IDirect3DVertexBuffer9** ppVertexBuffer, HANDLE* pSharedHandle) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateVertexBuffer);
+   ZoneScoped;
+   LogFunctionCall();
+   if (Length == 0) {
+@@ -667,6 +728,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexBuffer(UINT Length, DWORD
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateIndexBuffer(UINT Length, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DIndexBuffer9** ppIndexBuffer, HANDLE* pSharedHandle) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateIndexBuffer);
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -694,6 +756,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateIndexBuffer(UINT Length, DWORD
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTarget(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Lockable, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateRenderTarget);
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -729,6 +792,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTarget(UINT Width, UINT H
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurface(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Discard, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateDepthStencilSurface);
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -762,6 +826,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurface(UINT Width,
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::UpdateSurface(IDirect3DSurface9* pSourceSurface, CONST RECT* pSourceRect, IDirect3DSurface9* pDestinationSurface, CONST POINT* pDestPoint) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::UpdateSurface);
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -807,6 +872,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::UpdateTextureImpl(IDirect3DBaseTextur
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::UpdateTexture(IDirect3DBaseTexture9* pSourceTexture, IDirect3DBaseTexture9* pDestinationTexture) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::UpdateTexture);
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -920,6 +986,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ColorFill(IDirect3DSurface9* pSurface
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurface(UINT Width, UINT Height, D3DFORMAT Format, D3DPOOL Pool, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateOffscreenPlainSurface);
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -3216,6 +3283,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ComposeRects(IDirect3DSurface9* pSrc,
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion, DWORD dwFlags) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::PresentEx);
+   ZoneScoped;
+   LogMissingFunctionCall();
+   assert(m_ex);
+@@ -3323,6 +3391,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckDeviceState(HWND hDestinationWin
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Lockable, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle, DWORD Usage) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateRenderTarget);
+   ZoneScoped;
+   assert(m_ex);
+   LogFunctionCall();
+@@ -3358,6 +3427,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Width, UINT Height, D3DFORMAT Format, D3DPOOL Pool, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle, DWORD Usage) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateOffscreenPlainSurface);
+   ZoneScoped;
+   assert(m_ex);
+   LogFunctionCall();
+@@ -3393,6 +3463,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Discard, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle, DWORD Usage) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::CreateDepthStencilSurface);
+   ZoneScoped;
+   assert(m_ex);
+   LogFunctionCall();
+@@ -3426,6 +3497,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ResetEx(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::ResetEx);
+   ZoneScoped;
+   assert(m_ex);
+   LogFunctionCall();
 diff --git a/bridge/src/client/d3d9_device.h b/bridge/src/client/d3d9_device.h
 index df90d5f..4ebb7e5 100644
 --- a/bridge/src/client/d3d9_device.h
@@ -228,8 +401,36 @@ index df90d5f..4ebb7e5 100644
    void setupFPU();
  };
 -
+diff --git a/bridge/src/client/d3d9_indexbuffer.cpp b/bridge/src/client/d3d9_indexbuffer.cpp
+index 1593d51..78fcda9 100644
+--- a/bridge/src/client/d3d9_indexbuffer.cpp
++++ b/bridge/src/client/d3d9_indexbuffer.cpp
+@@ -19,6 +19,7 @@
+  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  * DEALINGS IN THE SOFTWARE.
+  */
++#include "api_wait_diagnostics.h"
+ #include "d3d9_indexbuffer.h"
+ 
+ #include "pch.h"
+@@ -67,6 +68,7 @@ void Direct3DIndexBuffer9_LSS::onDestroy() {
+ }
+ 
+ HRESULT Direct3DIndexBuffer9_LSS::Lock(UINT OffsetToLock, UINT SizeToLock, void** ppbData, DWORD Flags) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::IndexLock);
+   LogFunctionCall();
+   {
+     BRIDGE_PARENT_DEVICE_LOCKGUARD();
+@@ -85,6 +87,7 @@ HRESULT Direct3DIndexBuffer9_LSS::Lock(UINT OffsetToLock, UINT SizeToLock, void*
+ }
+ 
+ HRESULT Direct3DIndexBuffer9_LSS::Unlock() {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::IndexUnlock);
+   LogFunctionCall();
+   {
+     BRIDGE_PARENT_DEVICE_LOCKGUARD();
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
-index 300aaf5..92fdda3 100644
+index 300aaf5..84df744 100644
 --- a/bridge/src/client/d3d9_lss.cpp
 +++ b/bridge/src/client/d3d9_lss.cpp
 @@ -1,3 +1,7 @@
@@ -240,7 +441,15 @@ index 300aaf5..92fdda3 100644
  /*
   * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -37,6 +41,8 @@
+@@ -20,6 +24,7 @@
+  * DEALINGS IN THE SOFTWARE.
+  */
+ #include "pch.h"
++#include "api_wait_diagnostics.h"
+ 
+ #include "version.h"
+ 
+@@ -37,6 +42,8 @@
  #include "remix_state.h"
  #include "window.h"
  #include "message_channels.h"
@@ -249,7 +458,7 @@ index 300aaf5..92fdda3 100644
  
  #include "util_bridge_assert.h"
  #include "util_bridge_state.h"
-@@ -128,13 +134,17 @@ bool gbBridgeRunning = true;
+@@ -128,13 +135,17 @@ bool gbBridgeRunning = true;
  std::string gRemixFolder = "";
  std::mutex gSwapChainMapMutex;
  SwapChainMap gSwapChainMap;
@@ -269,7 +478,14 @@ index 300aaf5..92fdda3 100644
  }
  
  void PrintRecentCommandHistory() {
-@@ -524,22 +534,25 @@ bool RemixAttach(HMODULE hModule) {
+@@ -521,25 +532,32 @@ bool RemixAttach(HMODULE hModule) {
+ 
+     // Initialize logger
+     Logger::init();
++    if (Config::getOption<bool>("client.apiWaitDiagnostics", false)) {
++      const bool ready = l4d2_api_wait::initialize(true, "client", Config::getOption<unsigned>("client.apiWaitSnapshotMs", 5000));
++      Logger::info(ready ? "L4D2 API wait diagnostics enabled: client" : "L4D2 API wait diagnostics failed to initialize: client");
++    }
  
      // Setup Remix folder first hand
      if (!InitRemixFolder(hModule)) {
@@ -300,7 +516,7 @@ index 300aaf5..92fdda3 100644
  
      DInputHookAttach();
  
-@@ -606,6 +619,10 @@ void RemixDetach() {
+@@ -606,6 +624,10 @@ void RemixDetach() {
      // Clean up resources
      delete gpPresent;
  
@@ -398,7 +614,7 @@ index 175430f..c8b0ed4 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
-index e54aec5..8c1ca4b 100644
+index e54aec5..801e568 100644
 --- a/bridge/src/client/d3d9_surface.cpp
 +++ b/bridge/src/client/d3d9_surface.cpp
 @@ -1,3 +1,7 @@
@@ -409,7 +625,15 @@ index e54aec5..8c1ca4b 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -30,6 +34,19 @@
+@@ -20,6 +24,7 @@
+  * DEALINGS IN THE SOFTWARE.
+  */
+ #include "pch.h"
++#include "api_wait_diagnostics.h"
+ 
+ #include "d3d9_lss.h"
+ #include "d3d9_util.h"
+@@ -30,6 +35,19 @@
  #include "d3d9_surfacebuffer_helper.h"
  #include "util_bridge_assert.h"
  #include "util_gdi.h"
@@ -429,7 +653,7 @@ index e54aec5..8c1ca4b 100644
  
  Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
                                             const D3DSURFACE_DESC& desc, bool isBackBuffer)
-@@ -38,21 +55,41 @@ Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDev
+@@ -38,21 +56,41 @@ Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDev
    , m_desc(desc)
    , m_isBackBuffer(isBackBuffer)
  {
@@ -479,9 +703,11 @@ index e54aec5..8c1ca4b 100644
    }
  }
  
-@@ -122,6 +159,19 @@ HRESULT Direct3DSurface9_LSS::GetDesc(D3DSURFACE_DESC* pDesc) {
+@@ -121,7 +159,21 @@ HRESULT Direct3DSurface9_LSS::GetDesc(D3DSURFACE_DESC* pDesc) {
+ }
  
  HRESULT Direct3DSurface9_LSS::LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::SurfaceLockRect);
    LogFunctionCall();
 +  // NV-DXVK start: ATI compatibility offsets must stay inside compressed storage.
 +  if (!pLockedRect) { return D3DERR_INVALIDCALL; }
@@ -499,7 +725,15 @@ index e54aec5..8c1ca4b 100644
    // Store locked rect pointer locally so we can copy the data on unlock
    {
      BRIDGE_PARENT_DEVICE_LOCKGUARD();
-@@ -205,8 +255,15 @@ HRESULT Direct3DSurface9_LSS::ReleaseDC(HDC hdc) {
+@@ -148,6 +200,7 @@ HRESULT Direct3DSurface9_LSS::LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT*
+ }
+ 
+ HRESULT Direct3DSurface9_LSS::UnlockRect() {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::SurfaceUnlockRect);
+   LogFunctionCall();
+   {
+     BRIDGE_PARENT_DEVICE_LOCKGUARD();
+@@ -205,8 +258,15 @@ HRESULT Direct3DSurface9_LSS::ReleaseDC(HDC hdc) {
  bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, const DWORD& flags) {
    const RECT rect = resolveLockInfoRect(pRect, m_desc);
    lockedRect.Pitch = bridge_util::calcRowSize(m_desc.Width, m_desc.Format);
@@ -516,7 +750,7 @@ index e54aec5..8c1ca4b 100644
    if (m_bUseSharedHeap) {
      auto discardBufId = SharedHeap::kInvalidId;
      const bool bDiscard = (flags & D3DLOCK_DISCARD) != 0;
-@@ -220,18 +277,26 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
+@@ -220,18 +280,26 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
      lockedRect.pBits = getBufPtr(lockedRect.Pitch, rect);
      m_lockInfoQueue.push({ lockedRect, rect, flags, m_bufferId, discardBufId });
    } else {
@@ -551,7 +785,7 @@ index e54aec5..8c1ca4b 100644
    }
    return true;
  }
-@@ -247,6 +312,25 @@ void Direct3DSurface9_LSS::unlock() {
+@@ -247,6 +315,25 @@ void Direct3DSurface9_LSS::unlock() {
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
      sendDataToServer(lockInfo);
    }
@@ -577,7 +811,7 @@ index e54aec5..8c1ca4b 100644
  }
  
  RECT Direct3DSurface9_LSS::resolveLockInfoRect(const RECT* const pRect, const D3DSURFACE_DESC& desc) {
-@@ -261,7 +345,48 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
+@@ -261,7 +348,48 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
    return ptr;
  }
  
@@ -627,7 +861,7 @@ index e54aec5..8c1ca4b 100644
    const auto dataFlag = m_bUseSharedHeap ? Commands::FlagBits::DataInSharedHeap : 0;
    {
      ClientMessage c(Commands::IDirect3DSurface9_UnlockRect, getId(), dataFlag);
-@@ -278,10 +403,12 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -278,10 +406,12 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
        c.send_data(rowSize);
        if (auto* blobPacketPtr = c.begin_data_blob(totalSize)) {
          FOR_EACH_RECT_ROW(lockInfo.lockedRect, height, m_desc.Format, {
@@ -640,7 +874,7 @@ index e54aec5..8c1ca4b 100644
        }
      }
    }
-@@ -296,4 +423,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -296,4 +426,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
  std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions(const RECT& rect) {
    return { rect.right  - rect.left,
             rect.bottom - rect.top  };
@@ -784,7 +1018,7 @@ index 13afedc..1a533bb 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_swapchain.cpp b/bridge/src/client/d3d9_swapchain.cpp
-index 86a19d4..4a64fbf 100644
+index 86a19d4..e347157 100644
 --- a/bridge/src/client/d3d9_swapchain.cpp
 +++ b/bridge/src/client/d3d9_swapchain.cpp
 @@ -1,3 +1,7 @@
@@ -795,8 +1029,11 @@ index 86a19d4..4a64fbf 100644
  /*
   * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -22,9 +26,11 @@
+@@ -20,11 +24,14 @@
+  * DEALINGS IN THE SOFTWARE.
+  */
  #include "pch.h"
++#include "api_wait_diagnostics.h"
  #include "d3d9_lss.h"
  #include "d3d9_swapchain.h"
 +#include "window.h"
@@ -807,17 +1044,18 @@ index 86a19d4..4a64fbf 100644
  
  extern std::mutex gSwapChainMapMutex;
  extern SwapChainMap gSwapChainMap;
-@@ -153,6 +159,9 @@ void Direct3DSwapChain9_LSS::onDestroy() {
+@@ -153,6 +160,10 @@ void Direct3DSwapChain9_LSS::onDestroy() {
  HRESULT Direct3DSwapChain9_LSS::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect,
                                          HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion,
                                          DWORD dwFlags) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::SwapChainPresent);
 +  WndProc::sampleSteamInput();
 +  l4d2_memory::sample();
 +  l4d2_pageblock::summary();
    ZoneScoped;
    LogFunctionCall();
  #ifdef ENABLE_PRESENT_SEMAPHORE_TRACE
-@@ -308,4 +317,4 @@ HRESULT Direct3DSwapChain9_LSS::GetPresentParameters(D3DPRESENT_PARAMETERS* pPre
+@@ -308,4 +319,4 @@ HRESULT Direct3DSwapChain9_LSS::GetPresentParameters(D3DPRESENT_PARAMETERS* pPre
      return D3DERR_INVALIDCALL;
    *pPresentationParameters = m_presParam;
    return D3D_OK;
@@ -825,7 +1063,7 @@ index 86a19d4..4a64fbf 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_texture.cpp b/bridge/src/client/d3d9_texture.cpp
-index 3f4a64f..6a459fe 100644
+index 3f4a64f..0b99a0b 100644
 --- a/bridge/src/client/d3d9_texture.cpp
 +++ b/bridge/src/client/d3d9_texture.cpp
 @@ -1,3 +1,7 @@
@@ -836,7 +1074,15 @@ index 3f4a64f..6a459fe 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -66,7 +70,11 @@ ULONG Direct3DTexture9_LSS::Release() {
+@@ -20,6 +24,7 @@
+  * DEALINGS IN THE SOFTWARE.
+  */
+ #include "pch.h"
++#include "api_wait_diagnostics.h"
+ 
+ #include "d3d9_texture.h"
+ 
+@@ -66,7 +71,11 @@ ULONG Direct3DTexture9_LSS::Release() {
  }
  
  void Direct3DTexture9_LSS::onDestroy() {
@@ -849,7 +1095,7 @@ index 3f4a64f..6a459fe 100644
  }
  
  HRESULT Direct3DTexture9_LSS::GetLevelDesc(UINT Level, D3DSURFACE_DESC* pDesc) {
-@@ -121,6 +129,10 @@ HRESULT Direct3DTexture9_LSS::GetSurfaceLevel(UINT Level, IDirect3DSurface9** pp
+@@ -121,6 +130,10 @@ HRESULT Direct3DTexture9_LSS::GetSurfaceLevel(UINT Level, IDirect3DSurface9** pp
    GetLevelDesc(Level, &desc);
  
    Direct3DSurface9_LSS* pLssSurface = trackWrapper(new Direct3DSurface9_LSS(m_pDevice, this, desc));
@@ -860,7 +1106,23 @@ index 3f4a64f..6a459fe 100644
    setChild(Level, pLssSurface);
      
    (*ppSurfaceLevel) = pLssSurface;
-@@ -186,4 +198,4 @@ HRESULT Direct3DTexture9_LSS::AddDirtyRect(CONST RECT* pDirtyRect) {
+@@ -136,6 +149,7 @@ HRESULT Direct3DTexture9_LSS::GetSurfaceLevel(UINT Level, IDirect3DSurface9** pp
+ }
+ 
+ HRESULT Direct3DTexture9_LSS::LockRect(UINT Level, D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::TextureLockRect);
+   LogFunctionCall();
+ 
+   if (Level >= getDesc().Levels)
+@@ -164,6 +178,7 @@ HRESULT Direct3DTexture9_LSS::LockRect(UINT Level, D3DLOCKED_RECT* pLockedRect,
+ }
+ 
+ HRESULT Direct3DTexture9_LSS::UnlockRect(UINT Level) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::TextureUnlockRect);
+   LogFunctionCall();
+ 
+   if (Level >= getDesc().Levels)
+@@ -186,4 +201,4 @@ HRESULT Direct3DTexture9_LSS::AddDirtyRect(CONST RECT* pDirtyRect) {
      c.send_data(sizeof(RECT), (void*) pDirtyRect);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("AddDirtyRect()", D3DERR_INVALIDCALL, currentUID);
@@ -925,6 +1187,90 @@ index 2a4b9e4..9f5118a 100644
 -};
 \ No newline at end of file
 +};
+diff --git a/bridge/src/client/d3d9_vertexbuffer.cpp b/bridge/src/client/d3d9_vertexbuffer.cpp
+index 36ebe3a..56b519d 100644
+--- a/bridge/src/client/d3d9_vertexbuffer.cpp
++++ b/bridge/src/client/d3d9_vertexbuffer.cpp
+@@ -19,6 +19,7 @@
+  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  * DEALINGS IN THE SOFTWARE.
+  */
++#include "api_wait_diagnostics.h"
+ #include "d3d9_vertexbuffer.h"
+ 
+ #include "pch.h"
+@@ -67,6 +68,7 @@ void Direct3DVertexBuffer9_LSS::onDestroy() {
+ }
+ 
+ HRESULT Direct3DVertexBuffer9_LSS::Lock(UINT OffsetToLock, UINT SizeToLock, void** ppbData, DWORD Flags) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::VertexLock);
+   LogFunctionCall();
+ 
+   if (ppbData == nullptr) {
+@@ -90,6 +92,7 @@ HRESULT Direct3DVertexBuffer9_LSS::Lock(UINT OffsetToLock, UINT SizeToLock, void
+ }
+ 
+ HRESULT Direct3DVertexBuffer9_LSS::Unlock() {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::VertexUnlock);
+   LogFunctionCall();
+   {
+     BRIDGE_PARENT_DEVICE_LOCKGUARD();
+diff --git a/bridge/src/client/d3d9_volume.cpp b/bridge/src/client/d3d9_volume.cpp
+index 11704cf..89cfed6 100644
+--- a/bridge/src/client/d3d9_volume.cpp
++++ b/bridge/src/client/d3d9_volume.cpp
+@@ -20,6 +20,7 @@
+  * DEALINGS IN THE SOFTWARE.
+  */
+ #include "pch.h"
++#include "api_wait_diagnostics.h"
+ #include "d3d9_volume.h"
+ 
+ #include "util_bridge_assert.h"
+@@ -101,6 +102,7 @@ HRESULT Direct3DVolume9_LSS::GetDesc(D3DVOLUME_DESC* pDesc) {
+ }
+ 
+ HRESULT Direct3DVolume9_LSS::LockBox(D3DLOCKED_BOX* pLockedVolume, CONST D3DBOX* pBox, DWORD Flags) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::VolumeLockBox);
+   LogFunctionCall();
+   // Store locked rect pointer locally so we can copy the data on unlock
+   {
+@@ -117,6 +119,7 @@ HRESULT Direct3DVolume9_LSS::LockBox(D3DLOCKED_BOX* pLockedVolume, CONST D3DBOX*
+ }
+ 
+ HRESULT Direct3DVolume9_LSS::UnlockBox() {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::VolumeUnlockBox);
+   LogFunctionCall();
+   {
+     BRIDGE_PARENT_DEVICE_LOCKGUARD();
+diff --git a/bridge/src/client/d3d9_volumetexture.cpp b/bridge/src/client/d3d9_volumetexture.cpp
+index 3df797e..50c2258 100644
+--- a/bridge/src/client/d3d9_volumetexture.cpp
++++ b/bridge/src/client/d3d9_volumetexture.cpp
+@@ -20,6 +20,7 @@
+  * DEALINGS IN THE SOFTWARE.
+  */
+ #include "pch.h"
++#include "api_wait_diagnostics.h"
+ #include "d3d9_volumetexture.h"
+ #include "shadow_map.h"
+ 
+@@ -133,6 +134,7 @@ HRESULT Direct3DVolumeTexture9_LSS::GetVolumeLevel(UINT Level, IDirect3DVolume9*
+ }
+ 
+ HRESULT Direct3DVolumeTexture9_LSS::LockBox(UINT Level, D3DLOCKED_BOX* pLockedVolume, CONST D3DBOX* pBox, DWORD Flags) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::VolumeTextureLockBox);
+   LogFunctionCall();
+ 
+   if (Level >= getDesc().Levels)
+@@ -157,6 +159,7 @@ HRESULT Direct3DVolumeTexture9_LSS::LockBox(UINT Level, D3DLOCKED_BOX* pLockedVo
+ }
+ 
+ HRESULT Direct3DVolumeTexture9_LSS::UnlockBox(UINT Level) {
++  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::VolumeTextureUnlockBox);
+   LogFunctionCall();
+ 
+   if (Level >= getDesc().Levels)
 diff --git a/bridge/src/client/di_hook.cpp b/bridge/src/client/di_hook.cpp
 index bbbd470..f392bcd 100644
 --- a/bridge/src/client/di_hook.cpp
@@ -3413,7 +3759,7 @@ index 0000000..c6ccbb1
 +};
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..d1859ab 100644
+index 86434ec..94a4b3f 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -3424,7 +3770,13 @@ index 86434ec..d1859ab 100644
  /*
   * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -24,6 +28,10 @@
+@@ -19,11 +23,16 @@
+  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  * DEALINGS IN THE SOFTWARE.
+  */
++#include "api_wait_commands.h"
+ #include <windows.h>
+ 
  #include "version.h"
  #include "module_processing.h"
  #include "remix_api.h"
@@ -3435,7 +3787,7 @@ index 86434ec..d1859ab 100644
  
  #include "util_bridge_assert.h"
  #include "util_circularbuffer.h"
-@@ -109,6 +117,63 @@ using namespace remixapi::util;
+@@ -109,6 +118,63 @@ using namespace remixapi::util;
  // https://docs.microsoft.com/en-us/windows/win32/winprog64/interprocess-communication?redirectedfrom=MSDN
  #define TRUNCATE_HANDLE(type, input) (type)(size_t)(input)
  
@@ -3499,7 +3851,7 @@ index 86434ec..d1859ab 100644
  bool bDxvkModuleLoaded = false;
  std::chrono::steady_clock::time_point gTimeStart;
  
-@@ -152,6 +217,31 @@ std::unordered_map<uint32_t, IDirect3DPixelShader9*> gpD3DPixelShaders;
+@@ -152,6 +218,31 @@ std::unordered_map<uint32_t, IDirect3DPixelShader9*> gpD3DPixelShaders;
  std::unordered_map<uint32_t, IDirect3DSwapChain9*> gpD3DSwapChains;
  std::unordered_map<uint32_t, IDirect3DQuery9*> gpD3DQuery;
  std::unordered_map<uint32_t, void*> gMapRemixApi;
@@ -3531,7 +3883,24 @@ index 86434ec..d1859ab 100644
  
  // Global state
  bool gbBridgeRunning = true;
-@@ -242,17 +332,39 @@ HRESULT ReturnSurfaceDataToClient(IDirect3DSurface9* pReturnSurfaceData, HRESULT
+@@ -223,7 +314,7 @@ HRESULT ReturnSurfaceDataToClient(IDirect3DSurface9* pReturnSurfaceData, HRESULT
+   }
+   // Using surface desc to get width, height of the surface
+   D3DSURFACE_DESC pDesc;
+-  hresult = pReturnSurfaceData->GetDesc(OUT & pDesc);
++  hresult = l4d2_api_wait::backend([&]() { return pReturnSurfaceData->GetDesc(OUT & pDesc); });
+   if (!SUCCEEDED(hresult)) {
+     c.send_data(hresult);
+     return hresult;
+@@ -235,28 +326,50 @@ HRESULT ReturnSurfaceDataToClient(IDirect3DSurface9* pReturnSurfaceData, HRESULT
+ 
+   // Obtaining raw buffer from the surface and we send this data to client
+   D3DLOCKED_RECT lockedRect;
+-  hresult = pReturnSurfaceData->LockRect(OUT & lockedRect, NULL, IN D3DLOCK_READONLY);
++  hresult = l4d2_api_wait::backend([&]() { return pReturnSurfaceData->LockRect(OUT & lockedRect, NULL, IN D3DLOCK_READONLY); });
+   if (!SUCCEEDED(hresult)) {
+     c.send_data(hresult);
+     return hresult;
    }
  
    // Sending raw surface buffer details to client
@@ -3545,7 +3914,7 @@ index 86434ec..d1859ab 100644
 +  if (ati) {
 +    if (!l4d2_ati::region(atiLayout, 0, 0, width, height, atiTransfer)
 +      || !lockedRect.pBits || lockedRect.Pitch != static_cast<int32_t>(atiLayout.apiPitch)) {
-+      pReturnSurfaceData->UnlockRect();
++      l4d2_api_wait::backend([&]() { return pReturnSurfaceData->UnlockRect(); });
 +      c.send_data(D3DERR_INVALIDCALL);
 +      return D3DERR_INVALIDCALL;
 +    }
@@ -3576,7 +3945,20 @@ index 86434ec..d1859ab 100644
      c.end_data_blob();
    }
  
-@@ -338,9 +450,10 @@ void ProcessDeviceCommandQueue() {
+-  hresult = pReturnSurfaceData->UnlockRect();
++  hresult = l4d2_api_wait::backend([&]() { return pReturnSurfaceData->UnlockRect(); });
+   return hresult;
+ }
+ 
+@@ -300,6 +413,7 @@ void ProcessDeviceCommandQueue() {
+ #endif
+ 
+     const Header rpcHeader = DeviceBridge::pop_front();
++    l4d2_api_wait::ApiScope apiHandlerTiming(l4d2_api_wait::commandApi(rpcHeader.command));
+ 
+ #ifdef _DEBUG
+     // If data batching is enabled and the data offset on the comamnd is different from
+@@ -338,9 +452,10 @@ void ProcessDeviceCommandQueue() {
          uint32_t* rawPresentationParameters = nullptr;
          DeviceBridge::get_data((void**) &rawPresentationParameters);
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
@@ -3588,7 +3970,7 @@ index 86434ec..d1859ab 100644
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
            ss << format_string("CreateDeviceEx() call failed with error code 0x%x", hresult) << std::endl;
-@@ -373,9 +486,16 @@ void ProcessDeviceCommandQueue() {
+@@ -373,9 +488,16 @@ void ProcessDeviceCommandQueue() {
          uint32_t* rawPresentationParameters = nullptr;
          DeviceBridge::get_data((void**) &rawPresentationParameters);
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
@@ -3606,7 +3988,7 @@ index 86434ec..d1859ab 100644
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
            ss << format_string("CreateDevice() call failed with error code 0x%x", hresult) << std::endl;
-@@ -383,6 +503,10 @@ void ProcessDeviceCommandQueue() {
+@@ -383,6 +505,10 @@ void ProcessDeviceCommandQueue() {
          } else {
            Logger::info("Server side D3D9 Device created successfully!");
            gpD3DDevices[pHandle] = (IDirect3DDevice9Ex*) pD3DDevice;
@@ -3617,31 +3999,43 @@ index 86434ec..d1859ab 100644
            if(GlobalOptions::getExposeRemixApi()) {
              remixapi::g_device = (IDirect3DDevice9Ex*) pD3DDevice;
              remixapi::g_remix.dxvk_RegisterD3D9Device(remixapi::g_device);
-@@ -429,6 +553,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateRenderTargetEx(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr, IN Usage);
+@@ -426,9 +552,10 @@ void ProcessDeviceCommandQueue() {
+         PULL(DWORD, Usage);
+         PULL_HND(pHandle);
+         LPDIRECT3DSURFACE9 pSurface;
+-        const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateRenderTargetEx(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr, IN Usage);
++        const auto hresult = l4d2_api_wait::backend([&]() { return ((IDirect3DDevice9Ex*) pD3DDevice)->CreateRenderTargetEx(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr, IN Usage); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pSurface), l4d2_host_memory::ResourceKind::Surface);
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -447,6 +572,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateOffscreenPlainSurfaceEx(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr, IN Usage);
+@@ -444,9 +571,10 @@ void ProcessDeviceCommandQueue() {
+         PULL(DWORD, Usage);
+         PULL_HND(pHandle);
+         LPDIRECT3DSURFACE9 pSurface;
+-        const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateOffscreenPlainSurfaceEx(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr, IN Usage);
++        const auto hresult = l4d2_api_wait::backend([&]() { return ((IDirect3DDevice9Ex*) pD3DDevice)->CreateOffscreenPlainSurfaceEx(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr, IN Usage); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pSurface), l4d2_host_memory::ResourceKind::Surface);
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -467,6 +593,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateDepthStencilSurfaceEx(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr, IN Usage);
+@@ -464,9 +592,10 @@ void ProcessDeviceCommandQueue() {
+         PULL(DWORD, Usage);
+         PULL_HND(pHandle);
+         LPDIRECT3DSURFACE9 pSurface;
+-        const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateDepthStencilSurfaceEx(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr, IN Usage);
++        const auto hresult = l4d2_api_wait::backend([&]() { return ((IDirect3DDevice9Ex*) pD3DDevice)->CreateDepthStencilSurfaceEx(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr, IN Usage); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pSurface), l4d2_host_memory::ResourceKind::Surface);
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -496,6 +623,7 @@ void ProcessDeviceCommandQueue() {
+@@ -496,6 +625,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->GetBackBuffer(0, index, D3DBACKBUFFER_TYPE_MONO, &pBackbuffer);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pBackbuffer;
@@ -3649,7 +4043,7 @@ index 86434ec..d1859ab 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -508,6 +636,7 @@ void ProcessDeviceCommandQueue() {
+@@ -508,6 +638,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->GetDepthStencilSurface(&pDepthStencil);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pDepthStencil;
@@ -3657,7 +4051,7 @@ index 86434ec..d1859ab 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -561,8 +690,14 @@ void ProcessDeviceCommandQueue() {
+@@ -561,8 +692,14 @@ void ProcessDeviceCommandQueue() {
        {
  
          GET_RES(pD3DDevice, gpD3DDevices);
@@ -3673,7 +4067,7 @@ index 86434ec..d1859ab 100644
          BRIDGE_ASSERT_LOG(SUCCEEDED(hresult), "Issue retrieving D3D9 device specific information");
          {
            ServerMessage c(Commands::Bridge_Response, currentUID);
-@@ -632,6 +767,7 @@ void ProcessDeviceCommandQueue() {
+@@ -632,6 +769,7 @@ void ProcessDeviceCommandQueue() {
          uint32_t* rawPresentationParameters = nullptr;
          DeviceBridge::get_data((void**) &rawPresentationParameters);
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
@@ -3681,7 +4075,7 @@ index 86434ec..d1859ab 100644
          IDirect3DSwapChain9* pSwapChain = nullptr;
          const auto hresult = pD3DDevice->CreateAdditionalSwapChain(&PresentationParameters, &pSwapChain);
          if (SUCCEEDED(hresult)) {
-@@ -664,6 +800,7 @@ void ProcessDeviceCommandQueue() {
+@@ -664,6 +802,7 @@ void ProcessDeviceCommandQueue() {
          uint32_t* rawPresentationParameters = nullptr;
          DeviceBridge::get_data((void**) &rawPresentationParameters);
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
@@ -3689,7 +4083,16 @@ index 86434ec..d1859ab 100644
          if (!PresentationParameters.Windowed && !bDxvkModuleLoaded) {
            bridge_util::Logger::err("Fullscreen is not yet supported for non-DXVK uses of the bridge. This is not recoverable. Exiting.");
            done = true;
-@@ -689,6 +826,7 @@ void ProcessDeviceCommandQueue() {
+@@ -674,7 +813,7 @@ void ProcessDeviceCommandQueue() {
+         pD3DDevice->GetSwapChain(0, &pSwapChain);
+         pSwapChain->Release();
+ 
+-        const auto hresult = pD3DDevice->Reset(&PresentationParameters);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->Reset(&PresentationParameters); });
+         assert(SUCCEEDED(hresult));
+         SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
+         break;
+@@ -689,6 +828,7 @@ void ProcessDeviceCommandQueue() {
          PULL_DATA(sizeof(D3DDISPLAYMODEEX), pFullscreenDisplayMode);
  
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
@@ -3697,16 +4100,28 @@ index 86434ec..d1859ab 100644
          if (!PresentationParameters.Windowed && !bDxvkModuleLoaded) {
            bridge_util::Logger::err("Fullscreen is not yet supported for non-DXVK uses of the bridge. This is not recoverable. Exiting.");
            done = true;
-@@ -717,7 +855,7 @@ void ProcessDeviceCommandQueue() {
+@@ -699,7 +839,7 @@ void ProcessDeviceCommandQueue() {
+         pD3DDevice->GetSwapChain(0, &pSwapChain);
+         pSwapChain->Release();
+ 
+-        const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->ResetEx(&PresentationParameters, pFullscreenDisplayMode);
++        const auto hresult = l4d2_api_wait::backend([&]() { return ((IDirect3DDevice9Ex*) pD3DDevice)->ResetEx(&PresentationParameters, pFullscreenDisplayMode); });
+         assert(SUCCEEDED(hresult));
+         SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
+         break;
+@@ -717,9 +857,9 @@ void ProcessDeviceCommandQueue() {
          PULL(uint32_t, hDestWindowOverride);
          PULL_OBJ(RGNDATA, pDirtyRegion);
  
 -        HWND hwnd = TRUNCATE_HANDLE(HWND, hDestWindowOverride);
 +        HWND hwnd = overlayPresentWindow(TRUNCATE_HANDLE(HWND, hDestWindowOverride));
  
-         const auto hresult = pD3DDevice->Present(pSourceRect, pDestRect, hwnd, pDirtyRegion);
+-        const auto hresult = pD3DDevice->Present(pSourceRect, pDestRect, hwnd, pDirtyRegion);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->Present(pSourceRect, pDestRect, hwnd, pDirtyRegion); });
          if (!SUCCEEDED(hresult)) {
-@@ -746,6 +884,7 @@ void ProcessDeviceCommandQueue() {
+           std::stringstream ss;
+           ss << "Present() failed! Check all logs for reported errors.";
+@@ -746,6 +886,7 @@ void ProcessDeviceCommandQueue() {
          assert(SUCCEEDED(hresult));
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pBackbuffer;
@@ -3714,13 +4129,14 @@ index 86434ec..d1859ab 100644
          }
          break;
        }
-@@ -787,13 +926,23 @@ void ProcessDeviceCommandQueue() {
+@@ -787,13 +928,23 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
 -        LPDIRECT3DTEXTURE9 pTexture;
+-        const auto hresult = pD3DDevice->CreateTexture(IN Width, IN Height, IN Levels, IN Usage, IN Format, IN Pool, OUT & pTexture, IN nullptr);
 +        LPDIRECT3DTEXTURE9 pTexture = nullptr;
-         const auto hresult = pD3DDevice->CreateTexture(IN Width, IN Height, IN Levels, IN Usage, IN Format, IN Pool, OUT & pTexture, IN nullptr);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->CreateTexture(IN Width, IN Height, IN Levels, IN Usage, IN Format, IN Pool, OUT & pTexture, IN nullptr); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pTexture;
 -        }
@@ -3741,63 +4157,118 @@ index 86434ec..d1859ab 100644
          break;
        }
        case IDirect3DDevice9Ex_CreateVolumeTexture:
-@@ -811,6 +960,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = pD3DDevice->CreateVolumeTexture(IN Width, IN Height, IN Depth, IN Levels, IN Usage, IN Format, IN Pool, OUT & pVolumeTexture, IN nullptr);
+@@ -808,9 +959,10 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+         LPDIRECT3DVOLUMETEXTURE9 pVolumeTexture;
+-        const auto hresult = pD3DDevice->CreateVolumeTexture(IN Width, IN Height, IN Depth, IN Levels, IN Usage, IN Format, IN Pool, OUT & pVolumeTexture, IN nullptr);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->CreateVolumeTexture(IN Width, IN Height, IN Depth, IN Levels, IN Usage, IN Format, IN Pool, OUT & pVolumeTexture, IN nullptr); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pVolumeTexture;
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pVolumeTexture), l4d2_host_memory::ResourceKind::VolumeTexture);
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -829,6 +979,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = pD3DDevice->CreateCubeTexture(IN EdgeLength, IN Levels, IN Usage, IN Format, IN Pool, OUT & pCubeTexture, IN nullptr);
+@@ -826,9 +978,10 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+         LPDIRECT3DCUBETEXTURE9 pCubeTexture;
+-        const auto hresult = pD3DDevice->CreateCubeTexture(IN EdgeLength, IN Levels, IN Usage, IN Format, IN Pool, OUT & pCubeTexture, IN nullptr);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->CreateCubeTexture(IN EdgeLength, IN Levels, IN Usage, IN Format, IN Pool, OUT & pCubeTexture, IN nullptr); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pCubeTexture;
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pCubeTexture), l4d2_host_memory::ResourceKind::CubeTexture);
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -846,6 +997,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = pD3DDevice->CreateVertexBuffer(IN Length, IN Usage, IN FVF, IN Pool, OUT & pVertexBuffer, IN nullptr);
+@@ -843,9 +996,10 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+         LPDIRECT3DVERTEXBUFFER9 pVertexBuffer;
+-        const auto hresult = pD3DDevice->CreateVertexBuffer(IN Length, IN Usage, IN FVF, IN Pool, OUT & pVertexBuffer, IN nullptr);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->CreateVertexBuffer(IN Length, IN Usage, IN FVF, IN Pool, OUT & pVertexBuffer, IN nullptr); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pVertexBuffer;
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pVertexBuffer), l4d2_host_memory::ResourceKind::VertexBuffer);
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -863,6 +1015,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = pD3DDevice->CreateIndexBuffer(IN Length, IN Usage, IN Format, IN Pool, OUT & pIndexBuffer, IN nullptr);
+@@ -860,9 +1014,10 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+         LPDIRECT3DINDEXBUFFER9 pIndexBuffer;
+-        const auto hresult = pD3DDevice->CreateIndexBuffer(IN Length, IN Usage, IN Format, IN Pool, OUT & pIndexBuffer, IN nullptr);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->CreateIndexBuffer(IN Length, IN Usage, IN Format, IN Pool, OUT & pIndexBuffer, IN nullptr); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pIndexBuffer;
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pIndexBuffer), l4d2_host_memory::ResourceKind::IndexBuffer);
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -882,6 +1035,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = pD3DDevice->CreateRenderTarget(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr);
+@@ -879,9 +1034,10 @@ void ProcessDeviceCommandQueue() {
+         PULL(BOOL, Lockable);
+         PULL_HND(pHandle);
+         LPDIRECT3DSURFACE9 pSurface;
+-        const auto hresult = pD3DDevice->CreateRenderTarget(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->CreateRenderTarget(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pSurface), l4d2_host_memory::ResourceKind::Surface);
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -901,6 +1055,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = pD3DDevice->CreateDepthStencilSurface(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr);
+@@ -898,9 +1054,10 @@ void ProcessDeviceCommandQueue() {
+         PULL(BOOL, Discard);
+         PULL_HND(pHandle);
+         LPDIRECT3DSURFACE9 pSurface;
+-        const auto hresult = pD3DDevice->CreateDepthStencilSurface(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->CreateDepthStencilSurface(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pSurface), l4d2_host_memory::ResourceKind::Surface);
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -1005,6 +1160,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = pD3DDevice->CreateOffscreenPlainSurface(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr);
+@@ -919,7 +1076,7 @@ void ProcessDeviceCommandQueue() {
+         const auto& pDestinationSurface = (IDirect3DSurface9*) gpD3DResources[pDestHandle];
+         assert(pDestinationSurface != nullptr);
+         if (pSourceSurface != nullptr && pDestinationSurface != nullptr) {
+-          hresult = pD3DDevice->UpdateSurface(IN pSourceSurface, IN pSourceRect, IN pDestinationSurface, IN pDestPoint);
++          hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->UpdateSurface(IN pSourceSurface, IN pSourceRect, IN pDestinationSurface, IN pDestPoint); });
+           assert(SUCCEEDED(hresult));
+         }
+         SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
+@@ -936,7 +1093,7 @@ void ProcessDeviceCommandQueue() {
+         const auto& pDestinationTexture = (IDirect3DBaseTexture9*) gpD3DResources[pDestinationTextureHandle];
+         assert(pDestinationTexture != nullptr);
+         if (pSourceTexture != nullptr && pDestinationTexture != nullptr) {
+-          hresult = pD3DDevice->UpdateTexture(IN pSourceTexture, IN pDestinationTexture);
++          hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->UpdateTexture(IN pSourceTexture, IN pDestinationTexture); });
+           assert(SUCCEEDED(hresult));
+         }
+         SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
+@@ -949,7 +1106,7 @@ void ProcessDeviceCommandQueue() {
+         PULL_HND(pDestSurfaceHandle);
+         const auto& pRenderTarget = (IDirect3DSurface9*) gpD3DResources[pRenderTargetHandle];
+         const auto& pDestSurface = (IDirect3DSurface9*) gpD3DResources[pDestSurfaceHandle];
+-        auto hresult = pD3DDevice->GetRenderTargetData(IN pRenderTarget, IN pDestSurface);
++        auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->GetRenderTargetData(IN pRenderTarget, IN pDestSurface); });
+         hresult = ReturnSurfaceDataToClient(pDestSurface, hresult, currentUID);
+         assert(SUCCEEDED(hresult));
+         break;
+@@ -1002,9 +1159,10 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+         LPDIRECT3DSURFACE9 pSurface;
+-        const auto hresult = pD3DDevice->CreateOffscreenPlainSurface(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pD3DDevice->CreateOffscreenPlainSurface(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pHandle] = pSurface;
 +          gResourceInventory.track(pHandle, reinterpret_cast<uintptr_t>(pSurface), l4d2_host_memory::ResourceKind::Surface);
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -1037,6 +1193,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1037,6 +1195,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->GetRenderTarget(RenderTargetIndex, &pRenderTarget);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pRenderTarget;
@@ -3805,7 +4276,7 @@ index 86434ec..d1859ab 100644
          }
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          assert(SUCCEEDED(hresult));
-@@ -1067,6 +1224,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1067,6 +1226,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pD3DDevice->GetDepthStencilSurface(&pZStencilSurface);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pZStencilSurface;
@@ -3813,16 +4284,19 @@ index 86434ec..d1859ab 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -1767,7 +1925,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1767,9 +1927,9 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RGNDATA, pDirtyRegion);
          PULL(uint32_t, dwFlags);
  
 -        HWND hwnd = TRUNCATE_HANDLE(HWND, hDestWindowOverride);
 +        HWND hwnd = overlayPresentWindow(TRUNCATE_HANDLE(HWND, hDestWindowOverride));
  
-         const auto hresult = pSwapChain->Present(pSourceRect, pDestRect, hwnd, pDirtyRegion, dwFlags);
+-        const auto hresult = pSwapChain->Present(pSourceRect, pDestRect, hwnd, pDirtyRegion, dwFlags);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pSwapChain->Present(pSourceRect, pDestRect, hwnd, pDirtyRegion, dwFlags); });
  
-@@ -1793,6 +1951,7 @@ void ProcessDeviceCommandQueue() {
+         if (!SUCCEEDED(hresult)) {
+           std::stringstream ss;
+@@ -1793,6 +1953,7 @@ void ProcessDeviceCommandQueue() {
          auto hresult = pSwapChain->GetFrontBufferData(pDestSurface);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pDestSurfaceHandle] = pDestSurface;
@@ -3830,7 +4304,7 @@ index 86434ec..d1859ab 100644
          }
          hresult = ReturnSurfaceDataToClient(pDestSurface, hresult, currentUID);
          assert(SUCCEEDED(hresult));
-@@ -1808,6 +1967,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1808,6 +1969,7 @@ void ProcessDeviceCommandQueue() {
          const auto hresult = pSwapChain->GetBackBuffer(iBackBuffer, Type, &pBackbuffer);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pBackbuffer;
@@ -3838,7 +4312,7 @@ index 86434ec..d1859ab 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -2019,6 +2179,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2019,6 +2181,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pHandle];
          safeDestroy(pTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3846,15 +4320,28 @@ index 86434ec..d1859ab 100644
          break;
        }
        case IDirect3DTexture9_GetDevice:
-@@ -2077,6 +2238,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = pTexture->GetSurfaceLevel(IN Level, OUT & pSurfaceLevel);
+@@ -2063,7 +2226,7 @@ void ProcessDeviceCommandQueue() {
+         PULL_U(Level);
+         const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pHandle];
+         D3DSURFACE_DESC pDesc;
+-        const auto hresult = pTexture->GetLevelDesc(Level, &pDesc);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pTexture->GetLevelDesc(Level, &pDesc); });
+         assert(SUCCEEDED(hresult));
+         break;
+       }
+@@ -2074,9 +2237,10 @@ void ProcessDeviceCommandQueue() {
+         PULL_HND(pSurfaceHandle);
+         const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pTextureHandle];
+         LPDIRECT3DSURFACE9 pSurfaceLevel;
+-        const auto hresult = pTexture->GetSurfaceLevel(IN Level, OUT & pSurfaceLevel);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pTexture->GetSurfaceLevel(IN Level, OUT & pSurfaceLevel); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pSurfaceLevel;
 +          gResourceInventory.track(pSurfaceHandle, reinterpret_cast<uintptr_t>(pSurfaceLevel), l4d2_host_memory::ResourceKind::Surface);
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2120,6 +2282,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2120,6 +2284,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
          safeDestroy(pVolumeTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3862,7 +4349,43 @@ index 86434ec..d1859ab 100644
          break;
        }
        case IDirect3DVolumeTexture9_GetDevice:
-@@ -2259,6 +2422,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2164,7 +2329,7 @@ void ProcessDeviceCommandQueue() {
+         PULL_U(Level);
+         const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
+         D3DVOLUME_DESC pDesc;
+-        const auto hresult = pVolumeTexture->GetLevelDesc(Level, &pDesc);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pVolumeTexture->GetLevelDesc(Level, &pDesc); });
+         assert(SUCCEEDED(hresult));
+         break;
+       }
+@@ -2175,7 +2340,7 @@ void ProcessDeviceCommandQueue() {
+         PULL_HND(pVolumeLevelHandle);
+         const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pVolumeTextureHandle];
+         LPDIRECT3DVOLUME9 pVolumeLevel;
+-        const auto hresult = pVolumeTexture->GetVolumeLevel(IN Level, OUT & pVolumeLevel);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pVolumeTexture->GetVolumeLevel(IN Level, OUT & pVolumeLevel); });
+         if (SUCCEEDED(hresult)) {
+           gpD3DVolumes[pVolumeLevelHandle] = pVolumeLevel;
+         }
+@@ -2196,7 +2361,7 @@ void ProcessDeviceCommandQueue() {
+         const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
+         // Now lock the box so we can copy the data into it
+         D3DLOCKED_BOX pLockedVolume;
+-        auto hresult = pVolumeTexture->LockBox(IN Level, IN & pLockedVolume, IN pBox, IN Flags);
++        auto hresult = l4d2_api_wait::backend([&]() { return pVolumeTexture->LockBox(IN Level, IN & pLockedVolume, IN pBox, IN Flags); });
+         assert(S_OK == hresult);
+         // Copy the data over
+         PULL_U(bytesPerPixel);
+@@ -2225,7 +2390,7 @@ void ProcessDeviceCommandQueue() {
+ #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
+         assert(pulledSize == depth * slice_size);
+ #endif
+-        hresult = pVolumeTexture->UnlockBox(Level);
++        hresult = l4d2_api_wait::backend([&]() { return pVolumeTexture->UnlockBox(Level); });
+         assert(SUCCEEDED(hresult));
+         break;
+       }
+@@ -2259,6 +2424,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pHandle];
          safeDestroy(pCubeTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3870,15 +4393,28 @@ index 86434ec..d1859ab 100644
          break;
        }
        case IDirect3DCubeTexture9_GetDevice:
-@@ -2318,6 +2482,7 @@ void ProcessDeviceCommandQueue() {
-         const auto hresult = pCubeTexture->GetCubeMapSurface(IN FaceType, IN Level, OUT & pCubeMapSurface);
+@@ -2303,7 +2469,7 @@ void ProcessDeviceCommandQueue() {
+         GET_HND(pHandle);
+         const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pHandle];
+         D3DSURFACE_DESC pDesc;
+-        const auto hresult = pCubeTexture->GetLevelDesc(Level, &pDesc);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pCubeTexture->GetLevelDesc(Level, &pDesc); });
+         assert(SUCCEEDED(hresult));
+         break;
+       }
+@@ -2315,9 +2481,10 @@ void ProcessDeviceCommandQueue() {
+         PULL_HND(pCubeMapSurfaceHandle);
+         const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pCubeTextureHandle];
+         LPDIRECT3DSURFACE9 pCubeMapSurface;
+-        const auto hresult = pCubeTexture->GetCubeMapSurface(IN FaceType, IN Level, OUT & pCubeMapSurface);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pCubeTexture->GetCubeMapSurface(IN FaceType, IN Level, OUT & pCubeMapSurface); });
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pCubeMapSurfaceHandle] = pCubeMapSurface;
 +          gResourceInventory.track(pCubeMapSurfaceHandle, reinterpret_cast<uintptr_t>(pCubeMapSurface), l4d2_host_memory::ResourceKind::Surface);
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2362,6 +2527,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2362,6 +2529,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pVertexBuffer = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
          safeDestroy(pVertexBuffer, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3886,7 +4422,34 @@ index 86434ec..d1859ab 100644
          break;
        }
        case IDirect3DVertexBuffer9_GetDevice:
-@@ -2448,6 +2614,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2398,7 +2566,7 @@ void ProcessDeviceCommandQueue() {
+ 
+         // Now lock the buffer so we can copy the data into it
+         void* pbData = nullptr;
+-        auto hresult = pVertexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags);
++        auto hresult = l4d2_api_wait::backend([&]() { return pVertexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags); });
+         assert(S_OK == hresult);
+ 
+         // Copy the data over
+@@ -2414,7 +2582,7 @@ void ProcessDeviceCommandQueue() {
+           assert(SizeToLock == size);
+         }
+         memcpy(pbData, data, SizeToLock);
+-        hresult = pVertexBuffer->Unlock();
++        hresult = l4d2_api_wait::backend([&]() { return pVertexBuffer->Unlock(); });
+         assert(SUCCEEDED(hresult));
+ 
+         break;
+@@ -2425,7 +2593,7 @@ void ProcessDeviceCommandQueue() {
+         PULL_OBJ(D3DVERTEXBUFFER_DESC, orig_desc);
+         const auto& pVertexBuffer = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
+         D3DVERTEXBUFFER_DESC pDesc;
+-        const auto hresult = pVertexBuffer->GetDesc(OUT & pDesc);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pVertexBuffer->GetDesc(OUT & pDesc); });
+         assert(SUCCEEDED(hresult));
+         break;
+       }
+@@ -2448,6 +2616,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pIndexBuffer = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
          safeDestroy(pIndexBuffer, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3894,7 +4457,34 @@ index 86434ec..d1859ab 100644
          break;
        }
        case IDirect3DIndexBuffer9_GetDevice:
-@@ -2533,6 +2700,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2484,7 +2653,7 @@ void ProcessDeviceCommandQueue() {
+ 
+         // Now lock the buffer so we can copy the data into it
+         void* pbData = nullptr;
+-        auto hresult = pIndexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags);
++        auto hresult = l4d2_api_wait::backend([&]() { return pIndexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags); });
+         assert(S_OK == hresult);
+ 
+         // Copy the data over
+@@ -2500,7 +2669,7 @@ void ProcessDeviceCommandQueue() {
+           assert(SizeToLock == size);
+         }
+         memcpy(pbData, data, SizeToLock);
+-        hresult = pIndexBuffer->Unlock();
++        hresult = l4d2_api_wait::backend([&]() { return pIndexBuffer->Unlock(); });
+         assert(SUCCEEDED(hresult));
+         break;
+       }
+@@ -2510,7 +2679,7 @@ void ProcessDeviceCommandQueue() {
+         PULL_OBJ(D3DINDEXBUFFER_DESC, orig_desc);
+         const auto& pIndexBuffer = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
+         D3DINDEXBUFFER_DESC pDesc;
+-        const auto hresult = pIndexBuffer->GetDesc(OUT & pDesc);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pIndexBuffer->GetDesc(OUT & pDesc); });
+         assert(SUCCEEDED(hresult));
+         break;
+       }
+@@ -2533,6 +2702,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
          safeDestroy(pSurface, pHandle);
          gpD3DResources.erase(pHandle);
@@ -3902,7 +4492,12 @@ index 86434ec..d1859ab 100644
          break;
        }
        case IDirect3DSurface9_GetDevice:
-@@ -2563,6 +2731,51 @@ void ProcessDeviceCommandQueue() {
+@@ -2559,10 +2729,55 @@ void ProcessDeviceCommandQueue() {
+         PULL_OBJ(D3DSURFACE_DESC, orig_desc);
+         const auto& pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
+         D3DSURFACE_DESC pDesc;
+-        const auto hresult = pSurface->GetDesc(OUT & pDesc);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pSurface->GetDesc(OUT & pDesc); });
          assert(SUCCEEDED(hresult));
          break;
        }
@@ -3954,7 +4549,7 @@ index 86434ec..d1859ab 100644
        case IDirect3DSurface9_LockRect:
        {
          // Currently we only recieve calls for LockRect in cases where backbuffer data is to be copied for screenshots
-@@ -2578,6 +2791,61 @@ void ProcessDeviceCommandQueue() {
+@@ -2578,15 +2793,68 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RECT, pRect);
          PULL_D(Flags);
          const auto pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
@@ -3974,7 +4569,7 @@ index 86434ec..d1859ab 100644
 +          D3DSURFACE_DESC desc {};
 +          l4d2_ati::Layout layout;
 +          l4d2_ati::Transfer transfer;
-+          const HRESULT descHr = pSurface ? pSurface->GetDesc(&desc) : D3DERR_INVALIDCALL;
++          const HRESULT descHr = pSurface ? l4d2_api_wait::backend([&]() { return pSurface->GetDesc(&desc); }) : D3DERR_INVALIDCALL;
 +          if (FAILED(descHr) || static_cast<uint32_t>(desc.Format) != dFormat
 +            || !l4d2_ati::layout(desc.Width, desc.Height, dFormat, layout)
 +            || !l4d2_ati::region(layout, pRect->left, pRect->top, pRect->right, pRect->bottom, transfer)
@@ -3986,7 +4581,7 @@ index 86434ec..d1859ab 100644
 +          }
 +          if (shared) { data = SharedHeap::getBuf(allocId) + transfer.offset; }
 +          D3DLOCKED_RECT locked {};
-+          HRESULT hr = pSurface->LockRect(&locked, pRect, Flags);
++          HRESULT hr = l4d2_api_wait::backend([&]() { return pSurface->LockRect(&locked, pRect, Flags); });
 +          if (FAILED(hr)) {
 +            Logger::err(format_string("L4D2_ATI_UPLOAD event=rejected resource_id=%u reason=backend-lock hresult=0x%08x",
 +              pHandle, static_cast<uint32_t>(hr)));
@@ -3996,7 +4591,7 @@ index 86434ec..d1859ab 100644
 +          const bool copied = locked.Pitch == static_cast<int32_t>(layout.apiPitch)
 +            && l4d2_ati::copyRows(locked.pBits, layout.bytes - transfer.offset, layout.storagePitch,
 +              data, sourceBytes, IncomingPitch, transfer);
-+          hr = pSurface->UnlockRect();
++          hr = l4d2_api_wait::backend([&]() { return pSurface->UnlockRect(); });
 +          if (!copied || FAILED(hr)) {
 +            Logger::err(format_string("L4D2_ATI_UPLOAD event=rejected resource_id=%u reason=copy-or-unlock hresult=0x%08x",
 +              pHandle, static_cast<uint32_t>(hr)));
@@ -4015,8 +4610,9 @@ index 86434ec..d1859ab 100644
 +        // NV-DXVK end
          // Now lock the rect so we can copy the data into it
          D3DLOCKED_RECT lockedRect;
-         auto hresult = pSurface->LockRect(OUT & lockedRect, IN pRect, IN Flags);
-@@ -2585,8 +2853,6 @@ void ProcessDeviceCommandQueue() {
+-        auto hresult = pSurface->LockRect(OUT & lockedRect, IN pRect, IN Flags);
++        auto hresult = l4d2_api_wait::backend([&]() { return pSurface->LockRect(OUT & lockedRect, IN pRect, IN Flags); });
+         assert(S_OK == hresult);
          // Copy the data over
          const uint32_t width = pRect->right - pRect->left;
          const uint32_t height = pRect->bottom - pRect->top;
@@ -4025,7 +4621,43 @@ index 86434ec..d1859ab 100644
          const D3DFORMAT format = (D3DFORMAT) dFormat;
          const size_t rowSize = bridge_util::calcRowSize(width, format);
          void* pData = nullptr;
-@@ -2806,6 +3072,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2607,7 +2875,7 @@ void ProcessDeviceCommandQueue() {
+         FOR_EACH_RECT_ROW(lockedRect, height, format,
+           memcpy(ptr, (PBYTE) pData + y * IncomingPitch, rowSize);
+         )
+-        hresult = pSurface->UnlockRect();
++        hresult = l4d2_api_wait::backend([&]() { return pSurface->UnlockRect(); });
+         assert(SUCCEEDED(hresult));
+ 
+         break;
+@@ -2653,7 +2921,7 @@ void ProcessDeviceCommandQueue() {
+         PULL_OBJ(D3DVOLUME_DESC, orig_desc);
+         const auto& pVolume = gpD3DVolumes[pHandle];
+         D3DVOLUME_DESC pDesc;
+-        const auto hresult = pVolume->GetDesc(OUT & pDesc);
++        const auto hresult = l4d2_api_wait::backend([&]() { return pVolume->GetDesc(OUT & pDesc); });
+         assert(SUCCEEDED(hresult));
+         break;
+       }
+@@ -2670,7 +2938,7 @@ void ProcessDeviceCommandQueue() {
+         const auto& pVolume = gpD3DVolumes[pHandle];
+         // Now lock the box so we can copy the data into it
+         D3DLOCKED_BOX pLockedVolume;
+-        auto hresult = pVolume->LockBox(IN & pLockedVolume, IN pBox, IN Flags);
++        auto hresult = l4d2_api_wait::backend([&]() { return pVolume->LockBox(IN & pLockedVolume, IN pBox, IN Flags); });
+         assert(S_OK == hresult);
+         // Copy the data over
+         PULL_U(bytesPerPixel);
+@@ -2699,7 +2967,7 @@ void ProcessDeviceCommandQueue() {
+ #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
+         assert(pulledSize == depth * slice_size);
+ #endif
+-        hresult = pVolume->UnlockBox();
++        hresult = l4d2_api_wait::backend([&]() { return pVolume->UnlockBox(); });
+         assert(SUCCEEDED(hresult));
+         break;
+       }
+@@ -2806,6 +3074,7 @@ void ProcessDeviceCommandQueue() {
        {
          GET_HND(pHandle);
          gpD3DResources.erase(pHandle);
@@ -4033,7 +4665,7 @@ index 86434ec..d1859ab 100644
          break;
        }
        case Bridge_UnlinkVolumeResource:
-@@ -3209,6 +3476,9 @@ void ProcessDeviceCommandQueue() {
+@@ -3209,6 +3478,9 @@ void ProcessDeviceCommandQueue() {
  
      const auto count = DeviceBridge::end_read_data();
  
@@ -4043,7 +4675,7 @@ index 86434ec..d1859ab 100644
  #ifdef ENABLE_DATA_BATCHING_TRACE
      Logger::trace(format_string("Finished batch data read with %d data items.", count));
  #endif
-@@ -3268,14 +3538,26 @@ bool InitializeD3D() {
+@@ -3268,14 +3540,26 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -4073,7 +4705,7 @@ index 86434ec..d1859ab 100644
      // Since vanilla dxvk is diabled attempt loading regular d3d9.dll which
      // could be either the system d3d9 one or our own Remix dxvk flavor of it.
      ghModule = LoadLibraryExA("d3d9.dll", nullptr,
-@@ -3285,6 +3567,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3569,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -4084,7 +4716,7 @@ index 86434ec..d1859ab 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3597,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3599,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -4095,7 +4727,18 @@ index 86434ec..d1859ab 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3488,12 +3778,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3446,6 +3738,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+       std::string dbPath = std::string(logsDirUtf8.data()) + "/.sentry-native";
+       if (initFileSys()) {
+         Logger::init();
++  if (Config::getOption<bool>("server.apiWaitDiagnostics", false)) {
++    const bool ready = l4d2_api_wait::initialize(true, "host", Config::getOption<unsigned>("server.apiWaitSnapshotMs", 5000));
++    Logger::info(ready ? "L4D2 API wait diagnostics enabled: host" : "L4D2 API wait diagnostics failed to initialize: host");
++  }
+       }
+ 
+       // Crash type is passed as optional third arg ("GPU" or "CPU"); recorded in crash-upload.log.
+@@ -3488,12 +3784,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    ExceptionHandler::get().init();
  
    // Identify yourself
@@ -4114,7 +4757,7 @@ index 86434ec..d1859ab 100644
  #endif
  
    BRIDGE_ASSERT_LOG((argCount >= 2), "Command line argument count received to launch server is not as expected");
-@@ -3554,6 +3847,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3554,6 +3853,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    }
    const SentryShutdownOnExit sentryShutdownOnExit;
  
@@ -4123,7 +4766,7 @@ index 86434ec..d1859ab 100644
    // (3) Send ACK to Client. Connection has been established
    Logger::info("Sync request received, sending ACK response...");
    ServerMessage { Commands::Bridge_Ack, (uintptr_t) gpClientMessageChannel->getWorkerThreadId() };
-@@ -3589,12 +3884,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3589,12 +3890,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    bSignalDone.store(true);
    moduleCmdProcessingThread.join();
  
@@ -4139,7 +4782,7 @@ index 86434ec..d1859ab 100644
    if (ghModule) {
      // Skip unloading the d3d9.dll for now, since it seems to be doing more harm than good
      // especially with other dependencies loaded by dxvk and threads that may deadlock due
-@@ -3624,4 +3922,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +3928,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;
@@ -4760,6 +5403,315 @@ index 0000000..3d27328
 +}
 +
 +}
+diff --git a/bridge/src/util/api_wait_commands.h b/bridge/src/util/api_wait_commands.h
+new file mode 100644
+index 0000000..27897d2
+--- /dev/null
++++ b/bridge/src/util/api_wait_commands.h
+@@ -0,0 +1,46 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++#include "api_wait_diagnostics.h"
++#include "util_commands.h"
++namespace l4d2_api_wait {
++inline Api commandApi(Commands::D3D9Command command) {
++  switch (command) {
++  case Commands::IDirect3DDevice9Ex_CreateTexture: return Api::CreateTexture;
++  case Commands::IDirect3DDevice9Ex_CreateCubeTexture: return Api::CreateCubeTexture;
++  case Commands::IDirect3DDevice9Ex_CreateVolumeTexture: return Api::CreateVolumeTexture;
++  case Commands::IDirect3DDevice9Ex_CreateVertexBuffer: return Api::CreateVertexBuffer;
++  case Commands::IDirect3DDevice9Ex_CreateIndexBuffer: return Api::CreateIndexBuffer;
++  case Commands::IDirect3DDevice9Ex_UpdateTexture: return Api::UpdateTexture;
++  case Commands::IDirect3DDevice9Ex_UpdateSurface: return Api::UpdateSurface;
++  case Commands::IDirect3DDevice9Ex_CreateRenderTarget: return Api::CreateRenderTarget;
++  case Commands::IDirect3DDevice9Ex_CreateDepthStencilSurface: return Api::CreateDepthStencilSurface;
++  case Commands::IDirect3DDevice9Ex_CreateOffscreenPlainSurface: return Api::CreateOffscreenPlainSurface;
++  case Commands::IDirect3DDevice9Ex_Reset: return Api::Reset;
++  case Commands::IDirect3DDevice9Ex_Present: return Api::Present;
++  case Commands::IDirect3DDevice9Ex_ResetEx: return Api::ResetEx;
++  case Commands::IDirect3DDevice9Ex_PresentEx: return Api::PresentEx;
++  case Commands::IDirect3DDevice9Ex_CreateRenderTargetEx: return Api::CreateRenderTarget;
++  case Commands::IDirect3DDevice9Ex_CreateDepthStencilSurfaceEx: return Api::CreateDepthStencilSurface;
++  case Commands::IDirect3DDevice9Ex_CreateOffscreenPlainSurfaceEx: return Api::CreateOffscreenPlainSurface;
++  case Commands::IDirect3DTexture9_LockRect: return Api::TextureLockRect;
++  case Commands::IDirect3DTexture9_UnlockRect: return Api::TextureUnlockRect;
++  case Commands::IDirect3DCubeTexture9_LockRect: return Api::CubeLockRect;
++  case Commands::IDirect3DCubeTexture9_UnlockRect: return Api::CubeUnlockRect;
++  case Commands::IDirect3DVolumeTexture9_LockBox: return Api::VolumeTextureLockBox;
++  case Commands::IDirect3DVolumeTexture9_UnlockBox: return Api::VolumeTextureUnlockBox;
++  case Commands::IDirect3DSurface9_LockRect: return Api::SurfaceLockRect;
++  case Commands::IDirect3DSurface9_UnlockRect: return Api::SurfaceUnlockRect;
++  case Commands::IDirect3DVolume9_LockBox: return Api::VolumeLockBox;
++  case Commands::IDirect3DVolume9_UnlockBox: return Api::VolumeUnlockBox;
++  case Commands::IDirect3DVertexBuffer9_Lock: return Api::VertexLock;
++  case Commands::IDirect3DVertexBuffer9_Unlock: return Api::VertexUnlock;
++  case Commands::IDirect3DIndexBuffer9_Lock: return Api::IndexLock;
++  case Commands::IDirect3DIndexBuffer9_Unlock: return Api::IndexUnlock;
++  case Commands::IDirect3DSwapChain9_Present: return Api::SwapChainPresent;
++  case Commands::Bridge_TestReadbackRecovery: return Api::Readback;
++  default: return Api::Other;
++  }
++}
++}
+diff --git a/bridge/src/util/api_wait_diagnostics.h b/bridge/src/util/api_wait_diagnostics.h
+new file mode 100644
+index 0000000..a967525
+--- /dev/null
++++ b/bridge/src/util/api_wait_diagnostics.h
+@@ -0,0 +1,251 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++#include <windows.h>
++#include <atomic>
++#include <cstdint>
++#include <cstdio>
++#include <cstring>
++#include <cwchar>
++#include <utility>
++
++namespace l4d2_api_wait {
++enum class Api : unsigned {
++  Other, CreateTexture, CreateCubeTexture, CreateVolumeTexture, CreateVertexBuffer, CreateIndexBuffer,
++  TextureLockRect, TextureUnlockRect, CubeLockRect, CubeUnlockRect, VolumeTextureLockBox, VolumeTextureUnlockBox,
++  SurfaceLockRect, SurfaceUnlockRect, VolumeLockBox, VolumeUnlockBox, VertexLock, VertexUnlock, IndexLock, IndexUnlock,
++  UpdateTexture, UpdateSurface, CreateRenderTarget, CreateDepthStencilSurface, CreateOffscreenPlainSurface,
++  Reset, Present, ResetEx, PresentEx, SwapChainPresent, Readback, Count
++};
++inline constexpr const char* apiNames[] = {
++  "Other", "CreateTexture", "CreateCubeTexture", "CreateVolumeTexture", "CreateVertexBuffer", "CreateIndexBuffer",
++  "TextureLockRect", "TextureUnlockRect", "CubeLockRect", "CubeUnlockRect", "VolumeTextureLockBox", "VolumeTextureUnlockBox",
++  "SurfaceLockRect", "SurfaceUnlockRect", "VolumeLockBox", "VolumeUnlockBox", "VertexLock", "VertexUnlock", "IndexLock", "IndexUnlock",
++  "UpdateTexture", "UpdateSurface", "CreateRenderTarget", "CreateDepthStencilSurface", "CreateOffscreenPlainSurface",
++  "Reset", "Present", "ResetEx", "PresentEx", "SwapChainPresent", "Readback"
++};
++enum class Metric : unsigned {
++  Api, Unattributed, Submit, ResponseWait, DataQueueWait, CommandQueueWait, CommandMutexWait,
++  PresentWait, SharedHeapRetry, ResourceWait, Backend, QueueDrain, Count
++};
++inline constexpr const char* metricNames[] = {
++  "api", "unattributed", "ipc_submit", "server_response_wait", "data_queue_full_wait", "command_queue_full_wait",
++  "command_mutex_wait", "present_semaphore_wait", "shared_heap_retry", "resource_completion_wait", "backend_call", "queue_drain"
++};
++inline constexpr unsigned kApis = static_cast<unsigned>(Api::Count), kMetrics = static_cast<unsigned>(Metric::Count);
++inline constexpr unsigned kThreads = 64;
++inline constexpr uint64_t thresholdsMs[] = { 1, 5, 10, 50, 100 };
++inline std::atomic<bool> enabled { false };
++inline uint64_t frequency = 0;
++inline std::atomic<uint64_t> queuedCommands { 0 }, droppedThreads { 0 };
++
++inline uint64_t clock() {
++#ifdef L4D2_API_WAIT_TEST_CLOCK
++  extern uint64_t testClock;
++  return testClock;
++#else
++  LARGE_INTEGER value {}; QueryPerformanceCounter(&value);
++  return static_cast<uint64_t>(value.QuadPart);
++#endif
++}
++struct Stats {
++  std::atomic<uint64_t> calls { 0 }, ticks { 0 }, inclusiveTicks { 0 }, maxTicks { 0 };
++  std::atomic<uint64_t> slow[5] {};
++  void add(uint64_t inclusive, uint64_t exclusive) {
++    ticks.fetch_add(exclusive, std::memory_order_relaxed);
++    inclusiveTicks.fetch_add(inclusive, std::memory_order_relaxed);
++    auto previous = maxTicks.load(std::memory_order_relaxed);
++    while (previous < inclusive && !maxTicks.compare_exchange_weak(previous, inclusive, std::memory_order_relaxed)) { }
++    for (unsigned i = 0; i < 5; ++i) {
++      if (inclusive >= frequency * thresholdsMs[i] / 1000) { slow[i].fetch_add(1, std::memory_order_relaxed); }
++    }
++    calls.fetch_add(1, std::memory_order_release);
++  }
++};
++struct ThreadStats {
++  std::atomic<DWORD> id { 0 };
++  std::atomic<uint64_t> inflight { 0 };
++  std::atomic<unsigned> activeApi { kApis }, activeMetric { kMetrics };
++  std::atomic<uint64_t> activeStart { 0 };
++  Stats rows[kApis][kMetrics];
++};
++inline ThreadStats threads[kThreads];
++inline thread_local ThreadStats* localStats = nullptr;
++inline thread_local bool threadOverflow = false;
++inline ThreadStats* threadStats() {
++  if (localStats || threadOverflow) { return localStats; }
++  const DWORD id = GetCurrentThreadId();
++  for (auto& thread : threads) {
++    DWORD empty = 0;
++    if (thread.id.load(std::memory_order_relaxed) == id || thread.id.compare_exchange_strong(empty, id)) {
++      return localStats = &thread;
++    }
++  }
++  threadOverflow = true; droppedThreads.fetch_add(1, std::memory_order_relaxed);
++  return nullptr;
++}
++
++// Nested phase time is removed from its parent's exclusive time. API scopes
++// measure only the outermost instrumented boundary, avoiding wrapper double counts.
++class Span;
++inline thread_local Span* top = nullptr;
++inline thread_local Span* root = nullptr;
++class Span {
++  Metric m_metric;
++  Api m_api = Api::Other;
++  Span* m_parent = nullptr;
++  ThreadStats* m_thread = nullptr;
++  uint64_t m_start = 0, m_children = 0;
++  bool m_active = false;
++public:
++  Span(Metric metric, Api api = Api::Other, bool startNow = true) : m_metric(metric), m_api(api) {
++    if (startNow) { start(); }
++  }
++  Span(const Span&) = delete;
++  Span& operator=(const Span&) = delete;
++  void start() {
++    if (m_active || !enabled.load(std::memory_order_acquire)) { return; }
++    if (m_metric == Metric::Api && top) { return; }
++    m_thread = threadStats();
++    if (!m_thread) { return; }
++    m_parent = top;
++    if (m_metric == Metric::Api) {
++      root = this; m_thread->inflight.fetch_add(1, std::memory_order_relaxed);
++    } else if (root) { m_api = root->m_api; }
++    m_start = clock(); m_active = true; top = this;
++    if (m_metric == Metric::Api) { m_thread->activeApi.store(static_cast<unsigned>(m_api), std::memory_order_relaxed); }
++    m_thread->activeStart.store(m_start, std::memory_order_relaxed);
++    m_thread->activeMetric.store(static_cast<unsigned>(m_metric), std::memory_order_relaxed);
++  }
++  void finish() {
++    if (!m_active) { return; }
++    const uint64_t duration = clock() - m_start;
++    const uint64_t exclusive = duration >= m_children ? duration - m_children : 0;
++    auto& row = m_thread->rows[static_cast<unsigned>(m_api)];
++    row[static_cast<unsigned>(m_metric)].add(duration, m_metric == Metric::Api ? duration : exclusive);
++    if (m_parent) { m_parent->m_children += duration; }
++    top = m_parent;
++    if (m_metric == Metric::Api) {
++      row[static_cast<unsigned>(Metric::Unattributed)].add(exclusive, exclusive);
++      root = nullptr; m_thread->inflight.fetch_sub(1, std::memory_order_relaxed);
++      m_thread->activeApi.store(kApis, std::memory_order_relaxed);
++    }
++    m_thread->activeStart.store(m_parent ? m_parent->m_start : 0, std::memory_order_relaxed);
++    m_thread->activeMetric.store(m_parent ? static_cast<unsigned>(m_parent->m_metric) : kMetrics, std::memory_order_relaxed);
++    m_active = false;
++  }
++  ~Span() { finish(); }
++};
++class ApiScope : public Span {
++public:
++  explicit ApiScope(Api api) : Span(Metric::Api, api) { }
++};
++template<typename Function>
++decltype(auto) backend(Function&& function) {
++  Span timing(Metric::Backend);
++  return std::forward<Function>(function)();
++}
++inline void queued() {
++  if (enabled.load(std::memory_order_relaxed)) { queuedCommands.fetch_add(1, std::memory_order_relaxed); }
++}
++
++inline double us(uint64_t ticks) { return frequency ? static_cast<double>(ticks) * 1000000.0 / static_cast<double>(frequency) : 0.0; }
++// Only the private diagnostics thread accesses the file. No logging or file I/O
++// runs on API/IPC paths, and snapshots do not pause producers or reset counters.
++struct Writer {
++  HANDLE file = INVALID_HANDLE_VALUE;
++  const char* role = nullptr;
++  DWORD periodMs = 5000;
++  uint64_t startTick = 0, sequence = 0;
++  void write(const char* line) {
++    DWORD written = 0;
++    WriteFile(file, line, static_cast<DWORD>(std::strlen(line)), &written, nullptr);
++  }
++  void snapshot() {
++    char line[1400] {};
++    const uint64_t now = GetTickCount64();
++    const uint64_t nowQpc = clock();
++    SYSTEMTIME time {}; GetLocalTime(&time);
++    ++sequence;
++    std::snprintf(line, sizeof(line),
++      "L4D2_API_WAIT_SUMMARY snapshot=%llu role=%s pid=%lu time=%02u:%02u:%02u.%03u tick_ms=%llu interval_ms=%llu frequency=%llu commands=%llu dropped_threads=%llu counters=cumulative consistency=approximate queue_delay=unknown gpu_time=unknown summed_time=cumulative_thread_time_may_overlap\r\n",
++      sequence, role, GetCurrentProcessId(), time.wHour, time.wMinute, time.wSecond, time.wMilliseconds,
++      now, now - startTick, frequency, queuedCommands.load(std::memory_order_relaxed), droppedThreads.load(std::memory_order_relaxed));
++    write(line);
++    for (auto& thread : threads) {
++      const DWORD tid = thread.id.load(std::memory_order_relaxed);
++      if (!tid) { continue; }
++      const unsigned activeApi = thread.activeApi.load(std::memory_order_relaxed);
++      const unsigned activeMetric = thread.activeMetric.load(std::memory_order_relaxed);
++      const uint64_t started = thread.activeStart.load(std::memory_order_relaxed);
++      std::snprintf(line, sizeof(line), "L4D2_API_WAIT_THREAD snapshot=%llu tid=%lu inflight=%llu active_api=%s active_metric=%s active_span_elapsed_us=%.3f\r\n",
++        sequence, tid, thread.inflight.load(std::memory_order_relaxed), activeApi < kApis ? apiNames[activeApi] : "none",
++        activeMetric < kMetrics ? metricNames[activeMetric] : "none", activeMetric < kMetrics && nowQpc >= started ? us(nowQpc - started) : 0.0);
++      write(line);
++      for (unsigned api = 0; api < kApis; ++api) {
++        for (unsigned metric = 0; metric < kMetrics; ++metric) {
++          const auto& stats = thread.rows[api][metric];
++          const uint64_t count = stats.calls.load(std::memory_order_acquire);
++          if (!count) { continue; }
++          const double total = us(stats.ticks.load(std::memory_order_relaxed));
++          const double inclusive = us(stats.inclusiveTicks.load(std::memory_order_relaxed));
++          std::snprintf(line, sizeof(line),
++            "L4D2_API_WAIT snapshot=%llu tid=%lu api=%s metric=%s calls=%llu total_us=%.3f inclusive_us=%.3f avg_us=%.3f max_us=%.3f ge_1ms=%llu ge_5ms=%llu ge_10ms=%llu ge_50ms=%llu ge_100ms=%llu\r\n",
++            sequence, tid, apiNames[api], metricNames[metric], count, total, inclusive, inclusive / static_cast<double>(count),
++            us(stats.maxTicks.load(std::memory_order_relaxed)),
++            stats.slow[0].load(std::memory_order_relaxed), stats.slow[1].load(std::memory_order_relaxed),
++            stats.slow[2].load(std::memory_order_relaxed), stats.slow[3].load(std::memory_order_relaxed), stats.slow[4].load(std::memory_order_relaxed));
++          write(line);
++        }
++      }
++    }
++    std::snprintf(line, sizeof(line), "L4D2_API_WAIT_END snapshot=%llu\r\n", sequence); write(line);
++  }
++  static DWORD WINAPI run(void* argument) {
++    auto& self = *static_cast<Writer*>(argument);
++    // The private event is never signalled: it only supplies periodic worker
++    // scheduling, without touching any game/Bridge queue or synchronization.
++    HANDLE timer = CreateEventW(nullptr, FALSE, FALSE, nullptr);
++    if (!timer) { return 1; }
++    for (;;) {
++      self.snapshot();
++      if (WaitForSingleObject(timer, self.periodMs) == WAIT_FAILED) { return 1; }
++    }
++  }
++};
++inline bool initialize(bool requested, const char* role, unsigned periodMs = 5000) {
++  if (!requested) { return false; }
++  if (enabled.load()) { return true; }
++  LARGE_INTEGER rate {};
++  if (!QueryPerformanceFrequency(&rate) || rate.QuadPart <= 0) { return false; }
++  HMODULE module = nullptr;
++  // This optional worker lives for the process lifetime, including DLL detach;
++  // pin only in diagnostic mode, avoiding loader-lock joins or dangling code.
++  if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
++    reinterpret_cast<LPCWSTR>(&initialize), &module)) { return false; }
++  wchar_t path[MAX_PATH] {};
++  const DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
++  if (!length || length >= MAX_PATH) { return false; }
++  wchar_t* separator = std::wcsrchr(path, L'\\');
++  if (!separator) { return false; }
++  const size_t remaining = MAX_PATH - static_cast<size_t>(separator + 1 - path);
++  const wchar_t* filename = role[0] == 'c' ? L"l4d2-api-wait-client-%lu.log" :
++    sizeof(void*) == 8 ? L"l4d2-api-wait-host64-%lu.log" : L"l4d2-api-wait-host32-%lu.log";
++  const int size = std::swprintf(separator + 1, remaining, filename, GetCurrentProcessId());
++  if (size < 0 || static_cast<size_t>(size) >= remaining) { return false; }
++  static Writer writer;
++  writer.file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
++  if (writer.file == INVALID_HANDLE_VALUE) { return false; }
++  frequency = static_cast<uint64_t>(rate.QuadPart);
++  writer.role = role; writer.startTick = GetTickCount64();
++  writer.periodMs = periodMs < 1000 ? 1000 : periodMs > 60000 ? 60000 : periodMs;
++  enabled.store(true, std::memory_order_release);
++  HANDLE worker = CreateThread(nullptr, 0, Writer::run, &writer, 0, nullptr);
++  if (!worker) { enabled.store(false); CloseHandle(writer.file); return false; }
++  CloseHandle(worker);
++  return true;
++}
++static_assert(sizeof(apiNames) / sizeof(*apiNames) == kApis, "API name table");
++static_assert(sizeof(metricNames) / sizeof(*metricNames) == kMetrics, "metric name table");
++}
 diff --git a/bridge/src/util/ati_texture_layout.h b/bridge/src/util/ati_texture_layout.h
 new file mode 100644
 index 0000000..2a47a97
@@ -4863,7 +5815,7 @@ index e3722e6..d012e8e 100644
        auto logPath = RtxFileSys::path(RtxFileSys::Logs);
        logPath /= logName;
 diff --git a/bridge/src/util/meson.build b/bridge/src/util/meson.build
-index fb5d556..635e4f9 100644
+index fb5d556..906bb79 100644
 --- a/bridge/src/util/meson.build
 +++ b/bridge/src/util/meson.build
 @@ -1,3 +1,7 @@
@@ -4874,11 +5826,13 @@ index fb5d556..635e4f9 100644
  #############################################################################
  # Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
  #
-@@ -38,6 +42,13 @@ util_src = files([
+@@ -38,6 +42,15 @@ util_src = files([
  ])
  
  util_header = files([
 +  'adapter_information.h',
++  'api_wait_commands.h',
++  'api_wait_diagnostics.h',
 +  'ati_texture_layout.h',
 +  'overlay_input_diagnostics.h',
 +  'steam_activity_diagnostics.h',
@@ -5273,15 +6227,16 @@ index 0000000..a774273
 +}
 diff --git a/bridge/src/util/readback_transport.h b/bridge/src/util/readback_transport.h
 new file mode 100644
-index 0000000..aad69f1
+index 0000000..7a2737b
 --- /dev/null
 +++ b/bridge/src/util/readback_transport.h
-@@ -0,0 +1,117 @@
+@@ -0,0 +1,121 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
 +#pragma once
 +
++#include "api_wait_diagnostics.h"
 +#include <cstddef>
 +#include <cstdint>
 +#include <cwchar>
@@ -5387,7 +6342,10 @@ index 0000000..aad69f1
 +    std::memcpy(m_view, &pending, sizeof(pending));
 +    return S_OK;
 +  }
-+  DWORD wait(DWORD milliseconds) const { return WaitForSingleObject(m_event, milliseconds); }
++  DWORD wait(DWORD milliseconds) const {
++    l4d2_api_wait::Span apiRecoveryWaitTiming(l4d2_api_wait::Metric::ResourceWait);
++    return WaitForSingleObject(m_event, milliseconds);
++  }
 +  Response response() const {
 +    Response r; std::memcpy(&r, m_view, sizeof(r)); return r;
 +  }
@@ -5474,12 +6432,14 @@ index 0000000..c681909
 +};
 +}
 diff --git a/bridge/src/util/util_atomiccircularqueue.h b/bridge/src/util/util_atomiccircularqueue.h
-index 4be48da..18db8f4 100644
+index 4be48da..fb12332 100644
 --- a/bridge/src/util/util_atomiccircularqueue.h
 +++ b/bridge/src/util/util_atomiccircularqueue.h
-@@ -22,16 +22,22 @@
+@@ -21,17 +21,24 @@
+  */
  #pragma once
  
++#include "api_wait_diagnostics.h"
  #include "util_common.h"
 -
 -#include "../tracy/tracy.hpp"
@@ -5502,7 +6462,7 @@ index 4be48da..18db8f4 100644
  namespace bridge_util {
  
    // Intra/Inter-process thread safe, shared circular queue.
-@@ -41,9 +47,12 @@ namespace bridge_util {
+@@ -41,9 +48,12 @@ namespace bridge_util {
    class AtomicCircularQueue {
      std::atomic<uint32_t>* m_write;
      std::atomic<uint32_t>* m_read;
@@ -5516,7 +6476,7 @@ index 4be48da..18db8f4 100644
  
      const size_t m_queueSize;
  
-@@ -51,6 +60,42 @@ namespace bridge_util {
+@@ -51,6 +61,42 @@ namespace bridge_util {
      static const size_t kWriteAtomicOffset = 0;
      static const size_t kReadAtomicOffset = kAlignment + kWriteAtomicOffset;
      static const size_t kMemoryPoolOffset = kAlignment + kReadAtomicOffset;
@@ -5559,7 +6519,7 @@ index 4be48da..18db8f4 100644
  
    public:
      static size_t getExtraMemoryRequirements() {
-@@ -65,6 +110,12 @@ namespace bridge_util {
+@@ -65,6 +111,12 @@ namespace bridge_util {
        assert(memSize > kMemoryPoolOffset);
        assert(memSize - kMemoryPoolOffset >= queueSize * sizeof(T));
  
@@ -5572,7 +6532,7 @@ index 4be48da..18db8f4 100644
        // Writers own the memory, Readers are consumers
        if constexpr(IS_READER(Accessor)) {
          m_data = (T*) ((uintptr_t) pMemory + kMemoryPoolOffset);
-@@ -74,6 +125,8 @@ namespace bridge_util {
+@@ -74,6 +126,8 @@ namespace bridge_util {
          m_data = new((void*) ((uintptr_t) pMemory + kMemoryPoolOffset)) T[m_queueSize];
          m_write = new((void*) ((uintptr_t) pMemory + kWriteAtomicOffset)) std::atomic<uint32_t>(0);
          m_read = new((void*) ((uintptr_t) pMemory + kReadAtomicOffset)) std::atomic<uint32_t>(0);
@@ -5581,7 +6541,7 @@ index 4be48da..18db8f4 100644
        }
  
        assert(m_read->is_lock_free() && m_write->is_lock_free()); // Must be runtime check as it's CPU specific
-@@ -82,30 +135,42 @@ namespace bridge_util {
+@@ -82,30 +136,46 @@ namespace bridge_util {
      AtomicCircularQueue(const AtomicCircularQueue& q) = delete;
  
      ~AtomicCircularQueue() {
@@ -5595,11 +6555,13 @@ index 4be48da..18db8f4 100644
        ULONGLONG start = 0, curTick;
 +      ULONGLONG fullStart = 0;
 +      bool blocked = false;
++      l4d2_api_wait::Span apiFullTiming(l4d2_api_wait::Metric::CommandQueueWait, l4d2_api_wait::Api::Other, false);
        const DWORD timeoutMS = GlobalOptions::getCommandTimeout();
        do {
          const auto currentRead = m_read->load(std::memory_order_relaxed);
          const auto nextRead = queueIdxInc(currentRead);
          if (nextRead != m_write->load(std::memory_order_acquire)) {
++          apiFullTiming.finish();
            m_data[currentRead] = obj;
 -          // The store above is not atomic. Issue a membar after it to ensure
 -          // it is not reordered.
@@ -5615,6 +6577,7 @@ index 4be48da..18db8f4 100644
          }
  
 +        if (!blocked) {
++          apiFullTiming.start();
 +          fullStart = GetTickCount64();
 +          blocked = true;
 +        }
@@ -5624,11 +6587,12 @@ index 4be48da..18db8f4 100644
          start = start > 0 ? start : curTick;
        } while (timeoutMS == 0 || start + timeoutMS > curTick);
  
++      apiFullTiming.finish();
 +      if (blocked) { l4d2_queue::counters.blocked(GetTickCount64() - fullStart); }
        return Result::Failure;
      }
  
-@@ -117,7 +182,9 @@ namespace bridge_util {
+@@ -117,7 +187,9 @@ namespace bridge_util {
      // Returns a ref to the first element in the queue
      // Note: Blocks if the queue is empty
      const T& peek(Result& result, const DWORD timeoutMS = 0, std::atomic<bool>* const pbEarlyOutSignal = nullptr) const {
@@ -5639,7 +6603,7 @@ index 4be48da..18db8f4 100644
        do {
          const auto currentWrite = m_write->load(std::memory_order_relaxed);
          if (currentWrite != m_read->load(std::memory_order_acquire)) {
-@@ -127,16 +194,15 @@ namespace bridge_util {
+@@ -127,16 +199,15 @@ namespace bridge_util {
            return m_data[currentWrite];
          }
  
@@ -5661,7 +6625,7 @@ index 4be48da..18db8f4 100644
  
        result = Result::Timeout;
  
-@@ -145,29 +211,30 @@ namespace bridge_util {
+@@ -145,29 +216,30 @@ namespace bridge_util {
  
      // Returns a copy to the first element in queue, AND removes it
      // Note: Blocks if queue is empty
@@ -5703,13 +6667,96 @@ index 4be48da..18db8f4 100644
        return m_default;
      }
  
-@@ -214,4 +281,4 @@ namespace bridge_util {
+@@ -214,4 +286,4 @@ namespace bridge_util {
      }
    };
  
 -}
 \ No newline at end of file
 +}
+diff --git a/bridge/src/util/util_bridgecommand.cpp b/bridge/src/util/util_bridgecommand.cpp
+index a3bed63..85a40c8 100644
+--- a/bridge/src/util/util_bridgecommand.cpp
++++ b/bridge/src/util/util_bridgecommand.cpp
+@@ -74,8 +74,10 @@ DECL_BRIDGE_FUNC(void, syncDataQueue, size_t expectedMemUsage, bool posResetOnLa
+     const auto maxRetries = GlobalOptions::getCommandRetries();
+     size_t numRetries = 0;
+     Logger::warn("Waiting on server to process enough data from data queue to prevent overwrite...");
++    l4d2_api_wait::Span apiDataWaitTiming(l4d2_api_wait::Metric::DataQueueWait);
+     while (RESULT_FAILURE(s_pWriterChannel->dataSemaphore->wait()) && numRetries++ < maxRetries) {
+     }
++    apiDataWaitTiming.finish();
+     if (numRetries >= maxRetries) {
+       Logger::err("Max retries reached waiting on the server to process enough data to prevent a overwrite!");
+     }
+@@ -119,6 +121,9 @@ DECL_BRIDGE_FUNC(Header, pop_front) {
+   ZoneScoped;
+   Result result;
+   // No retries, but wait the same amount of time
++#ifdef REMIX_BRIDGE_CLIENT
++  l4d2_api_wait::Span apiResponseTiming(l4d2_api_wait::Metric::ResponseWait);
++#endif
+   const auto response = getReaderChannel().commands->pull(result, get_default_timeout());
+   if (RESULT_FAILURE(result)) {
+     // For now just log when things go wrong, but could use some robustness improvements
+@@ -128,6 +133,7 @@ DECL_BRIDGE_FUNC(Header, pop_front) {
+ }
+ 
+ DECL_BRIDGE_FUNC(bridge_util::Result, ensureQueueEmpty) {
++  l4d2_api_wait::Span apiDrainTiming(l4d2_api_wait::Metric::QueueDrain);
+   if (getReaderChannel().commands->isEmpty()) {
+     return bridge_util::Result::Success;
+   }
+@@ -153,6 +159,9 @@ DECL_BRIDGE_FUNC(bridge_util::Result, ensureQueueEmpty) {
+ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Command& command,
+                                                       DWORD overrideTimeoutMS,
+                                                       std::atomic<bool>* const pbEarlyOutSignal, bool verifyUID, UID uidToVerify) {
++#ifdef REMIX_BRIDGE_CLIENT
++  l4d2_api_wait::Span apiResponseTiming(l4d2_api_wait::Metric::ResponseWait);
++#endif
+   ZoneScoped;
+   DWORD peekTimeoutMS = overrideTimeoutMS > 0 ? overrideTimeoutMS : GlobalOptions::getCommandTimeout();
+   uint32_t maxAttempts = GlobalOptions::getCommandRetries();
+@@ -276,7 +285,10 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
+ #endif
+ 
+ #ifdef REMIX_BRIDGE_CLIENT
+-  s_pWriterChannel->m_mutex.lock();
++  {
++    l4d2_api_wait::Span apiMutexTiming(l4d2_api_wait::Metric::CommandMutexWait);
++    s_pWriterChannel->m_mutex.lock();
++  }
+ #endif
+ 
+   assert(!s_pWriterChannel->pbCmdInProgress->load());
+@@ -319,6 +331,7 @@ DECL_COMMAND_FUNC(,~Command) {
+     // was disabled externally by the server process exit callback.
+     do {
+       result = s_pWriterChannel->commands->push({ m_command, m_commandFlags, (uint32_t) s_pWriterChannel->data->get_pos(), m_handle });
++      if (RESULT_SUCCESS(result)) { l4d2_api_wait::queued(); }
+ #if defined(_DEBUG) || defined(DEBUGOPT)
+       if (GlobalOptions::getLogAllCommands()) {
+         Logger::info("Pushed: " + toString(m_command));
+diff --git a/bridge/src/util/util_bridgecommand.h b/bridge/src/util/util_bridgecommand.h
+index a555f8c..1156790 100644
+--- a/bridge/src/util/util_bridgecommand.h
++++ b/bridge/src/util/util_bridgecommand.h
+@@ -21,6 +21,7 @@
+  */
+ #pragma once
+ 
++#include "api_wait_diagnostics.h"
+ #include "config/global_options.h"
+ 
+ #include "util_common.h"
+@@ -328,6 +329,7 @@ public:
+     }
+ 
+   private:
++    l4d2_api_wait::Span m_submitTiming { l4d2_api_wait::Metric::Submit };
+     const Commands::D3D9Command m_command;
+     const uint32_t m_handle;
+     const Commands::Flags m_commandFlags;
 diff --git a/bridge/src/util/util_commands.h b/bridge/src/util/util_commands.h
 index e38f874..7aec831 100644
 --- a/bridge/src/util/util_commands.h
@@ -5797,6 +6844,34 @@ index 15915da..6571ee1 100644
    }
  };
  
+diff --git a/bridge/src/util/util_sharedheap.cpp b/bridge/src/util/util_sharedheap.cpp
+index 71c6695..3551a65 100644
+--- a/bridge/src/util/util_sharedheap.cpp
++++ b/bridge/src/util/util_sharedheap.cpp
+@@ -19,6 +19,7 @@
+  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  * DEALINGS IN THE SOFTWARE.
+  */
++#include "api_wait_diagnostics.h"
+ #include "util_sharedheap.h"
+ 
+ #include "util_bytes.h"
+@@ -222,6 +223,7 @@ SharedHeap::Instance::findAllocation(const size_t numChunks) {
+   if (bFirstAllocation) {
+     return createAllocation(0, numChunks);
+   } else {
++    l4d2_api_wait::Span apiHeapRetryTiming(l4d2_api_wait::Metric::SharedHeapRetry, l4d2_api_wait::Api::Other, false);
+     size_t nFailedIterations = 0;
+     bool bTimedOut = false;
+     const auto timeoutStart = GetTickCount64();
+@@ -230,6 +232,7 @@ SharedHeap::Instance::findAllocation(const size_t numChunks) {
+           isValidAllocation(alloc = findFreeOnEnd(numChunks))) {
+         break;
+       }
++      apiHeapRetryTiming.start();
+       if (nFailedIterations == 1) {
+         std::stringstream ss;
+         ss << "[SharedHeap][findAllocation] Unable to allocate ";
 diff --git a/bridge/src/util/util_texture_and_volume.h b/bridge/src/util/util_texture_and_volume.h
 index fe5045b..4a859fe 100644
 --- a/bridge/src/util/util_texture_and_volume.h

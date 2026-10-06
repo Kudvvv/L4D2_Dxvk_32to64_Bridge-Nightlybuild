@@ -173,6 +173,7 @@ if (mappable)
 - [PageBlock 诊断](docs/PAGEBLOCK-DIAGNOSTICS.md) · [learned retention 实现与历史实验](docs/LEARNED-RETENTION-EXPERIMENT.md)
 - [readback recovery 前置验证](docs/READBACK-RECOVERY-EXPERIMENT.md) · [DXVK/mem1 分配实验](docs/DXVK-MEMORY-EXPERIMENT.md)
 - [Host 内存诊断](docs/HOST-MEMORY-DIAGNOSTICS.md) · [GPU 分配诊断](docs/GPU-ALLOCATION-DIAGNOSTICS.md)
+- [地图加载 API / IPC 等待诊断](docs/API-WAIT-DIAGNOSTICS.md)：默认关闭，测量实际 API 调用线程、响应等待和队列背压，不推断 Source loading state 或 GPU 时间。
 - [x86/x64 实现与对照方法](docs/X86-HOST-COMPARISON.md) · [v1.0 首次验收](docs/FIRST-GAME-VALIDATION.md)
 - [v1.1 发布、升级与构建](docs/RELEASE-V1.1.md) · [测量证据](docs/V1.1-VALIDATION.md)
 
@@ -266,7 +267,7 @@ Normal gameplay works in this environment. An **approximately 20 FPS performance
 
 Steam Overlay/Shift+Tab is not supported/fixed. x64 can use substantially more Host memory; x86 has address-space limits. Performance varies, and every mod/map/plugin is not guaranteed compatible. Extreme D3D9 calls, resets, unusual overlays, DPI/window behavior and uncommon mod combinations have not been exhaustively tested. Retention is selective; recovery can wait on the backend or fail with conservative handling.
 
-Advanced documentation: [PageBlock](docs/PAGEBLOCK-DIAGNOSTICS.md), [learned retention](docs/LEARNED-RETENTION-EXPERIMENT.md), [readback recovery](docs/READBACK-RECOVERY-EXPERIMENT.md), [DXVK/mem1](docs/DXVK-MEMORY-EXPERIMENT.md), [Host memory](docs/HOST-MEMORY-DIAGNOSTICS.md), [GPU allocations](docs/GPU-ALLOCATION-DIAGNOSTICS.md), [x86/x64](docs/X86-HOST-COMPARISON.md), [v1.0 validation](docs/FIRST-GAME-VALIDATION.md) and [v1.1 release/build instructions](docs/RELEASE-V1.1.md). Diagnostic tests remain available but are not ordinary setup steps.
+Advanced documentation: [PageBlock](docs/PAGEBLOCK-DIAGNOSTICS.md), [learned retention](docs/LEARNED-RETENTION-EXPERIMENT.md), [readback recovery](docs/READBACK-RECOVERY-EXPERIMENT.md), [DXVK/mem1](docs/DXVK-MEMORY-EXPERIMENT.md), [Host memory](docs/HOST-MEMORY-DIAGNOSTICS.md), [GPU allocations](docs/GPU-ALLOCATION-DIAGNOSTICS.md), [API/IPC loading waits](docs/API-WAIT-DIAGNOSTICS.md), [x86/x64](docs/X86-HOST-COMPARISON.md), [v1.0 validation](docs/FIRST-GAME-VALIDATION.md) and [v1.1 release/build instructions](docs/RELEASE-V1.1.md). Diagnostic tests remain available but are not ordinary setup steps.
 
 Builds use a pinned upstream Bridge plus the [fork patch](patches/l4d2-bridge.patch), MSVC 14.29, Python 3.11, Meson 1.3.2 and Ninja 1.11.1.1. [CI](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/main/.github/workflows/build.yml) builds the client and both Hosts and runs native protocol/layout/memory/recovery tests; it does not run L4D2 on a real GPU.
 

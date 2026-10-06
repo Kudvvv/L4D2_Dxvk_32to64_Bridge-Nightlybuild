@@ -32,6 +32,7 @@ def package(source, dxvk, output, dxvk_x86=None):
     readback_output = output.parent / "l4d2-readback-experiment"
     retention_output = output.parent / "l4d2-retention-experiment"
     comparison_output = output.parent / "l4d2-x86-host-comparison"
+    api_wait_output = output.parent / "l4d2-api-wait-diagnostics"
     inputs = {
         "bin/dxvk_d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
         "bin/.l4d2bridge/L4D2Bridge64.exe": (source / "bridge/_compDebugOptimized_x64/src/server/L4D2Bridge64.exe", 0x8664),
@@ -52,7 +53,7 @@ def package(source, dxvk, output, dxvk_x86=None):
     for path, expected in {**inputs, **comparison_inputs}.values():
         if machine(path) != expected:
             raise ValueError(f"Wrong architecture: {path}")
-    destinations = [output, client_output, host_output, cpu_output, readback_output, retention_output, output.parent / "l4d2-overlay-input-experiment"]
+    destinations = [output, client_output, host_output, cpu_output, readback_output, retention_output, output.parent / "l4d2-overlay-input-experiment", api_wait_output]
     if comparison_inputs:
         host32 = comparison_inputs["bin/.l4d2bridge/L4D2Bridge32.exe"][0].read_bytes()
         pe_offset = struct.unpack_from("<I", host32, 60)[0]
@@ -206,6 +207,19 @@ def package(source, dxvk, output, dxvk_x86=None):
         "(../config/STEAM-INPUT-DIAGNOSTICS.conf)", "(STEAM-INPUT-DIAGNOSTICS.conf)")
     (overlay_output / "STEAM-INPUT-INVESTIGATION.md").write_text(steam_guide, encoding="utf-8")
     shutil.copy2(comparison_output / "BACKEND-SOURCES.json", output / "BACKEND-SOURCES.json")
+    api_wait_hashes = {}
+    for relative in ("bin/dxvk_d3d9.dll", host_relative, "bin/.l4d2bridge/L4D2Bridge32.exe"):
+        destination = api_wait_output / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(output / relative, destination)
+        api_wait_hashes[relative] = hashes[relative]
+    shutil.copy2(ROOT / "docs/API-WAIT-DIAGNOSTICS.md", api_wait_output / "API-WAIT-DIAGNOSTICS.md")
+    shutil.copy2(ROOT / "config/API-WAIT-DIAGNOSTICS.conf", api_wait_output / "API-WAIT-DIAGNOSTICS.conf")
+    shutil.copy2(ROOT / "scripts/analyze_api_wait.py", api_wait_output / "analyze_api_wait.py")
+    shutil.copytree(licenses, api_wait_output / "licenses")
+    for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
+        shutil.copy2(ROOT / filename, api_wait_output / filename)
+    (api_wait_output / "SHA256.json").write_text(json.dumps(api_wait_hashes, indent=2) + "\n")
     # Keep newly added validation links usable in standalone update packages.
     for destination in (readback_output, retention_output, comparison_output, overlay_output):
         shutil.copy2(ROOT / "docs/V1.1-VALIDATION.md", destination / "V1.1-VALIDATION.md")
@@ -221,6 +235,7 @@ def package(source, dxvk, output, dxvk_x86=None):
     print(f"CPU queue update: {cpu_output}; update both bridge binaries together")
     print(f"Forced readback experiment: {readback_output}; matching client/Host, no backend or configuration overwrite")
     print(f"Learned retention experiment: {retention_output}; matching client/Host, opt-in configuration snippet")
+    print(f"API wait diagnostics: {api_wait_output}; matching client and both Hosts, no backend or configuration overwrite")
 
 
 if __name__ == "__main__":
