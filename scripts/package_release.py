@@ -201,6 +201,10 @@ def package(source, dxvk, output, dxvk_x86=None):
     overlay_guide = (ROOT / "docs/OVERLAY-INPUT-EXPERIMENT.md").read_text(encoding="utf-8").replace("(../LICENSE)", "(LICENSE)").replace("(../THIRD_PARTY.md)", "(THIRD_PARTY.md)")
     (overlay_output / "OVERLAY-INPUT-EXPERIMENT.md").write_text(overlay_guide, encoding="utf-8")
     shutil.copy2(ROOT / "config/OVERLAY-INPUT.conf", overlay_output / "OVERLAY-INPUT.conf")
+    shutil.copy2(ROOT / "config/STEAM-INPUT-DIAGNOSTICS.conf", overlay_output / "STEAM-INPUT-DIAGNOSTICS.conf")
+    steam_guide = (ROOT / "docs/STEAM-INPUT-INVESTIGATION.md").read_text(encoding="utf-8").replace(
+        "(../config/STEAM-INPUT-DIAGNOSTICS.conf)", "(STEAM-INPUT-DIAGNOSTICS.conf)")
+    (overlay_output / "STEAM-INPUT-INVESTIGATION.md").write_text(steam_guide, encoding="utf-8")
     shutil.copy2(comparison_output / "BACKEND-SOURCES.json", output / "BACKEND-SOURCES.json")
     # Keep newly added validation links usable in standalone update packages.
     for destination in (readback_output, retention_output, comparison_output, overlay_output):

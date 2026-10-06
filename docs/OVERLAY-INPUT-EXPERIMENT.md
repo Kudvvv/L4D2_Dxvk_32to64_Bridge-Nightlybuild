@@ -1,5 +1,7 @@
 # v1.1 ReShade 输入修复 / Input fix and retained experiment notes
 
+**后续 Steam 调查：**新实机证据表明游戏请求可打开并显示 Steam，但输入/关闭失效。输入路径调查已重启；[诊断方法与当前证据](STEAM-INPUT-INVESTIGATION.md)。这不改变 v1.1 的支持范围。
+
 **v1.1 状态：**Windows 窗口模式、标准 x64 DXVK、Vulkan ReShade 6.0.1 的 Home / 公开接口开关已经过实机验证；功能仍按需启用，正常资源策略不变。完整 Steam Shift+Tab 实机不可用，v1.1 不支持/不继续修复。鼠标操作、长期运行、其他版本与 Reset 仍按各自验证范围判断。正常安装见 [README](../README.md)，下文保留实现、回退和实验方法。
 
 ## 安装与启用

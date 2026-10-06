@@ -20,7 +20,12 @@ int main(int argc, char** argv) {
   if (argc == 3 && std::string(argv[1]) == "--child") {
     const HWND parent = reinterpret_cast<HWND>(static_cast<uintptr_t>(std::strtoull(argv[2], nullptr, 10)));
     // Input is enabled to exercise the foreground-scoped hook and public ABI.
-    l4d2_overlay::Presenter presenter(true);
+    std::string diagnosticLog;
+    l4d2_overlay::InputDiagnostics disabled(false, "test", [&](const char* line) { diagnosticLog += line; });
+    disabled.message(WM_LBUTTONDOWN, 0); disabled.sample(parent, nullptr, false);
+    require(diagnosticLog.empty(), "diagnostics are inert by default");
+    l4d2_overlay::Presenter presenter(true, VK_HOME, false,
+      [&](const char* line) { diagnosticLog += line; diagnosticLog += "\n"; }, true);
     char modulePath[MAX_PATH] {}; require(GetModuleFileNameA(nullptr, modulePath, MAX_PATH) != 0, "test module path");
     std::string fakePath(modulePath); fakePath = fakePath.substr(0, fakePath.find_last_of("\\/")) + (sizeof(void*) == 8 ? "\\fake-x64.dll" : "\\fake-x86.dll");
     HMODULE fake = LoadLibraryA(fakePath.c_str()); require(fake != nullptr, "load API test double");
@@ -40,6 +45,19 @@ int main(int argc, char** argv) {
     require(GetParent(child) == parent, "presenter must remain inside game window");
     require(presenter.route(parent) == child && presenter.route(nullptr) == nullptr, "present override routing");
     require(enabled(child, false), "input initially passes through disabled child");
+    presenter.sampleInput();
+    require(diagnosticLog.find("event=modules role=host") != std::string::npos, "both-process module observation available");
+    require(diagnosticLog.find("presenter_pid=" + std::to_string(GetCurrentProcessId())) != std::string::npos,
+      "diagnostic identifies actual presenter owner");
+    require(diagnosticLog.find("enabled=0 capture=0") != std::string::npos, "disabled mouse target is observable");
+    require(diagnosticLog.find("local_gui_ok=") != std::string::npos, "host and foreground thread focus observed separately");
+    const std::string firstSample = diagnosticLog;
+    presenter.sampleInput(); require(diagnosticLog == firstSample, "diagnostic polling is throttled");
+    l4d2_overlay::InputDiagnostics counted(true, "test", [&](const char* line) { diagnosticLog += line; });
+    counted.message(WM_MOUSEMOVE, 0); counted.message(WM_KEYDOWN, VK_HOME); counted.message(WM_INPUT, 0);
+    counted.forwarded(); counted.sample(parent, child, false);
+    require(diagnosticLog.find("mouse=1 keyboard=1 raw=1 forward=1") != std::string::npos,
+      "count message classes without recording input contents");
     require(presenter.bindReShade(fake), "register documented API and overlay callback");
     auto rawToggle = GetProcAddress(fake, "TestToggleOverlay");
     bool (*toggle)(bool) = nullptr; std::memcpy(&toggle, &rawToggle, sizeof(toggle));
