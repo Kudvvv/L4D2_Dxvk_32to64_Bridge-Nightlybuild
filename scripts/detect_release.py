@@ -63,7 +63,7 @@ def pending():
     names = classify(commit, info["commit"]["committer"]["date"], recipe,
                      os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"])
     version = (Path(__file__).resolve().parents[1] / "VERSION").read_text().strip()
-    if not re.fullmatch(r"[0-9]+\.[0-9]+", version):
+    if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", version):
         raise ValueError("Invalid project version")
     identifier = "v" + version + "-" + names["release_tag"]
     names.update(release_tag=identifier, title="v" + version,

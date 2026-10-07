@@ -1,4 +1,4 @@
-项目版本从 **v1.0** 起，每次提交递增；当前版本见 [VERSION](VERSION)，维护者设置见 [版本规则](docs/VERSIONING.md)。
+项目版本从 **v1.0** 起，重大更新递增次版本号，小改动递增补丁号；当前版本见 [VERSION](VERSION)，维护者设置见 [版本规则](docs/VERSIONING.md)。
 
 # L4D2 Bridge Nightly
 
