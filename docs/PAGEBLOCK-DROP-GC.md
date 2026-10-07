@@ -42,7 +42,7 @@ client.testReadbackRecovery = False
 | aggressive | 忽略 learned 历史，驱逐所有无 game pointer、无 active Bridge use 且能确认 Host 内容的 backing |
 | force | 同样保留 game pointer；对可安全完成的 Bridge-owned 工作调用 drain，再确认 Host 并驱逐 idle backing |
 
-当前 surface payload copy 在 Unlock 内同步完成，所以生产代码没有可独立挂起的 PageBlock copy 任务。force 会在 residency gate 等待先前 Lock/Unlock 操作结束，并使用有序 Host ack；不会取消游戏的 Lock，也不引入 GPU-wide idle。底层 drain callback 扩展点用于已知可安全完成的 Bridge-only operation，测试覆盖该路径；不能把仍未完成的 transfer 硬改为 idle。没有可安全 drain 的 transfer 会报告 skippedTransferring。
+force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确认的 Host upload；缓存的 ack 不计一次新等待。当前 surface payload copy 在 Unlock 内同步完成，所以生产代码没有可独立挂起的 PageBlock copy 任务。force 会在 residency gate 等待先前 Lock/Unlock 操作结束，并使用有序 Host ack；不会取消游戏的 Lock，也不引入 GPU-wide idle。底层 drain callback 扩展点用于已知可安全完成的 Bridge-only operation，测试覆盖该路径；不能把仍未完成的 transfer 硬改为 idle。没有可安全 drain 的 transfer 会报告 skippedTransferring。
 
 尚未上传成功、upload copy 失败、Host ack 失败的 backing 保留并报告 `implementation-gap stage=host-ack`，不以 KEEP 历史为理由跳过。这个例外保护尚未能证明 Host 已持有正确内容的数据。
 
@@ -55,7 +55,7 @@ client.testReadbackRecovery = False
 - 不因为曾被访问而永久 KEEP，不使用 persistent DB。已有 learned 分类不阻止 drop/手动 aggressive。
 - 恢复失败：Lock 返回错误，增加计数，明确记录 Bridge 恢复限制；禁止静默用全零或旧数据继续。
 
-原 Phase 1 reference 比较和 learned 的 hash 验证、promotion、DB 格式保持原样。`client.testReadbackRecovery=True` 时禁用新驱逐／策略切换，以保留 ground truth。原 strict recovery 与新 residency recovery 的 operation 分别是 0/1 与 2/3，结构 ABI 大小不变；必须使用匹配 Host，旧 Host 不识别新操作。
+原 Phase 1 reference 比较和 learned 的 hash 验证、promotion、DB 格式保持原样。`client.testReadbackRecovery=True` 时禁用新驱逐／策略切换，以保留 ground truth。手动 learned 驱逐后的 miss 仍使用原 hash 验证和 promotion；aggressive/force/drop 恢复当前内容。原 strict recovery 与新 residency recovery 的 operation 分别是 0/1 与 2/3，结构 ABI 大小不变；必须使用匹配 Host，旧 Host 不识别新操作。
 
 ## 控制 ABI 与插件
 

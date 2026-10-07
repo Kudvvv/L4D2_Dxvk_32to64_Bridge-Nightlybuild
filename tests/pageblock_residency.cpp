@@ -131,6 +131,13 @@ int main() {
       && bytes[8] == backend.pixels[backend.pitch * 2]);
     bytes[4] = 0x66; assert(bytes[0] == backend.pixels[0] && bytes[8] == backend.pixels[backend.pitch * 2]);
     entry.lockedSuccessfully(); backing.release(0);
+    // Simulate the existing partial Host upload, then recover again and verify surrounding rows.
+    backend.pixels[backend.pitch] = 0x66;
+    entry.uploaded(12); entry.becameIdle(); assert(backing.recoveryMissing());
+    assert(entry.beforeLock(D3DLOCK_READONLY, RECT { 0, 0, 1, 3 }));
+    bytes = backing.acquire(12, 0); assert(bytes && bytes[4] == 0x66
+      && bytes[0] == backend.pixels[0] && bytes[8] == backend.pixels[backend.pitch * 2]);
+    entry.lockedSuccessfully(); backing.release(0);
   }
   {
     Context c; auto backend = makeBackend(desc); configure(c, backend, log);
@@ -142,6 +149,15 @@ int main() {
     c.referenceTest = false; entry.uploadFailed();
     const auto result = RunPageBlockGc(c, PageBlockGcMode::Aggressive);
     assert(result.pageBlocksSkippedUnsynchronized == 1 && backing.get() == pointer);
+  }
+  {
+    // No guessed layout or zero-fill when an acknowledged resource format is unsupported.
+    Context c; auto unsupported = desc; unsupported.Format = static_cast<D3DFORMAT>(0x31495441u);
+    auto backend = makeBackend(desc); backend.desc = unsupported; configure(c, backend, log); c.policy = Policy::Drop;
+    PagefileShadow backing; Entry entry(c, backing, 11, unsupported);
+    upload(entry, backing, 4096); entry.becameIdle(); assert(backing.recoveryMissing());
+    assert(!entry.beforeLock(D3DLOCK_READONLY, full) && backing.recoveryMissing() && c.reconstructionFailures == 1);
+    assert(c.policy == Policy::Drop); // A miss never promotes drop into KEEP.
   }
   assert(l4d2_memory::surfaceBackingBytes == baseline);
   assert(log.find("PB_GC mode=force") != std::string::npos && log.find("stage=reconstruction") != std::string::npos);

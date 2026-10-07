@@ -20,14 +20,14 @@ try {
   $arch = $Platform
   SetupVS -Platform $arch -VcVarsVer '14.29'
   $pointerBytes = if ($arch -eq 'x86') { 4 } else { 8 }
-    & cl.exe /nologo /std:c++17 /EHsc /W4 /WX "/DEXPECTED_POINTER_BYTES=$pointerBytes" "/I$source/bridge/src/server" "/I$source/bridge/src/client" "/I$source/bridge/src/util" "$repoRoot/tests/pageblock_residency.cpp" "/Fe:pageblock-$arch.exe" /link bcrypt.lib
-    if ($LASTEXITCODE -ne 0) { throw "PageBlock GC $arch compilation failed" }
-    & ".\pageblock-$arch.exe"
-    if ($LASTEXITCODE -ne 0) { throw "PageBlock GC $arch tests failed: $LASTEXITCODE" }
+  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX "/DEXPECTED_POINTER_BYTES=$pointerBytes" "/I$source/bridge/src/server" "/I$source/bridge/src/client" "/I$source/bridge/src/util" "$repoRoot/tests/pageblock_residency.cpp" "/Fe:pageblock-$arch.exe" /link bcrypt.lib
+  if ($LASTEXITCODE -ne 0) { throw "PageBlock GC $arch compilation failed" }
+  & ".\pageblock-$arch.exe"
+  if ($LASTEXITCODE -ne 0) { throw "PageBlock GC $arch tests failed: $LASTEXITCODE" }
   if ($arch -eq 'x86') {
-  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /wd4100 "/I$source/bridge/src/util" "$repoRoot/tests/l4n_plugin.cpp" /Fe:l4n-plugin-test.exe /link '/EXPORT:L4D2BridgePageBlockControl=_L4D2BridgePageBlockControl@8'
-  if ($LASTEXITCODE -ne 0) { throw 'L4N v2 test compilation failed' }
-  & ./l4n-plugin-test.exe (Join-Path $repoRoot '.deps/l4n-plugin/L4D2BridgePlugin.dll')
-  if ($LASTEXITCODE -ne 0) { throw "L4N v2 callback tests failed: $LASTEXITCODE" }
+    & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /wd4100 "/I$source/bridge/src/util" "$repoRoot/tests/l4n_plugin.cpp" /Fe:l4n-plugin-test.exe /link '/EXPORT:L4D2BridgePageBlockControl=_L4D2BridgePageBlockControl@8'
+    if ($LASTEXITCODE -ne 0) { throw 'L4N v2 test compilation failed' }
+    & ./l4n-plugin-test.exe (Join-Path $repoRoot '.deps/l4n-plugin/L4D2BridgePlugin.dll')
+    if ($LASTEXITCODE -ne 0) { throw "L4N v2 callback tests failed: $LASTEXITCODE" }
   }
 } finally { Pop-Location }
