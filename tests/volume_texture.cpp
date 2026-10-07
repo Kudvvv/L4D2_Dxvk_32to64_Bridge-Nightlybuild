@@ -126,6 +126,8 @@ int main() {
     require(!unsupported.lock(rejected,nullptr,0), "unsupported format must fail");
     Direct3DVolume9_LSS huge(D3DFMT_A8R8G8B8,0xffffffffu,0xffffffffu,8);
     require(!huge.lock(rejected,nullptr,0), "overflowing pitch must fail before allocation");
+    Direct3DVolume9_LSS hugeCompressed(D3DFMT_DXT1,0xffffffffu,0xffffffffu,8);
+    require(!hugeCompressed.lock(rejected,nullptr,0), "compressed dimension overflow must fail");
     Direct3DVolume9_LSS normal(D3DFMT_A8R8G8B8);
     const D3DBOX invalid {8,0,4,4,0,1};
     require(!normal.lock(rejected,&invalid,0), "invalid box must fail");

@@ -15,7 +15,7 @@ def prepare(source, output, negative_control=False):
         needle = "lockedVolume.RowPitch = static_cast<INT>(rowPitch);"
         if methods.count(needle) != 1:
             raise ValueError("Cannot create the old-pitch negative control")
-        methods = methods.replace(needle, "lockedVolume.RowPitch = rowStride;")
+        methods = methods.replace(needle, "lockedVolume.RowPitch = static_cast<INT>(rowStride);")
     notices = text[:text.index('#include "pch.h"')]
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(notices + methods, encoding="utf-8", newline="\n")

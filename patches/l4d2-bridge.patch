@@ -453,7 +453,7 @@ index 2a4b9e4..51de5d2 100644
      : Direct3DBaseTexture9_LSS(pDevice, desc) {
      m_children.resize(GetLevelCount());
 diff --git a/bridge/src/client/d3d9_volume.cpp b/bridge/src/client/d3d9_volume.cpp
-index 11704cf..115dea9 100644
+index 11704cf..2fc8826 100644
 --- a/bridge/src/client/d3d9_volume.cpp
 +++ b/bridge/src/client/d3d9_volume.cpp
 @@ -21,6 +21,7 @@
@@ -475,10 +475,12 @@ index 11704cf..115dea9 100644
    const auto [width, height, depth] = getBoxDimensions(box);
    const auto pixelsPerBlock = bridge_util::getBlockSize(m_desc.Format);
    const auto bytesPerPixel = bridge_util::getBytesFromFormat(m_desc.Format);
-+  if (!pixelsPerBlock || !bytesPerPixel) { return false; }
-   const auto rowStride = ((width + pixelsPerBlock - 1) / pixelsPerBlock);
-   const auto columnStride = ((height + pixelsPerBlock - 1) / pixelsPerBlock);
+-  const auto rowStride = ((width + pixelsPerBlock - 1) / pixelsPerBlock);
+-  const auto columnStride = ((height + pixelsPerBlock - 1) / pixelsPerBlock);
 -  const auto size = depth * columnStride * rowStride * bytesPerPixel;
++  if (!pixelsPerBlock || !bytesPerPixel) { return false; }
++  const auto rowStride = width / pixelsPerBlock + (width % pixelsPerBlock != 0);
++  const auto columnStride = height / pixelsPerBlock + (height % pixelsPerBlock != 0);
 +  const auto maxPitch = static_cast<size_t>((std::numeric_limits<INT>::max)());
 +  if (rowStride > maxPitch / bytesPerPixel) { return false; }
 +  const size_t rowPitch = rowStride * bytesPerPixel;
