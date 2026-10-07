@@ -32,7 +32,7 @@ def publish():
     upstream = os.environ["UPSTREAM_COMMIT"]
     recipe = os.environ["RECIPE_COMMIT"]
     notes = (
-        f"L4D2 Bridge Nightly\n\nUpstream commit: {upstream}\n"
+        f"L4D2 Bridge {os.environ.get('RELEASE_TITLE', tag)} Nightly\n\nUpstream commit: {upstream}\n"
         f"Build recipe: {recipe}\nRecipe digest: {os.environ['RECIPE_DIGEST']}\n\n"
         "包含 x86 客户端和配套 x64 Host；编译与原生测试通过，游戏验收尚待完成。\n\n"
         "- 完整包包含配置及固定 DXVK 后端，适合首次安装。\n"
@@ -48,11 +48,11 @@ def publish():
     Path("notes.md").write_text(notes, encoding="utf-8", newline="\n")
     if existing is None:
         subprocess.run(["gh", "release", "create", tag, "--target", recipe,
-                        "--title", tag, "--notes-file", "notes.md", "--prerelease", "--draft"], check=True)
+                        "--title", os.environ.get("RELEASE_TITLE", tag), "--notes-file", "notes.md", "--prerelease", "--draft"], check=True)
     # No --clobber: even draft assets must not be silently replaced.
     subprocess.run(["gh", "release", "upload", tag, *uploads], check=True)
     subprocess.run(["gh", "release", "edit", tag, "--draft=false", "--prerelease",
-                    "--title", tag, "--notes-file", "notes.md"], check=True)
+                    "--title", os.environ.get("RELEASE_TITLE", tag), "--notes-file", "notes.md"], check=True)
 
 
 if __name__ == "__main__":

@@ -27,6 +27,8 @@ def runtime_archive(source, output, update=False):
             destination=stage / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / name, destination)
+        if (source / "VERSION").is_file():
+            shutil.copy2(source / "VERSION", stage / "VERSION")
         instruction = (
             "更新包：首次安装请使用完整包。退出游戏及 Host，备份后同时更新根目录 d3d9.dll 和 bin/.l4d2bridge 中的 Host。\n"
             "本包不含配置或 DXVK 后端，保留已有配置、后端、ReShade 和 retention DB。\n"
