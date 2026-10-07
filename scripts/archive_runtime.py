@@ -9,8 +9,13 @@ REQUIRED = ("bin/dxvk_d3d9.dll", "bin/.l4d2bridge/L4D2Bridge64.exe",
             "bin/.l4d2bridge/d3d9vk_x64.dll", "bin/.l4d2bridge/bridge.conf",
             "LICENSE", "THIRD_PARTY.md")
 
-def runtime_archive(source, output):
-    for name in REQUIRED:
+def runtime_archive(source, output, update=False):
+    required = REQUIRED if not update else tuple(n for n in REQUIRED
+        if n not in ("bin/.l4d2bridge/d3d9vk_x64.dll", "bin/.l4d2bridge/bridge.conf"))
+    required += ("UPSTREAM.json",)
+    if output.exists():
+        raise FileExistsError(f"Archive already exists: {output}")
+    for name in required:
         if not (source / name).is_file():
             raise ValueError(f"Missing runtime package file: {name}")
     licenses = sorted((source / "licenses").glob("*.txt"))
@@ -18,13 +23,19 @@ def runtime_archive(source, output):
         raise ValueError("Missing third-party licenses")
     with tempfile.TemporaryDirectory() as temporary:
         stage=Path(temporary)
-        for name in REQUIRED + tuple(p.relative_to(source).as_posix() for p in licenses):
+        for name in required + tuple(p.relative_to(source).as_posix() for p in licenses):
             destination=stage / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / name, destination)
+        instruction = (
+            "更新包：首次安装请使用完整包。退出游戏及 Host，备份后同时更新客户端和 Host。\n"
+            "本包不含配置或 DXVK 后端，保留已有配置、后端、ReShade 和 retention DB。\n"
+            "故障回退时同时恢复旧客户端和 Host，不要混用。\n"
+            if update else
+            "完整包：退出游戏，将 bin 合并到游戏 bin，保留 .l4d2bridge 结构。\n"
+            "覆盖前备份；本包包含配置和后端，升级已有安装建议使用 update 包。\n")
         (stage / "README.txt").write_text(
-            "L4D2 Bridge Nightly\n\n"
-            "安装：退出游戏，将本包 bin 文件夹合并到游戏根目录的 bin 文件夹，保留 .l4d2bridge 目录结构。覆盖前备份原文件。\n"
+            "L4D2 Bridge Nightly\n\n" + instruction +
             "卸载：移除本包安装的文件，并恢复备份。\n\n"
             "版本、上游提交及构建记录：\n"
             "https://github.com/Kudvvv/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases\n"
@@ -36,5 +47,6 @@ if __name__ == "__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("source",type=Path)
     parser.add_argument("output",type=Path)
+    parser.add_argument("--update", action="store_true")
     args=parser.parse_args()
-    runtime_archive(args.source.resolve(),args.output.resolve())
+    runtime_archive(args.source.resolve(),args.output.resolve(),args.update)

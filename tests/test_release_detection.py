@@ -13,6 +13,7 @@ spec = importlib.util.spec_from_file_location("detect", Path(__file__).parents[1
 detect = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(detect)
 SHA = "a" * 40
+RECIPE = "b" * 64
 
 
 class HeadDetection(unittest.TestCase):
@@ -20,18 +21,16 @@ class HeadDetection(unittest.TestCase):
         calls = []
         def api(path):
             calls.append(path)
-            if "/releases?" in path:
-                return []
             if path == detect.UPSTREAM:
                 return {"default_branch": branch}
             if "/commits/" in path:
                 return {"sha": SHA, "commit": {"committer": {"date": "2026-10-05T00:00:00Z"}}}
             if failure:
                 raise HTTPError(path, failure, "failure", {}, None)
-            if existing is not None:
-                return existing
+            if "/releases?" in path:
+                return [] if existing is None else [dict(existing, tag_name="previous", body=existing.get("body", f"Upstream commit: {SHA}\nRecipe digest: {RECIPE}"))]
             raise HTTPError(path, 404, "missing", {}, None)
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": manual, "FORCE_REBUILD": str(force).lower()}), patch.object(detect, "api", api), patch.object(detect, "classify", return_value={"group":"untagged", "release_tag":"bridge-test"}):
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": manual, "FORCE_REBUILD": str(force).lower(), "GITHUB_RUN_ID":"123", "GITHUB_RUN_ATTEMPT":"1"}), patch.object(detect, "api", api), patch.object(detect, "recipe_digest", return_value=RECIPE):
             rows = detect.pending()
         return rows, calls
 
@@ -74,6 +73,25 @@ class HeadDetection(unittest.TestCase):
     def test_invalid_manual_input(self):
         with self.assertRaises(ValueError):
             self.run_case(manual="main; echo unsafe")
+
+    def test_same_upstream_changed_recipe_builds(self):
+        rows, _ = self.run_case(existing={"draft":False, "body": f"Upstream commit: {SHA}\nRecipe digest: {'c'*64}"})
+        self.assertEqual(rows[0]["recipe_digest"], RECIPE)
+
+    def test_old_release_without_recipe_does_not_skip(self):
+        self.assertTrue(self.run_case(existing={"draft":False,"body":f"Upstream commit: {SHA}"})[0])
+
+    def test_other_upstream_does_not_skip(self):
+        self.assertTrue(self.run_case(existing={"draft":False,"body":f"Upstream commit: {'d'*40}\nRecipe digest: {RECIPE}"})[0])
+
+    def test_match_on_second_page_skips(self):
+        release = {"draft":False,"tag_name":"match","body":f"Upstream commit: {SHA}\nRecipe digest: {RECIPE}"}
+        def api(path):
+            if path == detect.UPSTREAM: return {"default_branch":"main"}
+            if "/commits/" in path: return {"sha":SHA,"commit":{"committer":{"date":"2026-10-05T00:00:00Z"}}}
+            return [release] if path.endswith("page=2") else [{"draft":True,"body":""}]*100
+        with patch.dict(os.environ,{"GITHUB_REPOSITORY":"owner/repo","FORCE_REBUILD":"false","UPSTREAM_COMMIT":""}), patch.object(detect,"api",api), patch.object(detect,"recipe_digest",return_value=RECIPE):
+            self.assertEqual(detect.pending(),[])
 
 
 if __name__ == "__main__":

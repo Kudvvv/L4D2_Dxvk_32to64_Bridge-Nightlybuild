@@ -22,15 +22,17 @@ The workflow checks the upstream default branch (currently `main`) every hour at
 Under **Actions → Build latest upstream Bridge → Run workflow**:
 
 - Leave `upstream_commit` empty to follow the latest source, or enter a full 40-character SHA to select a commit.
-- Enable `force_rebuild` to recompile an already published commit and replace the assets for the same version. This option is disabled by default.
+- Enable `force_rebuild` to create a new independent build without replacing existing assets. This option is disabled by default.
 
-Versions use `nightly-YYYYMMDD-shortSHA`. The date is the upstream commit date (UTC), rather than the workflow execution date. Release notes link to the exact upstream commit and build configuration. Patch conflicts or compilation failures prevent publication.
+Deduplication checks both upstream SHA and a fingerprint of build/package/test inputs. Versions use `nightly-YYYYMMDD-upstreamSHA-rRecipeDigest-bRunID.Attempt`. Dates use upstream commit UTC time. Rebuilds and reruns have separate versions, preserving old assets. Release notes and packaged `UPSTREAM.json` record full identities. Patch, compile or test failures prevent publication.
 
 ## Download and installation
 
 Download the ZIP from [Releases](https://github.com/Kudvvv/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases). It contains only runtime files, a short installation guide, and license notices. A separate `.sha256` checksum file is provided.
 
-Exit the game and back up the original files. Merge the package's `bin` folder into the game's `bin` folder, preserving the `.l4d2bridge` directory structure. To uninstall, remove the files installed from this package and restore your backups.
+For first installation, exit the game, back up files and merge the full package's `bin` folder into the game's `bin`, preserving `.l4d2bridge`. The full package contains configuration and backend files and replaces them when overwritten.
+
+For an existing installation, prefer the `l4d2-bridge-update-*` ZIP. It updates the client and Host together, preserving configuration, DXVK, ReShade and the retention DB. Roll back the client and Host together. See [game validation and performance baselines](docs/GAME-VALIDATION.md); measured game results are still pending.
 
 Automated tests check compilation and diagnostic logic; they do not verify in-game compatibility.
 

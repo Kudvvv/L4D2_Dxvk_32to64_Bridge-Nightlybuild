@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.request
 
 from release_names import classify
+from build_identity import recipe_digest
 
 UPSTREAM = "repos/NVIDIAGameWorks/dxvk-remix"
 
@@ -42,35 +43,26 @@ def pending():
     commit = info["sha"]
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Invalid resolved upstream SHA")
+    recipe = recipe_digest()
     if not force:
-        local = "bridge-commit-" + commit
-        try:
-            existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{local}")
-        except urllib.error.HTTPError as error:
-            if error.code != 404:
-                raise
-        else:
-            if not existing["draft"]:
-                print(f"Already built upstream {branch}: {commit}")
-                return []
-        releases = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases?per_page=100")
-        for release in releases:
-            if not release["draft"] and f"Upstream commit: {commit}" in (release.get("body") or ""):
-                print(f"Already published upstream commit {commit} as {release['tag_name']}")
-                return []
-    names = classify(api, UPSTREAM, commit, info["commit"]["committer"]["date"])
-    if not force:
-        try:
-            existing = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{names['release_tag']}")
-        except urllib.error.HTTPError as error:
-            if error.code != 404:
-                raise
-        else:
-            if not existing["draft"]:
-                return []
+        page = 1
+        while True:
+            releases = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases?per_page=100&page={page}")
+            for release in releases:
+                lines = (release.get("body") or "").splitlines()
+                if (not release["draft"] and f"Upstream commit: {commit}" in lines
+                        and f"Recipe digest: {recipe}" in lines):
+                    print(f"Already published upstream and recipe as {release['tag_name']}")
+                    return []
+            if len(releases) < 100:
+                break
+            page += 1
     else:
         print(f"Force rebuild enabled for upstream {branch}: {commit}")
-    return [{"tag": names["group"], "commit": commit, "branch": branch, **names}]
+    names = classify(commit, info["commit"]["committer"]["date"], recipe,
+                     os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"])
+    return [{"tag": names["group"], "commit": commit, "branch": branch,
+             "recipe_digest": recipe, **names}]
 
 
 if __name__ == "__main__":

@@ -22,15 +22,19 @@
 在 **Actions → Build latest upstream Bridge → Run workflow** 中：
 
 - `upstream_commit` 留空跟随最新代码；填写完整 40 位 SHA 可指定提交。
-- 勾选 `force_rebuild` 可重新编译已发布的提交并覆盖同版本附件；默认关闭。
+- 勾选 `force_rebuild` 可强制编译并创建新的独立版本；已有版本和附件保留，默认关闭。
 
-版本名为 `nightly-YYYYMMDD-短提交号`，日期采用上游提交日期（UTC），不是运行日期。Release 说明提供实际上游提交和构建配置链接。补丁冲突或编译失败时不发布。
+去重同时检查上游提交和构建输入指纹；补丁、后端配置、脚本或测试更新会触发新构建。版本名为 `nightly-YYYYMMDD-上游短SHA-r输入指纹-b运行ID.重试号`，日期采用上游提交日期（UTC）。强制重建和重新运行均产生独立版本；旧附件不覆盖。Release 说明及包内 `UPSTREAM.json` 记录完整提交、输入指纹和构建实例。补丁冲突、编译或测试失败时不发布。
 
 ## 下载与安装
 
 从 [Releases](https://github.com/Kudvvv/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases) 下载 ZIP。安装包仅包含运行文件、简短说明及许可证，旁附 `.sha256` 校验文件。
 
-退出游戏，备份原文件，将包内 `bin` 合并到游戏目录的 `bin`，保留隐藏目录 `.l4d2bridge` 的结构。卸载时移除本包安装的文件并恢复备份。
+首次安装使用完整 ZIP：退出游戏，备份原文件，将包内 `bin` 合并到游戏目录的 `bin`，保留 `.l4d2bridge` 结构。完整包包含配置和后端，覆盖会替换原文件。
+
+升级已有安装优先使用 `l4d2-bridge-update-*` ZIP，它同时更新客户端与 Host，保留现有配置、DXVK、ReShade 和 DB。回退时同时恢复配对的客户端和 Host。卸载时移除本包安装的文件并恢复备份。
+
+[游戏验收与性能基线](docs/GAME-VALIDATION.md) 提供画面对比、连续换图、稳定性测试及进程采样工具。目前游戏实测结果仍待填写。
 
 自动测试验证编译和诊断逻辑，不代表已完成游戏实测。
 

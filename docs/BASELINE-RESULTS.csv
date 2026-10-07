@@ -1,0 +1,1 @@
+session,mode,release_tag,recipe_digest,backend_sha256,gpu,driver,game_build,map,scene,mods_config_hash,resolution,run,average_fps,p99_frame_time_ms,host_cpu_median_percent_machine,game_private_peak_bytes,host_private_peak_bytes,client_free_va_bytes,color_result,map_changes,minutes_played,exit_result,evidence_directory

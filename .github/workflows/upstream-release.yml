@@ -1,11 +1,23 @@
 name: Build latest upstream Bridge
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'patches/**'
+      - 'config/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'licenses/**'
+      - '.github/workflows/**'
+      - 'VERSION'
+      - 'LICENSE'
+      - 'THIRD_PARTY.md'
   schedule:
     - cron: '23 * * * *'
   workflow_dispatch:
     inputs:
       force_rebuild:
-        description: "强制重建：重新编译并覆盖已发布的同一版本附件"
+        description: "强制重建：创建独立版本，保留已有附件"
         required: false
         default: false
         type: boolean
@@ -31,7 +43,7 @@ jobs:
           python-version: '3.11'
       - id: detect
         run: |
-          python -m unittest discover -s tests -p "test_release*.py"
+          python -m unittest discover -s tests -p "test_*.py"
           python scripts/detect_release.py
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,6 +82,9 @@ jobs:
       - name: Test command queue wakeups and cross-process transport
         shell: powershell
         run: ./scripts/test_command_queue.ps1
+      - name: Test actual volume lock and upload code (x86 and x64)
+        shell: powershell
+        run: ./scripts/test_volume_texture.ps1
       - name: Record provenance and archive
         shell: pwsh
         env:
@@ -79,15 +94,23 @@ jobs:
           RECIPE_COMMIT: ${{ github.sha }}
           RELEASE_TITLE: ${{ matrix.title }}
           ARCHIVE_NAME: ${{ matrix.archive }}
+          UPDATE_ARCHIVE_NAME: ${{ matrix.update_archive }}
+          RECIPE_DIGEST: ${{ matrix.recipe_digest }}
+          RELEASE_TAG: ${{ matrix.release_tag }}
           BUILD_KIND: ${{ matrix.kind }}
           COMMITS_AFTER_TAG: ${{ matrix.distance }}
         run: |
-          $metadata = @{ upstream_tag = $env:UPSTREAM_TAG; upstream_branch = $env:UPSTREAM_BRANCH; build_kind = $env:BUILD_KIND; commits_after_tag = $env:COMMITS_AFTER_TAG; upstream_commit = $env:UPSTREAM_COMMIT; recipe_commit = $env:RECIPE_COMMIT; game_validation = 'Not performed; experimental build' }
+          $metadata = @{ release_tag = $env:RELEASE_TAG; upstream_branch = $env:UPSTREAM_BRANCH; upstream_commit = $env:UPSTREAM_COMMIT; recipe_commit = $env:RECIPE_COMMIT; recipe_digest = $env:RECIPE_DIGEST; build_run = $env:GITHUB_RUN_ID; build_attempt = $env:GITHUB_RUN_ATTEMPT; game_validation = 'Not performed; experimental build' }
           $metadata | ConvertTo-Json | Set-Content dist/l4d2-bridge/UPSTREAM.json -Encoding utf8
-          $archive = $env:ARCHIVE_NAME
-          python scripts/archive_runtime.py dist/l4d2-bridge $archive
-          if ($LASTEXITCODE -ne 0) { throw 'Archive failed' }
-          "$((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower())  $archive" | Set-Content "$archive.sha256" -Encoding ascii
+          foreach ($archive in @($env:ARCHIVE_NAME, $env:UPDATE_ARCHIVE_NAME)) {
+            if ($archive -eq $env:UPDATE_ARCHIVE_NAME) {
+              python scripts/archive_runtime.py dist/l4d2-bridge $archive --update
+            } else {
+              python scripts/archive_runtime.py dist/l4d2-bridge $archive
+            }
+            if ($LASTEXITCODE -ne 0) { throw 'Archive failed' }
+            "$((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower())  $archive" | Set-Content "$archive.sha256" -Encoding ascii
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.release_tag }}
@@ -97,7 +120,7 @@ jobs:
           if-no-files-found: error
   publish:
     needs: [detect, build]
-    if: ${{ always() && needs.detect.outputs.pending == 'true' }}
+    if: ${{ needs.detect.outputs.pending == 'true' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -106,6 +129,12 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - uses: actions/download-artifact@v4
         with:
           name: ${{ matrix.release_tag }}
@@ -119,17 +148,9 @@ jobs:
           UPSTREAM_BRANCH: ${{ matrix.branch }}
           UPSTREAM_COMMIT: ${{ matrix.commit }}
           RECIPE_COMMIT: ${{ github.sha }}
+          RECIPE_DIGEST: ${{ matrix.recipe_digest }}
           RELEASE_TITLE: ${{ matrix.title }}
           ARCHIVE_NAME: ${{ matrix.archive }}
           BUILD_KIND: ${{ matrix.kind }}
           COMMITS_AFTER_TAG: ${{ matrix.distance }}
-        run: |
-          printf 'L4D2 Bridge Nightly\n\nUpstream commit: %s\nBuild recipe: %s\n\n包含 x86 客户端与匹配的 x64 Host。DXVK 后端由 config/backend.json 独立固定。编译与诊断测试通过，尚未完成游戏实测。\n' "$UPSTREAM_COMMIT" "$RECIPE_COMMIT" > notes.md
-          printf '\n### 上游依据\n\n- 上游项目：[NVIDIA dxvk-remix](https://github.com/NVIDIAGameWorks/dxvk-remix)\n- 来源分支：`%s`\n- 实际构建提交：[`%s`](https://github.com/NVIDIAGameWorks/dxvk-remix/commit/%s)\n- 本仓库构建配置：[`%s`](https://github.com/%s/commit/%s)\n\nNightly 日期采用上游提交日期（UTC）。\n' "$UPSTREAM_BRANCH" "$UPSTREAM_COMMIT" "$UPSTREAM_COMMIT" "$RECIPE_COMMIT" "$GH_REPO" "$RECIPE_COMMIT" >> notes.md
-          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --target "$RECIPE_COMMIT" --title "$RELEASE_TITLE" --notes-file notes.md --prerelease --draft
-          fi
-          gh release upload "$RELEASE_TAG" assets/* --clobber
-          gh release edit "$RELEASE_TAG" --draft=false --prerelease --title "$RELEASE_TITLE" --notes-file notes.md
-
-
+        run: python scripts/publish_release.py
