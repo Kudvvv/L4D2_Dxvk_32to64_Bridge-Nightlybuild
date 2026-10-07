@@ -74,6 +74,44 @@ int main() {
     full.start(); testClock += 1000; full.finish(); full.finish();
   }
   require(queue.calls.load() == 1 && queue.ticks.load() == 1000, "actual full episode counts once even with explicit finish");
+  // Reproduce the actual upload nesting, including wait inside retention.
+  {
+    ApiScope api(Api::SurfaceUnlockRect);
+    { Span lock(Metric::DeviceMutex); testClock += 10; }
+    {
+      Span upload(Metric::UploadLocal); testClock += 20;
+      {
+        Span submit(Metric::Submit); testClock += 30;
+        { Span serialize(Metric::Serialize); testClock += 40; }
+        {
+          Span reserve(Metric::BlobReserve); testClock += 50;
+          { Span wait(Metric::DataQueueWait); testClock += 60; }
+        }
+        { Span copy(Metric::PayloadCopyHash); testClock += 70; }
+        { Span commit(Metric::BlobCommit); testClock += 80; }
+        { Span hashFinish(Metric::UploadLocal); testClock += 90; }
+      }
+    }
+    { Span release(Metric::ShadowRelease); testClock += 100; }
+    {
+      Span retention(Metric::Retention); testClock += 110;
+      { Span completion(Metric::ResourceWait); testClock += 120; }
+    }
+    testClock += 130;
+  }
+  auto& uploadRows = localStats->rows[static_cast<unsigned>(Api::SurfaceUnlockRect)];
+  uint64_t uploadPartition = 0;
+  for (unsigned i = 1; i < kMetrics; ++i) { uploadPartition += uploadRows[i].ticks.load(); }
+  require(uploadRows[0].ticks.load() == 910 && uploadPartition == 910,
+    "upload child phases partition the API wall time, including repeated metric nesting");
+  require(uploadRows[static_cast<unsigned>(Metric::Submit)].ticks.load() == 30
+    && uploadRows[static_cast<unsigned>(Metric::BlobReserve)].ticks.load() == 50
+    && uploadRows[static_cast<unsigned>(Metric::Retention)].ticks.load() == 110,
+    "serialization, copy and existing waits are excluded from their parent exclusive totals");
+  require(uploadRows[static_cast<unsigned>(Metric::UploadLocal)].ticks.load() == 110
+    && uploadRows[static_cast<unsigned>(Metric::PayloadCopy)].calls.load() == 0
+    && uploadRows[static_cast<unsigned>(Metric::PayloadCopyHash)].ticks.load() == 70,
+    "hashing copy is distinct from pure copy and upload-local counts exclusive setup/finish");
   require(commandApi(Commands::IDirect3DDevice9Ex_CreateTexture) == Api::CreateTexture
     && commandApi(Commands::IDirect3DSurface9_UnlockRect) == Api::SurfaceUnlockRect
     && commandApi(Commands::Bridge_TestReadbackRecovery) == Api::Readback, "resource wire command classification");
@@ -94,7 +132,9 @@ int main() {
   char output[24000] {}; DWORD length = 0;
   require(ReadFile(writer.file, output, sizeof(output) - 1, &length, nullptr) != FALSE, "read diagnostic snapshot");
   const std::string text(output, length);
-  require(text.find("queue_delay=unknown gpu_time=unknown") != std::string::npos
+  require(text.find("schema=2") != std::string::npos
+    && text.find("metric=payload_copy_hash") != std::string::npos
+    && text.find("queue_delay=unknown gpu_time=unknown") != std::string::npos
     && text.find("metric=server_response_wait") != std::string::npos
     && text.find("L4D2_API_WAIT_END snapshot=1") != std::string::npos, "complete snapshot with explicit limits and phase data");
   CloseHandle(writer.file); DeleteFileW(L"api-wait-test.log");

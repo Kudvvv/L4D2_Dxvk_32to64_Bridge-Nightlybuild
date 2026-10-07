@@ -1,6 +1,6 @@
 # 地图加载 D3D9 API / IPC 等待诊断
 
-这是默认关闭的诊断功能，用来判断加载期间的时间是否花在 Bridge 的资源 API、响应等待或队列背压上。它不识别 Source 地图事件，不实现异步加载，不改变 D3D9、PageBlock retention、Host 选择、IPC 协议、输入、ReShade 或渲染语义。尚无本功能的实机加载 benchmark；下面只有测量方法和实现事实。
+这是默认关闭的诊断功能，用来判断加载期间的时间是否花在 Bridge 的资源 API、响应等待或队列背压上。它不识别 Source 地图事件，不实现异步加载，不改变 D3D9、PageBlock retention、Host 选择、IPC 协议、输入、ReShade 或渲染语义。已有默认关闭、首版诊断和两端诊断的实机观察；它们不是受控性能 benchmark，也不是提速证明。当前版本进一步细分纹理上传的本地阶段。
 
 ## 安装与启用
 
@@ -62,14 +62,14 @@ python .\analyze_api_wait.py --client .\client.log --host .\host.log --begin-tic
 | metric / 字段 | 测量内容与限制 |
 |---|---|
 | `api` | Client 顶层已插桩 API wall time，Host 对应 command handler wall time。calls/total/avg/max/阈值桶均保留。不是 CPU usage 或 GPU time。 |
-| `ipc_submit` | 构造 Command → 销毁后提交/解锁的范围，含序列化及上传数据复制。exclusive `total_us` 去掉其内嵌的已测等待；不是纯 IPC syscall 开销。 |
+| `ipc_submit` | 构造 Command → 销毁后提交/解锁的范围，inclusive 包含序列化及上传数据复制。schema=2 的 exclusive `total_us` 去掉所有内嵌已测阶段（含复制、序列化及等待）；不是纯 IPC syscall 开销。 |
 | `server_response_wait` | Client 的 `waitForCommand` 和响应 `pop_front/pull` 调用范围，包含 UID 验证、现有重试/调度。调用可立即成功，wait calls 不等于阻塞次数；不包含 Host 空闲等下一条 command。 |
 | `data_queue_full_wait` | `syncDataQueue` 已触发覆盖风险时，原有 data semaphore 等待循环。是真实数据队列空间等待，不是从 API total 推算。 |
 | `command_queue_full_wait` | AtomicCircularQueue 已检测满后的等待区间，到空间可用或超时。calls 即实际 full episodes；一个 push 的多次检查不反复计数。它保留现有 yield/timeout/wake 行为。 |
-| `command_mutex_wait` | 已有 Client command 序列化 mutex 的 lock wall time。含无争用 lock 调用，不等于 Host response wait，不计入直接 Host wait。设备/其他未插桩 mutex 留在 unattributed。 |
+| `command_mutex_wait` | 已有 Client command 序列化 mutex 的 lock wall time。含无争用 lock 调用，不等于 Host response wait，不计入直接 Host wait。Surface UnlockRect 的设备锁由 `device_mutex_wait` 单独计时；其他未插桩 mutex 留在 unattributed。 |
 | `present_semaphore_wait` | Present 同步启用时已有 Present semaphore 范围；未启用则无该项，不为诊断打开它。 |
 | `resource_completion_wait` | PageBlock retention/readback 恢复路径的现有完成 event 等待。没有发起新的 readback、GPU flush 或 event 等待。 |
-| `shared_heap_retry` | SharedHeap 找不到块后原有重试/扩容范围，含本地 allocator work，不等同于 Host 或 GPU wait。PageBlock 映射/分配等未拆分工作留在 unattributed。 |
+| `shared_heap_retry` | SharedHeap 找不到块后原有重试/扩容范围，含本地 allocator work，不等同于 Host 或 GPU wait。Surface LockRect 的 shadow acquire 由 `shadow_acquire` 单独计时；其他未拆分工作留在 unattributed。 |
 | `queue_drain` | 既有 `ensureQueueEmpty` drain/poll 范围，可能含现有 Sleep。不是新增 sleep；不把它自动称为 GPU completion。 |
 | `backend_call` | Host 上现有 D3D9 backend 调用的 wall duration，可能包含 DXVK CPU work、内部等待或调度；**不是 GPU execution time**。不修改调用参数、返回值、顺序。 |
 | `unattributed` | 顶层 API/handler 内未落到显式 phase 的 wall time，包含本地工作、未测锁、调度和既有日志/内存诊断。不能直接称 `local_client_CPU_time`。 |
@@ -86,6 +86,41 @@ python .\analyze_api_wait.py --client .\client.log --host .\host.log --begin-tic
 Host 根据真实 command 分类。常见 TextureUnlockRect 的上传 command 是 **SurfaceUnlockRect**；Device Present/PresentEx 常走 **SwapChainPresent**。因此 Client/Host 同名次数不应强行一一匹配。`Readback` handler 计入 processing，其内部既有 helper 的调用拆分不包含在本次 main.cpp 的 45 个 backend 边界内。非目标 Device commands 归入 `Other`；不假装它们是纹理上传。
 
 线程快照同时显示 `inflight`、`active_api`、`active_metric` 和 `active_span_elapsed_us`。它们是近似即时状态，不是已经完成的调用总时长或 Source loading state。跨快照边界的长调用可能先完成 phase、后完成 API，导致短区间 phase totals 与 API total 暂时不匹配；需结合 active markers 和稳定后快照解释，不能强制凑成等式。实现保留最多 64 个 TID slots，超出记录 `dropped_threads`；非零时覆盖不完整，不作完整线程归因结论。Windows TID 复用会聚合到同一 TID。
+
+## 纹理上传细分（schema=2）
+
+保持上述两个诊断开关及周期，不需要新增配置。快照头中的 `schema=2` 用来确认新版生效。旧分析脚本也能识别新增 metric。正常游戏仍默认关闭。
+
+| metric | 实际边界与限制 |
+|---|---|
+| `device_mutex_wait` | Client Surface UnlockRect 内原设备 lockguard 的构造范围；包含立即成功及配置下的空操作，不是 GPU 等待。其他 API 的设备锁尚未覆盖。 |
+| `shadow_acquire` | Surface LockRect 的 `m_shadow.acquire`，包含现有映射/分配/预算逻辑；不是所有资源或所有映射系统调用的总计。 |
+| `shadow_release` | Surface UnlockRect 的原 `m_shadow.release` 与 `observeUnlock`。retention eviction 单独归入下面的阶段。 |
+| `retention_processing` | Surface 的 `beforeLock` / `uploaded` 原调用；包含 policy、hash 判断及可能的现有恢复/释放工作。其内已测 completion wait 单独扣除。 |
+| `upload_local` | Surface `sendDataToServer` 中不属于其内嵌 command/细分阶段的本地工作，例如布局、hash 初始化和清理；hash finish 单独嵌套同名计时。exclusive 总量不重复累计，inclusive 可能嵌套重叠。 |
+| `data_serialize` | 既有 `send_data` / `send_many` 调用，包含参数处理及 data queue push；对象重载也包含已有数据复制。exclusive 排除其内已测 queue wait。这项覆盖其他 command，不只纹理 metadata。 |
+| `blob_reserve` | 原 `begin_data_blob`，包括对齐计算、空间同步及 blob reservation；exclusive 排除内嵌 full wait。不是 PageBlock backing 分配。 |
+| `blob_commit` | 原 `end_data_blob` / `end_blob_push` 的本地范围；不等于 command 发布、Host 消费或 GPU 完成。 |
+| `payload_copy` | Surface 上传的一次行复制循环（包含循环/pitch 处理），或 ATI1/ATI2 的原 `copyRows`。不是 GPU copy。 |
+| `payload_copy_hash` | 原来交织进行 row hash 与 memcpy 的 Surface 上传循环。为保留原顺序，不拆成两遍；不能把它声称为纯复制或纯 hash 时间。 |
+
+每次传输计时一次，不对每行 memcpy/hash 调用 QPC，不新增文件 I/O、hash、resource copy、IPC 字段或同步。新增范围同样是 wall time，包含抢占和调度，不是纯 CPU 时间。backing acquire/释放不会因诊断更改 retention policy。
+
+**跨版本比较应使用 `api` wall time 或对应阶段的 inclusive 数据。** schema=1 的 `ipc_submit.total_us` 包含之前未细分的复制/序列化，schema=2 已扣掉这些子阶段；exclusive 数字下降不代表真实提速。对 schema=2 同一区间，非 `api` 各阶段的 exclusive totals 才能用来避免重复计时；不同进程仍不能相加。
+
+### 下一轮实机测量
+
+1. 完全退出游戏和 Host，将新诊断更新包的 `bin` 合并覆盖到游戏根目录。保留当前 mem1 / 官方 DXVK、Host 位数、MOD、retention 和其他配置。
+2. 沿用本页四项诊断配置。确认两端 enabled，且两份 `l4d2-api-wait-*.log` 头有 `schema=2`。
+3. 从新进程，沿用上一轮同地图/章节/入口加载。用秒表记录总加载时间及发白无响应的相对区间即可，例如“49.5 秒；9–23、29–38 秒无响应”。**不要求人工读取电脑时钟的精确秒数。** 没有可靠墙钟边界时，会按日志资源活动范围分析，并明确该范围不是 Source 加载事件。
+4. 可正常移动后再等至少两秒，正常退出并保存 Client、Host 两份 API-wait 日志、`bridge32.log`、`bridge64.log` 及当轮配置。Host memory / DXVK 日志已有则一并保留；无需其他进程采样或额外强制 readback。
+5. 本轮先判断上传本地阶段是否值得优化。诊断本身没有提速；若时长/帧率显著变化，记录并与关闭诊断的同配置对照，不能把计时变化当作优化成功。
+
+### 已有观察与本次选择的依据
+
+用户记录：默认关闭诊断的一轮约 50 秒；首轮 Client-only 诊断约 49 秒；两端启用的一轮 49.5 秒，发白区间 9–23 秒及 29–38 秒。不同轮次缓存状态及准确加载边界未受控，不能据此声称零诊断开销。
+
+两端完整日志覆盖约 102 秒进程会话，包含菜单、加载、运行和退出：Client 已测直接等待累计约 5.81 秒（response 4.71、queue full 0.67、resource completion 0.43），Host handler 13.59 秒。Client SurfaceUnlockRect wall time约 8.38 秒，首版 submit exclusive 约 5.68 秒，因此优先拆分上传本地阶段。**上述累计数字不是 49.5 秒加载区间专属数据，Client/Host 时间重叠，不能相加。** 现有测量不足以把 23 秒窗口发白归因于已测同步等待，也不足以排除其他 Bridge/引擎路径；不以此直接实施异步上传。
 
 ## 具体 timing points / 修改文件
 
@@ -108,7 +143,7 @@ Host 根据真实 command 分类。常见 TextureUnlockRect 的上传 command �
 
 CreateTexture 是否同步等 Host 取决于现有 `sendCreateFunctionServerResponses/sendAllServerResponses` 配置；诊断不改变它们。UnlockRect 主要提交原有上传 command/data，不因本次诊断自动等 GPU 上传完成；队列满或恢复 miss 等情况可产生真实等待。应以该次日志中的对应 wait metric 回答，而不是只看 API total。Create/Unlock/Update 的长尾从 call count、avg、lifetime max 与阈值桶判断；区间慢调用次数可由桶差值取得，区间精确 max 和百分位未实现。
 
-如果实际调用线程的已归因等待很小，只能说明**当前测量范围内**同步等待不是主要耗时证据；unattributed、未覆盖 API、文件读取、解析、DataCache、声音和模型等尚需分别检查。若等待显著，也先区分 response、队列背压、mutex 和恢复路径，重复受控测量后再决定是否值得异步化。没有本功能的实机日志之前，不提供优化结论或编造加载秒数。
+如果实际调用线程的已归因等待很小，只能说明**当前测量范围内**同步等待不是主要耗时证据；unattributed、未覆盖 API、文件读取、解析、DataCache、声音和模型等尚需分别检查。若等待显著，也先区分 response、队列背压、mutex 和恢复路径，重复受控测量后再决定是否值得异步化。新细分阶段尚待实机验证，不提供尚未测得的优化结论。
 
 新增诊断实现遵循项目 MIT License；NVIDIA Bridge、DXVK 和其他上游 notices 保持各自归属与许可证。
 

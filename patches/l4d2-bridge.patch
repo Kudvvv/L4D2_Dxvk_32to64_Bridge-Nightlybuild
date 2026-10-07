@@ -614,7 +614,7 @@ index 175430f..c8b0ed4 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
-index e54aec5..801e568 100644
+index e54aec5..9f78378 100644
 --- a/bridge/src/client/d3d9_surface.cpp
 +++ b/bridge/src/client/d3d9_surface.cpp
 @@ -1,3 +1,7 @@
@@ -725,15 +725,20 @@ index e54aec5..801e568 100644
    // Store locked rect pointer locally so we can copy the data on unlock
    {
      BRIDGE_PARENT_DEVICE_LOCKGUARD();
-@@ -148,6 +200,7 @@ HRESULT Direct3DSurface9_LSS::LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT*
+@@ -148,9 +200,12 @@ HRESULT Direct3DSurface9_LSS::LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT*
  }
  
  HRESULT Direct3DSurface9_LSS::UnlockRect() {
 +  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::SurfaceUnlockRect);
    LogFunctionCall();
    {
++    l4d2_api_wait::Span apiDeviceLockTiming(l4d2_api_wait::Metric::DeviceMutex);
      BRIDGE_PARENT_DEVICE_LOCKGUARD();
-@@ -205,8 +258,15 @@ HRESULT Direct3DSurface9_LSS::ReleaseDC(HDC hdc) {
++    apiDeviceLockTiming.finish();
+     unlock();
+   }
+   return S_OK;
+@@ -205,8 +260,15 @@ HRESULT Direct3DSurface9_LSS::ReleaseDC(HDC hdc) {
  bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, const DWORD& flags) {
    const RECT rect = resolveLockInfoRect(pRect, m_desc);
    lockedRect.Pitch = bridge_util::calcRowSize(m_desc.Width, m_desc.Format);
@@ -750,7 +755,7 @@ index e54aec5..801e568 100644
    if (m_bUseSharedHeap) {
      auto discardBufId = SharedHeap::kInvalidId;
      const bool bDiscard = (flags & D3DLOCK_DISCARD) != 0;
-@@ -220,18 +280,26 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
+@@ -220,18 +282,31 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
      lockedRect.pBits = getBufPtr(lockedRect.Pitch, rect);
      m_lockInfoQueue.push({ lockedRect, rect, flags, m_bufferId, discardBufId });
    } else {
@@ -760,14 +765,18 @@ index e54aec5..801e568 100644
 -      Logger::trace(format_string("Allocated a shadow for surface [%p] "
 -                                  "(size: %zd, total surface shadow size: %zd)",
 -                                  this, surfaceSize, g_totalSurfaceShadow));
--    }
 +    // NV-DXVK start: Missing contents are restored before publishing a client Lock pointer.
-+    if (m_retention && !m_retention->beforeLock(m_readbackMip, flags, rect)) { return false; }
++    {
++      l4d2_api_wait::Span apiRetentionTiming(l4d2_api_wait::Metric::Retention);
++      if (m_retention && !m_retention->beforeLock(m_readbackMip, flags, rect)) { return false; }
+     }
 +    // NV-DXVK end
 +    const bool fullOverwrite = rect.left == 0 && rect.top == 0
 +      && rect.right == static_cast<LONG>(m_desc.Width) && rect.bottom == static_cast<LONG>(m_desc.Height)
 +      && !l4d2_retention::requiresPreserve(flags, true);
++    l4d2_api_wait::Span apiShadowTiming(l4d2_api_wait::Metric::ShadowAcquire);
 +    auto* shadow = m_shadow.acquire(surfaceSize, surfaceShadowBudget(), fullOverwrite);
++    apiShadowTiming.finish();
 +    if (!shadow) { return false; }
 +    l4d2_memory::sample(false, "surface-mapped", l4d2_memory::Kind::Surface, surfaceSize,
 +      m_desc.Width, m_desc.Height, static_cast<unsigned>(m_desc.Format));
@@ -785,13 +794,16 @@ index e54aec5..801e568 100644
    }
    return true;
  }
-@@ -247,6 +315,25 @@ void Direct3DSurface9_LSS::unlock() {
+@@ -247,6 +322,29 @@ void Direct3DSurface9_LSS::unlock() {
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
      sendDataToServer(lockInfo);
    }
 +  if (!m_bUseSharedHeap) {
-+    m_shadow.release(surfaceShadowBudget());
-+    m_shadow.observeUnlock(lockInfo.flags);
++    {
++      l4d2_api_wait::Span apiShadowTiming(l4d2_api_wait::Metric::ShadowRelease);
++      m_shadow.release(surfaceShadowBudget());
++      m_shadow.observeUnlock(lockInfo.flags);
++    }
 +    // NV-DXVK start: Optional reference experiment completes before learned retention.
 +    if (!m_readbackAttempted && m_readbackTexture2D && m_readbackMip == 0
 +      && m_lockInfoQueue.empty() && !(lockInfo.flags & D3DLOCK_READONLY)
@@ -804,6 +816,7 @@ index e54aec5..801e568 100644
 +    if (m_retention && m_lockInfoQueue.empty() && !(lockInfo.flags & D3DLOCK_READONLY)) {
 +      const bool full = lockInfo.rect.left == 0 && lockInfo.rect.top == 0
 +        && lockInfo.rect.right == static_cast<LONG>(m_desc.Width) && lockInfo.rect.bottom == static_cast<LONG>(m_desc.Height);
++      l4d2_api_wait::Span apiRetentionTiming(l4d2_api_wait::Metric::Retention);
 +      m_retention->uploaded(m_readbackMip, full, m_uploadHash, m_uploadHashResult);
 +    }
 +    // NV-DXVK end
@@ -811,12 +824,13 @@ index e54aec5..801e568 100644
  }
  
  RECT Direct3DSurface9_LSS::resolveLockInfoRect(const RECT* const pRect, const D3DSURFACE_DESC& desc) {
-@@ -261,7 +348,48 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
+@@ -261,7 +359,51 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
    return ptr;
  }
  
 -void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
 +void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) {
++  l4d2_api_wait::Span apiUploadTiming(l4d2_api_wait::Metric::UploadLocal);
 +  // NV-DXVK start: ATI API pitch and compressed storage pitch are independent.
 +  l4d2_ati::Layout atiLayout;
 +  if (l4d2_ati::layout(m_desc.Width, m_desc.Height, m_desc.Format, atiLayout)) {
@@ -838,8 +852,10 @@ index e54aec5..801e568 100644
 +      } else {
 +        c.send_data(transfer.rowBytes);
 +        if (auto* blob = c.begin_data_blob(transfer.bytes)) {
++          l4d2_api_wait::Span apiCopyTiming(l4d2_api_wait::Metric::PayloadCopy);
 +          const bool copied = l4d2_ati::copyRows(blob, transfer.bytes, transfer.rowBytes,
 +            lockInfo.lockedRect.pBits, atiLayout.bytes - transfer.offset, atiLayout.storagePitch, transfer);
++          apiCopyTiming.finish();
 +          if (!copied) { Logger::err("L4D2 ATI upload failed: compressed range copy"); }
 +          c.end_data_blob();
 +        }
@@ -861,20 +877,27 @@ index e54aec5..801e568 100644
    const auto dataFlag = m_bUseSharedHeap ? Commands::FlagBits::DataInSharedHeap : 0;
    {
      ClientMessage c(Commands::IDirect3DSurface9_UnlockRect, getId(), dataFlag);
-@@ -278,10 +406,12 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -277,11 +419,19 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+       const size_t rowSize = bridge_util::calcRowSize(width, m_desc.Format);
        c.send_data(rowSize);
        if (auto* blobPacketPtr = c.begin_data_blob(totalSize)) {
++        // One timer per transfer; row hashing remains in the existing copy loop.
++        l4d2_api_wait::Span apiCopyTiming(hash ? l4d2_api_wait::Metric::PayloadCopyHash : l4d2_api_wait::Metric::PayloadCopy);
          FOR_EACH_RECT_ROW(lockInfo.lockedRect, height, m_desc.Format, {
 +          if (hash) { hash->add(ptr, rowSize); }
            memcpy(blobPacketPtr, ptr, rowSize);
            blobPacketPtr += rowSize;
          });
++        apiCopyTiming.finish();
          c.end_data_blob();
-+        if (hash) { m_uploadHashResult = hash->finish(m_uploadHash); }
++        if (hash) {
++          l4d2_api_wait::Span apiHashTiming(l4d2_api_wait::Metric::UploadLocal);
++          m_uploadHashResult = hash->finish(m_uploadHash);
++        }
        }
      }
    }
-@@ -296,4 +426,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -296,4 +446,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
  std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions(const RECT& rect) {
    return { rect.right  - rect.left,
             rect.bottom - rect.top  };
@@ -5455,10 +5478,10 @@ index 0000000..f85a675
 +}
 diff --git a/bridge/src/util/api_wait_diagnostics.h b/bridge/src/util/api_wait_diagnostics.h
 new file mode 100644
-index 0000000..d0a08d6
+index 0000000..6058922
 --- /dev/null
 +++ b/bridge/src/util/api_wait_diagnostics.h
-@@ -0,0 +1,254 @@
+@@ -0,0 +1,257 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -5488,11 +5511,14 @@ index 0000000..d0a08d6
 +};
 +enum class Metric : unsigned {
 +  Api, Unattributed, Submit, ResponseWait, DataQueueWait, CommandQueueWait, CommandMutexWait,
-+  PresentWait, SharedHeapRetry, ResourceWait, Backend, QueueDrain, Count
++  PresentWait, SharedHeapRetry, ResourceWait, Backend, QueueDrain, DeviceMutex, ShadowAcquire, ShadowRelease, Retention, UploadLocal,
++  Serialize, BlobReserve, BlobCommit, PayloadCopy, PayloadCopyHash, Count
 +};
 +inline constexpr const char* metricNames[] = {
 +  "api", "unattributed", "ipc_submit", "server_response_wait", "data_queue_full_wait", "command_queue_full_wait",
-+  "command_mutex_wait", "present_semaphore_wait", "shared_heap_retry", "resource_completion_wait", "backend_call", "queue_drain"
++  "command_mutex_wait", "present_semaphore_wait", "shared_heap_retry", "resource_completion_wait", "backend_call", "queue_drain",
++  "device_mutex_wait", "shadow_acquire", "shadow_release", "retention_processing", "upload_local",
++  "data_serialize", "blob_reserve", "blob_commit", "payload_copy", "payload_copy_hash"
 +};
 +inline constexpr unsigned kApis = static_cast<unsigned>(Api::Count), kMetrics = static_cast<unsigned>(Metric::Count);
 +inline constexpr unsigned kThreads = 64;
@@ -5631,7 +5657,7 @@ index 0000000..d0a08d6
 +    SYSTEMTIME time {}; GetLocalTime(&time);
 +    ++sequence;
 +    std::snprintf(line, sizeof(line),
-+      "L4D2_API_WAIT_SUMMARY snapshot=%llu role=%s pid=%lu time=%02u:%02u:%02u.%03u tick_ms=%llu interval_ms=%llu frequency=%llu commands=%llu dropped_threads=%llu counters=cumulative consistency=approximate queue_delay=unknown gpu_time=unknown summed_time=cumulative_thread_time_may_overlap\r\n",
++      "L4D2_API_WAIT_SUMMARY snapshot=%llu role=%s pid=%lu time=%02u:%02u:%02u.%03u tick_ms=%llu interval_ms=%llu frequency=%llu commands=%llu dropped_threads=%llu schema=2 counters=cumulative consistency=approximate queue_delay=unknown gpu_time=unknown summed_time=cumulative_thread_time_may_overlap\r\n",
 +      sequence, role, GetCurrentProcessId(), time.wHour, time.wMinute, time.wSecond, time.wMilliseconds,
 +      now, now - startTick, frequency, queuedCommands.load(std::memory_order_relaxed), droppedThreads.load(std::memory_order_relaxed));
 +    write(line);
@@ -6739,7 +6765,7 @@ index a3bed63..85a40c8 100644
        if (GlobalOptions::getLogAllCommands()) {
          Logger::info("Pushed: " + toString(m_command));
 diff --git a/bridge/src/util/util_bridgecommand.h b/bridge/src/util/util_bridgecommand.h
-index a555f8c..1156790 100644
+index a555f8c..c2e07d3 100644
 --- a/bridge/src/util/util_bridgecommand.h
 +++ b/bridge/src/util/util_bridgecommand.h
 @@ -21,6 +21,7 @@
@@ -6750,7 +6776,47 @@ index a555f8c..1156790 100644
  #include "config/global_options.h"
  
  #include "util_common.h"
-@@ -328,6 +329,7 @@ public:
+@@ -229,6 +230,7 @@ public:
+     ~Command();
+ 
+     inline void send_data(const DataT obj) {
++      l4d2_api_wait::Span apiDataTiming(l4d2_api_wait::Metric::Serialize);
+       ZoneScoped;
+       if (gbBridgeRunning) {
+         syncDataQueue(1, false);
+@@ -241,6 +243,7 @@ public:
+     }
+ 
+     inline void send_data(const DataT size, const void* obj) {
++      l4d2_api_wait::Span apiDataTiming(l4d2_api_wait::Metric::Serialize);
+       ZoneScoped;
+       if (gbBridgeRunning) {
+         size_t memUsed = (obj == nullptr) ? 1 : (align<size_t>(size, sizeof(DataT)) / sizeof(DataT)) + 1;
+@@ -255,6 +258,7 @@ public:
+ 
+     template<typename... Ts>
+     inline void send_many(const Ts... objs) {
++      l4d2_api_wait::Span apiDataTiming(l4d2_api_wait::Metric::Serialize);
+       ZoneScoped;
+       if (gbBridgeRunning) {
+         size_t count = sizeof...(Ts);
+@@ -268,6 +272,7 @@ public:
+     }
+ 
+     inline uint8_t* begin_data_blob(const size_t size) {
++      l4d2_api_wait::Span apiDataTiming(l4d2_api_wait::Metric::BlobReserve);
+       ZoneScoped;
+       uint8_t* blobPacketPtr = nullptr;
+       if (gbBridgeRunning) {
+@@ -283,6 +288,7 @@ public:
+     }
+ 
+     inline void end_data_blob() const {
++      l4d2_api_wait::Span apiDataTiming(l4d2_api_wait::Metric::BlobCommit);
+       ZoneScoped;
+       if (gbBridgeRunning) {
+         s_pWriterChannel->data->end_blob_push();
+@@ -328,6 +334,7 @@ public:
      }
  
    private:

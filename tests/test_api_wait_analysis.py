@@ -36,6 +36,13 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(result["rows"][0]["lifetime_max_us_at_end"], 250)
         self.assertEqual(result["direct_wait_path_total_us"], 0)
 
+    def test_new_upload_phases_remain_separate_from_direct_waits(self):
+        text = self.log.read_text().replace("metric=api", "metric=payload_copy_hash")
+        self.log.write_text(text)
+        result = analysis.report(self.log)
+        self.assertEqual(result["metric_totals_us"]["payload_copy_hash"], 300)
+        self.assertEqual(result["direct_wait_path_total_us"], 0)
+
     def test_outside_or_identical_boundaries_rejected(self):
         with self.assertRaises(ValueError):
             analysis.report(self.log, 0, 2000)
