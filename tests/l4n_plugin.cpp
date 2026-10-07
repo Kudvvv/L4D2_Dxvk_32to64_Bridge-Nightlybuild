@@ -9,7 +9,7 @@
 #include "../plugins/l4n/sdk/l4n_plugin.h"
 #include "pageblock_control.h"
 static l4d2_control::Request last;
-extern "C" __declspec(dllexport) HRESULT WINAPI L4D2BridgePageBlockControl(const l4d2_control::Request* request, l4d2_control::Response* response) {
+extern "C" HRESULT WINAPI L4D2BridgePageBlockControl(const l4d2_control::Request* request, l4d2_control::Response* response) {
   last = *request;
   *response = {}; response->policy = l4d2_control::Policy::LearnedAggressive;
   response->flags = 2; response->pageBlocks = 10; response->pageBlocksEvicted = 4;

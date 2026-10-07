@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+static_assert(sizeof(void*) == EXPECTED_POINTER_BYTES, "Native test must use the requested architecture");
 using namespace l4d2_residency;
 using namespace l4d2_readback;
 
