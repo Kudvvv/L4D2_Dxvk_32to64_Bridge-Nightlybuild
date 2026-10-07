@@ -28,7 +28,7 @@ Versions use `nightly-YYYYMMDD-shortSHA`. The date is the upstream commit date (
 
 ## Download and installation
 
-Download the ZIP from [Releases](https://github.com/YuuMJ/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases). It contains only runtime files, a short installation guide, and license notices. A separate `.sha256` checksum file is provided.
+Download the ZIP from [Releases](https://github.com/Kudvvv/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases). It contains only runtime files, a short installation guide, and license notices. A separate `.sha256` checksum file is provided.
 
 Exit the game and back up the original files. Merge the package's `bin` folder into the game's `bin` folder, preserving the `.l4d2bridge` directory structure. To uninstall, remove the files installed from this package and restore your backups.
 

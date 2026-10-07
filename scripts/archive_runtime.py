@@ -27,7 +27,7 @@ def runtime_archive(source, output):
             "安装：退出游戏，将本包 bin 文件夹合并到游戏根目录的 bin 文件夹，保留 .l4d2bridge 目录结构。覆盖前备份原文件。\n"
             "卸载：移除本包安装的文件，并恢复备份。\n\n"
             "版本、上游提交及构建记录：\n"
-            "https://github.com/YuuMJ/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases\n"
+            "https://github.com/Kudvvv/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases\n"
             "许可证与第三方来源见 LICENSE、THIRD_PARTY.md 和 licenses 文件夹。\n",
             encoding="utf-8")
         archive(stage, output)
