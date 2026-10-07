@@ -100,3 +100,32 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 - 无 Source 依赖的控制：`pageblock_control.cpp/.h`；L4N SDK v2 UI：`plugins/l4n/L4D2BridgePlugin.cpp`。
 
 以上 Bridge 源码在仓库中由 `patches/l4d2-bridge.patch` 保存，构建时应用到固定上游。新实现署名与第三方来源见 LICENSE / THIRD_PARTY.md；提供的 L4N SDK header 原样保留，不将其声称为项目原创或自行赋予 MIT 授权。
+
+## 本轮构建验证
+
+[Windows CI 37598250948](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/runs/37598250948) 在代码提交 `5951831` 全部通过：x86 Client、x64/x86 Host、x86 L4N plugin 编译；x86/x64 residency/GC 原生测试；SDK v2 HUD callback + mock 控制导出测试；既有 Phase 1、真实删除/hash恢复/DB promotion 回归；ATI、adapter、window/input、queue、API-wait 等现有原生检查。Linux 上逻辑布局测试和 6 项 Python 分析测试也通过。
+
+下载的实验产物已校验四个二进制 SHA256、PE 架构和命名导出；不包含替换用 backend 或活动 bridge.conf。没有在云环境执行 L4D2、真实 L4N HUD 或 GPU gameplay，仍待实机验证。
+
+## 仓库文件变更清单
+
+Bridge 的 17 个源码／构建文件修改由一个 patch 保存：Client surface/.def/summary、PagefileShadow、retention policy/runtime、residency/runtime/control；util control ABI、readback layout/transport、meson；Host readback backend/main。固定上游和版权不变。
+
+实际仓库文件：
+
+- `patches/l4d2-bridge.patch`
+- `plugins/l4n/L4D2BridgePlugin.cpp`
+- `plugins/l4n/sdk/l4n_plugin.h`
+- `scripts/build_l4n_plugin.ps1`
+- `scripts/test_pageblock_gc.ps1`
+- `scripts/package_pageblock_experiment.py`
+- `tests/pageblock_residency.cpp`
+- `tests/l4n_plugin.cpp`
+- `tests/readback_layout.cpp`
+- `tests/readback_recovery.cpp`
+- `.github/workflows/build.yml`
+- `config/PAGEBLOCK-DROP.conf`
+- `config/bridge.conf`（仅新增实验说明注释，默认值未改）
+- `docs/PAGEBLOCK-DROP-GC.md`
+- `README.md`（高级实验链接与 SDK credit）
+- `THIRD_PARTY.md`（提供的 SDK header 来源／许可证状态）
