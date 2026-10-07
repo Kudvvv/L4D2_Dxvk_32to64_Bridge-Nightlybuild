@@ -12,7 +12,7 @@ def prepare(source, output, negative_control=False):
     if methods.count("Direct3DVolume9_LSS::") != 4:
         raise ValueError("Volume methods changed; update the test harness")
     if negative_control:
-        needle = "lockedVolume.RowPitch = rowStride * bytesPerPixel;"
+        needle = "lockedVolume.RowPitch = static_cast<INT>(rowPitch);"
         if methods.count(needle) != 1:
             raise ValueError("Cannot create the old-pitch negative control")
         methods = methods.replace(needle, "lockedVolume.RowPitch = rowStride;")

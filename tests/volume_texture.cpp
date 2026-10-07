@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <queue>
+#include <limits>
 #include <stdexcept>
 #include <tuple>
 #include <vector>
@@ -19,6 +20,7 @@ uint32_t getBlockSize(D3DFORMAT f) { return f == D3DFMT_DXT1 || f == D3DFMT_DXT5
 uint32_t getBytesFromFormat(D3DFORMAT f) {
   if (f == D3DFMT_DXT1) return 8;
   if (f == D3DFMT_DXT5) return 16;
+  if (f == D3DFMT_UNKNOWN) return 0;
   require(f == D3DFMT_A8R8G8B8, "unsupported test format"); return 4;
 }
 }
@@ -52,8 +54,8 @@ class Direct3DVolume9_LSS {
   std::queue<LockInfo> m_lockInfoQueue;
   D3DVOLUME_DESC m_desc {};
 public:
-  explicit Direct3DVolume9_LSS(D3DFORMAT format) {
-    m_desc.Format = format; m_desc.Width = 32; m_desc.Height = 16; m_desc.Depth = 8;
+  explicit Direct3DVolume9_LSS(D3DFORMAT format, UINT width=32, UINT height=16, UINT depth=8) {
+    m_desc.Format = format; m_desc.Width = width; m_desc.Height = height; m_desc.Depth = depth;
   }
   uint32_t getId() const { return 7; }
   bool lock(D3DLOCKED_BOX&, const D3DBOX* const, const DWORD);
@@ -119,6 +121,14 @@ int main() {
       run(format, {0,0,1,1,0,1}, false, D3DLOCK_DISCARD);
       run(format, {0,0,4,4,0,2}, false, D3DLOCK_READONLY);
     }
+    D3DLOCKED_BOX rejected {};
+    Direct3DVolume9_LSS unsupported(D3DFMT_UNKNOWN);
+    require(!unsupported.lock(rejected,nullptr,0), "unsupported format must fail");
+    Direct3DVolume9_LSS huge(D3DFMT_A8R8G8B8,0xffffffffu,0xffffffffu,8);
+    require(!huge.lock(rejected,nullptr,0), "overflowing pitch must fail before allocation");
+    Direct3DVolume9_LSS normal(D3DFMT_A8R8G8B8);
+    const D3DBOX invalid {8,0,4,4,0,1};
+    require(!normal.lock(rejected,&invalid,0), "invalid box must fail");
     std::puts("PASS: actual volume lock/upload methods; byte pitches, LUT contents, compressed/partial/tiny volumes, readonly and wire fields");
     return 0;
   } catch (const std::exception& e) { std::fprintf(stderr,"%s\n",e.what()); return 1; }

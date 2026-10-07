@@ -453,22 +453,49 @@ index 2a4b9e4..51de5d2 100644
      : Direct3DBaseTexture9_LSS(pDevice, desc) {
      m_children.resize(GetLevelCount());
 diff --git a/bridge/src/client/d3d9_volume.cpp b/bridge/src/client/d3d9_volume.cpp
-index 11704cf..38460bb 100644
+index 11704cf..115dea9 100644
 --- a/bridge/src/client/d3d9_volume.cpp
 +++ b/bridge/src/client/d3d9_volume.cpp
-@@ -134,8 +134,9 @@ bool Direct3DVolume9_LSS::lock(D3DLOCKED_BOX& lockedVolume, const D3DBOX* const
+@@ -21,6 +21,7 @@
+  */
+ #include "pch.h"
+ #include "d3d9_volume.h"
++#include <limits>
+ 
+ #include "util_bridge_assert.h"
+ 
+@@ -127,15 +128,27 @@ HRESULT Direct3DVolume9_LSS::UnlockBox() {
+ 
+ bool Direct3DVolume9_LSS::lock(D3DLOCKED_BOX& lockedVolume, const D3DBOX* const pBox, const DWORD flags) {
+   const D3DBOX box = resolveLockInfoBox(pBox, m_desc);
++  if (box.Left >= box.Right || box.Top >= box.Bottom || box.Front >= box.Back
++      || box.Right > m_desc.Width || box.Bottom > m_desc.Height || box.Back > m_desc.Depth) {
++    return false;
++  }
+   const auto [width, height, depth] = getBoxDimensions(box);
+   const auto pixelsPerBlock = bridge_util::getBlockSize(m_desc.Format);
+   const auto bytesPerPixel = bridge_util::getBytesFromFormat(m_desc.Format);
++  if (!pixelsPerBlock || !bytesPerPixel) { return false; }
+   const auto rowStride = ((width + pixelsPerBlock - 1) / pixelsPerBlock);
    const auto columnStride = ((height + pixelsPerBlock - 1) / pixelsPerBlock);
-   const auto size = depth * columnStride * rowStride * bytesPerPixel;
+-  const auto size = depth * columnStride * rowStride * bytesPerPixel;
++  const auto maxPitch = static_cast<size_t>((std::numeric_limits<INT>::max)());
++  if (rowStride > maxPitch / bytesPerPixel) { return false; }
++  const size_t rowPitch = rowStride * bytesPerPixel;
++  if (columnStride > maxPitch / rowPitch) { return false; }
++  const size_t slicePitch = columnStride * rowPitch;
++  if (depth > (std::numeric_limits<size_t>::max)() / slicePitch) { return false; }
++  const size_t size = depth * slicePitch;
    void* const pData = new uint8_t[size];
 -  lockedVolume.RowPitch = rowStride;
 -  lockedVolume.SlicePitch = columnStride;
 +  // D3DLOCKED_BOX exposes byte strides, including for block-compressed data.
-+  lockedVolume.RowPitch = rowStride * bytesPerPixel;
-+  lockedVolume.SlicePitch = columnStride * lockedVolume.RowPitch;
++  lockedVolume.RowPitch = static_cast<INT>(rowPitch);
++  lockedVolume.SlicePitch = static_cast<INT>(slicePitch);
    lockedVolume.pBits = pData;
    m_lockInfoQueue.push({ lockedVolume, box, flags });
    return true;
-@@ -154,8 +155,11 @@ void Direct3DVolume9_LSS::unlock() {
+@@ -154,8 +167,11 @@ void Direct3DVolume9_LSS::unlock() {
    const auto& box = lockInfo.box;
    const auto [width, height, depth] = getBoxDimensions(box);
    const auto bytesPerPixel = bridge_util::getBytesFromFormat(m_desc.Format);
@@ -482,7 +509,7 @@ index 11704cf..38460bb 100644
  
    // Now send the box dimensions and surface handle
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
-@@ -165,12 +169,14 @@ void Direct3DVolume9_LSS::unlock() {
+@@ -165,12 +181,14 @@ void Direct3DVolume9_LSS::unlock() {
      c.send_data(lockInfo.flags);
  
      // Now push actual bytes
@@ -499,7 +526,7 @@ index 11704cf..38460bb 100644
            auto ptr = static_cast<uint8_t*>(lockedVolume.pBits) +
              y * lockedVolume.RowPitch + z * lockedVolume.SlicePitch;
  #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
-@@ -185,7 +191,7 @@ void Direct3DVolume9_LSS::unlock() {
+@@ -185,7 +203,7 @@ void Direct3DVolume9_LSS::unlock() {
      c.end_data_blob();
  #endif
    }
