@@ -15,12 +15,12 @@ python -m pip install meson==1.3.2 ninja==1.11.1.1
 
 ## 建立基线
 
-先备份游戏根目录 d3d9.dll、旧 bin/dxvk_d3d9.dll 及现有桥接配置。无桥基线使用同一 DXVK 发布包中的 x32/d3d9.dll 放游戏根目录，以 -insecure -windowed 启动（移除 -vulkan），确认菜单和官方地图正常。这个步骤验证驱动和 DXVK x86，不验证桥接。当前 Nightly 验收以 GAME-VALIDATION.md 为准。
+先备份游戏bin/d3d9.dll、旧 bin/dxvk_d3d9.dll 及现有桥接配置。无桥基线使用同一 DXVK 发布包中的 x32/d3d9.dll 放游戏根目录，以 -insecure -windowed 启动（移除 -vulkan），确认菜单和官方地图正常。这个步骤验证驱动和 DXVK x86，不验证桥接。当前 Nightly 验收以 GAME-VALIDATION.md 为准。
 
 ## 部署与验收
 
-1. 退出游戏，把完整包的 bin 目录内容复制到游戏 bin。不要与已有 TXVK 或 RTX Remix 桥混装；先保留它们的备份。根目录 d3d9.dll 安装方式的切换步骤见 README。
-2. 客户端 d3d9.dll 放游戏根目录，Host 与配置仍在 bin/.l4d2bridge；移除 -vulkan，使用 -insecure -windowed -console -condebug。需要 -vulkan 时自行改名客户端为 dxvk_d3d9.dll 并移到 bin，避免根目录同时保留本项目 d3d9.dll。
+1. 退出游戏，把完整包的 bin 目录内容复制到游戏 bin。不要与已有 TXVK 或 RTX Remix 桥混装；先保留它们的备份。bin/d3d9.dll 安装方式的切换步骤见 README。
+2. 客户端位于 bin/d3d9.dll，Host 与配置仍在 bin/.l4d2bridge；移除 -vulkan，使用 -insecure -windowed -console -condebug。需要 -vulkan 时自行改名客户端为 dxvk_d3d9.dll ，文件仍留在 bin。
 3. 检查 L4D2Bridge64.exe 是否启动，bridge64.log 是否出现 L4D2 backend、D3D9 interface object creation succeeded、L4D2 CreateDevice/result。后端路径应为 bin/.l4d2bridge/d3d9vk_x64.dll。
 4. 按菜单有效画面 → 官方地图 → 切换窗口 → 分辨率变化 → 正常退出的顺序测试。任何失败都保留两侧日志；不要把 Host 存在或设备创建成功当作渲染成功。
 5. 上游默认日志位于游戏工作目录的 rtx-remix/logs/bridge32.log、bridge64.log，DXVK 日志位置看启动输出。若未找到，搜索游戏目录下同名文件；不要预期 TXVK 的 RUN_OK.txt，本实验没有实现它。

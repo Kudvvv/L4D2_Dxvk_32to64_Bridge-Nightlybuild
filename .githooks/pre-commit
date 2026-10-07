@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+runtime=$(git config --get bridge.pythonPath || true)
+if [ -n "$runtime" ]; then
+  exec "$runtime" scripts/bump_version.py
+fi
+exec python scripts/bump_version.py

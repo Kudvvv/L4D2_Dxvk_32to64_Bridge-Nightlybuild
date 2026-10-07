@@ -8,7 +8,7 @@
 
 ## 安装与复测
 
-当前 Nightly 使用配对 update 包：关闭游戏及 Host，备份后同时更新根目录 d3d9.dll 与 bin/.l4d2bridge/L4D2Bridge64.exe，保留后端和 bridge.conf；默认移除 -vulkan。需要该启动项时自行改名客户端并移到 bin/dxvk_d3d9.dll。首次安装使用当前完整包。本文其他首次实测数据属于历史配置，不能视为当前 GPLALL 组合实测。保持 logLevel=Info、logApiCalls=False、logServerCommands=False。
+当前 Nightly 使用配对 update 包：关闭游戏及 Host，备份后同时更新bin/d3d9.dll 与 bin/.l4d2bridge/L4D2Bridge64.exe，保留后端和 bridge.conf；默认移除 -vulkan。需要该启动项时自行改名客户端并移到 bin/dxvk_d3d9.dll。首次安装使用当前完整包。本文其他首次实测数据属于历史配置，不能视为当前 GPLALL 组合实测。保持 logLevel=Info、logApiCalls=False、logServerCommands=False。
 
 从 Steam 用原来的 Mod 和同一地图再次进图。尝试正常游玩并退出后重新进图一次，检查贴图是否正常、是否崩溃及帧率。请提供 l4d2-memory.log、bridge32.log、bridge64.log，说明能否进图和实际表现；如有崩溃 dump 或报错窗口也一并提供。
 

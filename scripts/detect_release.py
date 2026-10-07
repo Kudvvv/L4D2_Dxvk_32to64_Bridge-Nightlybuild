@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.request
 
 from release_names import classify
+from pathlib import Path
 from build_identity import recipe_digest
 
 UPSTREAM = "repos/NVIDIAGameWorks/dxvk-remix"
@@ -61,6 +62,13 @@ def pending():
         print(f"Force rebuild enabled for upstream {branch}: {commit}")
     names = classify(commit, info["commit"]["committer"]["date"], recipe,
                      os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"])
+    version = (Path(__file__).resolve().parents[1] / "VERSION").read_text().strip()
+    if not re.fullmatch(r"[0-9]+\.[0-9]+", version):
+        raise ValueError("Invalid project version")
+    identifier = "v" + version + "-" + names["release_tag"]
+    names.update(release_tag=identifier, title="v" + version,
+                 archive="l4d2-bridge-" + identifier + ".zip",
+                 update_archive="l4d2-bridge-update-" + identifier + ".zip")
     return [{"tag": names["group"], "commit": commit, "branch": branch,
              "recipe_digest": recipe, **names}]
 

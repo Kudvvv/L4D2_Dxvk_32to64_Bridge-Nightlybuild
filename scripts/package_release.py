@@ -26,7 +26,7 @@ def machine(path):
 def package(source, dxvk, output):
     client_output = output.parent / "l4d2-client-only"
     inputs = {
-        "d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
+        "bin/d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
         "bin/.l4d2bridge/L4D2Bridge64.exe": (source / "bridge/_compDebugOptimized_x64/src/server/L4D2Bridge64.exe", 0x8664),
         "bin/.l4d2bridge/d3d9vk_x64.dll": (dxvk, 0x8664),
     }
@@ -74,7 +74,7 @@ def package(source, dxvk, output):
         shutil.copy2(ROOT / "licenses/DXVK-GPLALL-LICENSE.txt", licenses / "DXVK-GPLALL-LICENSE.txt")
     (output / "SHA256.json").write_text(json.dumps(hashes, indent=2) + "\n")
     (client_output / "bin").mkdir(parents=True, exist_ok=False)
-    shutil.copy2(output / "d3d9.dll", client_output / "d3d9.dll")
+    shutil.copy2(output / "bin/d3d9.dll", client_output / "bin/d3d9.dll")
     shutil.copy2(ROOT / "docs/MEMORY-DIAGNOSTICS.md", client_output / "MEMORY-DIAGNOSTICS.md")
     (client_output / "licenses").mkdir()
     for filename in ("Bridge-MIT.txt", "Bridge-third-party.txt"):
@@ -83,7 +83,7 @@ def package(source, dxvk, output):
     for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
         shutil.copy2(ROOT / filename, client_output / filename)
     (client_output / "SHA256.json").write_text(json.dumps({
-        "d3d9.dll": hashes["d3d9.dll"],
+        "bin/d3d9.dll": hashes["bin/d3d9.dll"],
     }, indent=2) + "\n")
     print(f"L4D2 D3D9 Bridge v{(ROOT / 'VERSION').read_text().strip()}: {output}")
     print(f"Client-only update: {client_output}; preserves the installed host and DXVK")

@@ -16,8 +16,9 @@ class Packaging(unittest.TestCase):
                 runtime_archive(source,output,update)
                 with zipfile.ZipFile(output) as z:
                     names=set(z.namelist())
-                    self.assertIn("d3d9.dll",names)
+                    self.assertIn("bin/d3d9.dll",names)
                     self.assertNotIn("bin/dxvk_d3d9.dll",names)
+                    self.assertNotIn("d3d9.dll",names)
                     self.assertIn("bin/.l4d2bridge/L4D2Bridge64.exe",names)
                     self.assertIn("UPSTREAM.json",names)
                     for name in ("bin/.l4d2bridge/d3d9vk_x64.dll","bin/.l4d2bridge/bridge.conf"):
