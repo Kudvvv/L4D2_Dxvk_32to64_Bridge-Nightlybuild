@@ -17,6 +17,27 @@ static bool enabled(HWND window, bool expected) {
   }
   return false;
 }
+// Prepare another foreground window in the simulated game process. Grant the
+// Host the permission Windows normally supplies with a user's activation click.
+static constexpr UINT kPrepareActivation = WM_APP + 41;
+static constexpr UINT kFinishActivation = WM_APP + 42;
+static HWND otherWindow = nullptr;
+static LRESULT CALLBACK parentProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+  if (message == kPrepareActivation) {
+    ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    otherWindow = CreateWindowW(L"STATIC", L"Other application test", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+      300, 0, 240, 120, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (!otherWindow || !SetForegroundWindow(otherWindow)
+      || !AllowSetForegroundWindow(static_cast<DWORD>(wParam))) { return 0; }
+    return reinterpret_cast<LRESULT>(otherWindow);
+  }
+  if (message == kFinishActivation) {
+    if (otherWindow) { DestroyWindow(otherWindow); otherWindow = nullptr; }
+    ShowWindow(hwnd, SW_HIDE);
+    return 0;
+  }
+  return DefWindowProcW(hwnd, message, wParam, lParam);
+}
 int main(int argc, char** argv) {
   if (argc == 3 && std::string(argv[1]) == "--child") {
     const HWND parent = reinterpret_cast<HWND>(static_cast<uintptr_t>(std::strtoull(argv[2], nullptr, 10)));
@@ -126,13 +147,29 @@ int main(int argc, char** argv) {
       Sleep(10);
     }
     require(resized, "presenter follows game client dimensions");
+    require(toggle(true) && enabled(child, true), "open ReShade for foreground return regression");
+    const HWND other = reinterpret_cast<HWND>(SendMessageW(parent, kPrepareActivation, GetCurrentProcessId(), 0));
+    require(other && GetForegroundWindow() == other, "another application owns foreground before click");
+    SendMessageW(child, WM_MOUSEMOVE, 0, 0);
+    require(GetForegroundWindow() == other, "mouse movement does not reactivate the background game");
+    const LRESULT activation = SendMessageW(child, WM_MOUSEACTIVATE, reinterpret_cast<WPARAM>(parent),
+      MAKELPARAM(HTCLIENT, WM_LBUTTONDOWN));
+    require(activation == MA_NOACTIVATE, "click preserves Host child no-activation policy");
+    // Foreground activation of a different thread can complete asynchronously.
+    SendMessageW(parent, WM_NULL, 0, 0);
+    require(GetForegroundWindow() == parent, "clicking captured presenter restores foreground to game root");
+    hostGui = {}; hostGui.cbSize = sizeof(hostGui);
+    require(GetGUIThreadInfo(GetWindowThreadProcessId(child, nullptr), &hostGui) != FALSE
+      && hostGui.hwndFocus != child, "click does not give keyboard focus to Host presenter");
+    require(toggle(false) && enabled(child, false), "ReShade closes and releases capture after reactivation");
+    SendMessageW(parent, kFinishActivation, 0, 0);
     presenter.stop(); require(!toggle(true), "callback unregistered on shutdown"); FreeLibrary(fake);
     presenter.stop(); require(!IsWindow(child), "presenter destruction and idempotent stop");
     std::printf("PASS: host-owned cross-process child, capture, reset routing, resizing and teardown (%zu-bit)\n", sizeof(void*) * 8);
     return 0;
   }
   require(argc == 2, "provide other architecture's test executable");
-  WNDCLASSW wc {}; wc.lpfnWndProc = DefWindowProcW; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"L4D2OverlayParentTest";
+  WNDCLASSW wc {}; wc.lpfnWndProc = parentProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"L4D2OverlayParentTest";
   require(RegisterClassW(&wc) != 0, "register simulated game window");
   HWND parent = CreateWindowW(wc.lpszClassName, L"L4D2 input compatibility test", WS_OVERLAPPEDWINDOW, 0, 0, 240, 120, nullptr, nullptr, wc.hInstance, nullptr);
   require(parent != nullptr, "create simulated game window");
