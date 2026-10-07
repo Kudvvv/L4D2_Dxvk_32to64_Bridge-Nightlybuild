@@ -33,6 +33,7 @@ def package(source, dxvk, output, dxvk_x86=None):
     retention_output = output.parent / "l4d2-retention-experiment"
     comparison_output = output.parent / "l4d2-x86-host-comparison"
     api_wait_output = output.parent / "l4d2-api-wait-diagnostics"
+    patch_output = output.parent / "l4d2-bridge-patch"
     inputs = {
         "bin/dxvk_d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
         "bin/.l4d2bridge/L4D2Bridge64.exe": (source / "bridge/_compDebugOptimized_x64/src/server/L4D2Bridge64.exe", 0x8664),
@@ -53,7 +54,7 @@ def package(source, dxvk, output, dxvk_x86=None):
     for path, expected in {**inputs, **comparison_inputs}.values():
         if machine(path) != expected:
             raise ValueError(f"Wrong architecture: {path}")
-    destinations = [output, client_output, host_output, cpu_output, readback_output, retention_output, output.parent / "l4d2-overlay-input-experiment", api_wait_output]
+    destinations = [output, client_output, host_output, cpu_output, readback_output, retention_output, output.parent / "l4d2-overlay-input-experiment", api_wait_output, patch_output]
     if comparison_inputs:
         host32 = comparison_inputs["bin/.l4d2bridge/L4D2Bridge32.exe"][0].read_bytes()
         pe_offset = struct.unpack_from("<I", host32, 60)[0]
@@ -234,6 +235,21 @@ def package(source, dxvk, output, dxvk_x86=None):
                 "(https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/main/README.md)",
             )
             guide.write_text(text, encoding="utf-8")
+    patch_hashes = {}
+    for relative in ("bin/dxvk_d3d9.dll", host_relative, "bin/.l4d2bridge/L4D2Bridge32.exe"):
+        destination = patch_output / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(output / relative, destination)
+        patch_hashes[relative] = hashes[relative]
+    for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
+        shutil.copy2(ROOT / filename, patch_output / filename)
+    shutil.copytree(licenses, patch_output / "licenses")
+    (patch_output / "docs").mkdir()
+    for guide in ("RELEASE-V1.1.1.md", "DXVK-MEMORY-EXPERIMENT.md"):
+        shutil.copy2(ROOT / "docs" / guide, patch_output / "docs" / guide)
+    shutil.copy2(ROOT / "docs/RELEASE-V1.1.1.md", patch_output / "PATCH-INSTRUCTIONS.md")
+    shutil.copy2(ROOT / "config/OVERLAY-INPUT.conf", patch_output / "OVERLAY-INPUT.conf")
+    (patch_output / "SHA256.json").write_text(json.dumps(patch_hashes, indent=2) + "\n")
     print(f"L4D2 D3D9 Bridge v{(ROOT / 'VERSION').read_text().strip()}: {output}")
     print(f"Client-only update: {client_output}; preserves the installed host and DXVK")
     print(f"Host diagnostics update: {host_output}; preserves the installed client, DXVK and configuration")

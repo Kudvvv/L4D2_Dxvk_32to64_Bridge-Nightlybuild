@@ -44,7 +44,7 @@
 
 TXVK（https://github.com/tianxiaols/TXVK，作者 tianxiaols）的公开文档、配置和发布二进制用于静态行为分析与实现思路参考。本项目没有恢复或复制其完整定制源码，不分发其客户端、Host 或定制 DXVK 二进制，也不声称拥有其原始代码。
 
-TXVK 自身的 [LICENSE](https://github.com/tianxiaols/TXVK/blob/main/LICENSE) 为 MIT，保留其 `Copyright (c) 2026 TXVK contributors` 归属。它随附的 Bridge、DXVK、Detours 仍遵循相应上游许可；参考 TXVK 不会将这些代码的版权归到本项目名下。
+TXVK 的跨进程桥思路提供了早期启发，感谢 tianxiaols / TXVK contributors。当前公开仓库的 [LICENSE](https://github.com/tianxiaols/TXVK/blob/main/LICENSE) 明确标注项目自身闭源、© 2026 TXVK contributors、保留所有权利；本项目不再将其标为 MIT 项目，也不从公开下载推定复制或再分发授权。上述参考是历史事实，不代表继续分析新版闭源实现。本项目实际构建来源是 NVIDIA RTX Remix Bridge、官方 DXVK 及分别列出的获授权组件；它们各自的版权与许可证不因 TXVK 的发布方式而改变。
 
 L4D2 与 Steam 属于 Valve，游戏及平台不包含在本项目的授权范围内。显卡驱动亦遵循各厂商自己的许可。
 

@@ -1,6 +1,6 @@
-# L4D2 DXVK Bridge — v1.1
+# L4D2 DXVK Bridge — v1.1.1
 
-[中文](#chinese) | [English](#english) · [v1.1 发布说明 / Release notes](docs/RELEASE-V1.1.md)
+[中文](#chinese) | [English](#english) · [v1.1.1 补丁说明 / Patch notes](docs/RELEASE-V1.1.1.md) · [v1.1 更新 / v1.1 changes](docs/RELEASE-V1.1.md)
 
 <a id="chinese"></a>
 
@@ -8,13 +8,15 @@
 
 在 Windows《Left 4 Dead 2》的 **32 位游戏进程**中接收 D3D9 调用，再通过共享内存和命令队列交给独立 Bridge Host，由 DXVK 转为 Vulkan 渲染。可选 **x64 或 x86 Host**；游戏引擎本身仍是 32 位。x64 模式提供更大的渲染端地址空间，v1.1 的客户端资源保留策略减少不必要的 CPU 副本。
 
-v1.1 是当前已实机测试并由作者确认的稳定版本，已测试配置没有已知的发布阻断问题；这不表示所有设备、Mod 或场景都没有问题。项目没有显卡厂商白名单，不要求 NVIDIA/RTX。当前参考 GPU 为 Intel Arc B580，其他 GPU/驱动需按实际兼容性验证。
+v1.1.1 是当前已实机测试并由作者确认的稳定版本，已测试配置没有已知的发布阻断问题；这不表示所有设备、Mod 或场景都没有问题。项目没有显卡厂商白名单，不要求 NVIDIA/RTX。当前参考 GPU 为 Intel Arc B580，其他 GPU/驱动需按实际兼容性验证。
+
+v1.1.1 主要修复 ReShade 点击返回游戏的激活路径。已有安装推荐使用补丁包：只更新客户端和两种 Host，保留 DXVK、配置及 retention DB。ReShade 仍按需启用，Steam Overlay 输入仍不支持；加载诊断默认关闭，没有加载提速承诺。
 
 ## 快速开始
 
 需要 **64 位 Windows 10/11**、Steam 版 L4D2，以及能运行所选 DXVK 的 Vulkan 显卡/驱动。首次使用窗口模式。
 
-1. 下载 v1.1 完整发布包，或 [成功的 v1.1 Actions 构建](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/workflows/build.yml) 中的 **`l4d2-bridge-v1.1`** artifact。核对包内 `VERSION` 为 `1.1`；旧构建不是 v1.1。更新已有安装时先备份客户端、整个 `.l4d2bridge` 目录和 Steam 启动选项。
+1. 下载 v1.1.1 完整发布包，或 [成功的 Actions 构建](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/workflows/build.yml) 中的 **`l4d2-bridge-v1.1.1`** artifact。核对包内 `VERSION` 为 `1.1.1`。更新已有安装时先备份客户端、整个 `.l4d2bridge` 目录和 Steam 启动选项。
 2. 关闭游戏及所有桥进程，将包内 `bin` 合并到游戏根目录。首次安装使用包内 `bridge.conf`；升级时手动合并配置，保留已有 DXVK、ReShade 和 retention DB。完整包带官方后端，直接覆盖会替换你的定制后端。
 3. 本项目使用 `bin/dxvk_d3d9.dll` 加载路径。如果原来在游戏根目录安装了 DXVK `d3d9.dll`，先备份并改名为 `d3d9.dll.before-bridge`，避免加载链混用。不要修改 Windows 系统 DLL。
 4. Steam → L4D2 → 属性 → 启动选项，使用：
@@ -105,7 +107,7 @@ client.DirectInput.forward.mousePolicy = 0
 client.DirectInput.forward.keyboardPolicy = 0
 ```
 
-保持窗口模式。Home 打开/关闭界面；公开开关事件协调输入捕获，不需要默认启用热键状态猜测。Home 重复开关已通过，鼠标操作、不同 ReShade 版本及 x86 ReShade 组合的验证范围不同，不能自动推广。Shader 包也要兼容所选 ReShade 版本。细节见 [输入实现与实测记录](docs/OVERLAY-INPUT-EXPERIMENT.md)。**Steam Shift+Tab 完整叠加层仍不可用，不属于 v1.1 已修复功能。**
+保持窗口模式。Home 打开/关闭界面；公开开关事件协调输入捕获，不需要默认启用热键状态猜测。Home 重复开关已通过；v1.1.1 修复面板打开时切到其他程序、再点击游戏画面无法重新激活的问题，作者确认补丁实机正常运行。不同 ReShade 版本及 x86 ReShade 组合不能自动视为均已验证。Shader 包也要兼容所选 ReShade 版本。细节见 [输入实现与实测记录](docs/OVERLAY-INPUT-EXPERIMENT.md)。**Steam Shift+Tab 完整叠加层仍不可用，不属于 v1.1 已修复功能。**
 
 ### 恢复推荐设置 / 卸载
 
@@ -187,13 +189,15 @@ if (mappable)
 
 A Windows L4D2 bridge forwards D3D9 calls from the **32-bit game** to a separate **x64 or x86 Host**, where DXVK renders through Vulkan. x64 provides more renderer address-space headroom; the game engine remains 32-bit. There is no GPU-vendor whitelist or RTX requirement.
 
-**v1.1 is the current author-confirmed, hardware-tested stable configuration**, with no known release-blocking issue in the tested configuration. This is not a bug-free or universal compatibility claim. Intel Arc B580 is the reference GPU.
+**v1.1.1 is the current author-confirmed, hardware-tested stable configuration**, with no known release-blocking issue in the tested configuration. This is not a bug-free or universal compatibility claim. Intel Arc B580 is the reference GPU.
+
+v1.1.1 fixes click-to-reactivate when returning to an open ReShade overlay. Existing installations should use the three-binary patch to preserve their backend, configuration and retention DB. Optional input and diagnostics remain off by default; Steam Overlay input is still unsupported.
 
 ## Quick Start
 
 Requires 64-bit Windows 10/11, Steam L4D2 and a Vulkan-capable GPU/driver compatible with your chosen DXVK. Start windowed.
 
-1. Obtain the complete v1.1 release package or **`l4d2-bridge-v1.1`** from a [successful v1.1 build](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/workflows/build.yml); verify `VERSION` is `1.1`. Back up the client, `bin/.l4d2bridge/` and Steam launch options.
+1. Obtain the complete v1.1.1 release package or **`l4d2-bridge-v1.1.1`** from a [successful build](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/workflows/build.yml); verify `VERSION` is `1.1.1`. Back up the client, `bin/.l4d2bridge/` and Steam launch options.
 2. Exit the game and hosts, then merge the supplied `bin` into the game directory, using the layout above. For an upgrade, preserve custom DXVK/ReShade settings and the retention DB, and merge configuration manually. The full package includes official backends and can overwrite a custom backend.
 3. If using root-directory DXVK `d3d9.dll`, back it up and rename it to `d3d9.dll.before-bridge`. This project uses `bin/dxvk_d3d9.dll`, which must remain the **Bridge x86 client**, not an ordinary DXVK DLL. Never alter Windows system DLLs.
 4. Set Steam launch options to `-vulkan -insecure -windowed`. Add `-console -condebug` only if console logs are needed. This selects the game's DXVK-named D3D9 loader and non-VAC-secure mode; restore the original installation for VAC-secure play.
@@ -283,7 +287,7 @@ Builds use a pinned upstream Bridge plus the [fork patch](patches/l4d2-bridge.pa
 | [DXVK](https://github.com/doitsujin/dxvk) | Philip Rebohle, Joshua Ashton, Robin Kertels, Jeffrey Ellison and contributors; D3D9 → Vulkan | zlib/libpng |
 | [Microsoft Detours](https://github.com/microsoft/Detours) | Microsoft Corporation and contributors; API hooks | MIT |
 | [Tracy](https://github.com/wolfpld/tracy) | Bartosz Taudul and contributors; upstream profiling component | BSD-3-Clause |
-| [TXVK](https://github.com/tianxiaols/TXVK) | tianxiaols / TXVK contributors; public documentation/binary analysis reference, no custom code copied or binaries redistributed | MIT reference project |
+| [TXVK](https://github.com/tianxiaols/TXVK) | tianxiaols / TXVK contributors; public documentation/binary analysis reference, no custom code copied or binaries redistributed | Closed source; current TXVK license reserves all rights; reference only |
 | [ReShade 6.0.1](https://github.com/crosire/reshade/tree/v6.0.1) | Patrick Mours; public ABI and input reference, no SDK implementation or DLL redistributed | SDK: BSD-3-Clause OR MIT |
 | L4D2 / Steam | Valve; game/platform, not distributed here | Valve's terms |
 

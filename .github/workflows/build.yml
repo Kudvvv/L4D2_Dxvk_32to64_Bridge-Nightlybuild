@@ -125,3 +125,9 @@ jobs:
           path: dist/l4d2-api-wait-diagnostics/
           include-hidden-files: true
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-patch-v${{ env.L4D2_PROJECT_VERSION }}
+          path: dist/l4d2-bridge-patch/
+          include-hidden-files: true
+          if-no-files-found: error

@@ -5,6 +5,16 @@
 
 # 更新记录 / Changelog
 
+## 1.1.1
+
+- 修复打开 ReShade 后切到其他程序、再点击游戏画面不能重新激活的问题：用户点击启用的 presenter 时请求激活游戏主窗口，不让 Host 子窗口取得键盘焦点，不定时抢焦点。作者已完成实机测试并确认正常运行。
+- 保留默认关闭的 API/IPC 与纹理上传细分诊断；没有实施或宣称加载提速。Steam Overlay 输入实验默认关闭，完整输入仍不支持。
+- 新增包含 x86 客户端、x64/x86 Host 的三文件升级补丁包，不覆盖后端、bridge.conf 或 retention DB。ReShade 仍须按需启用。
+- 修正 TXVK Credits：保留历史启发与参考署名，准确标为当前闭源、保留所有权利；本项目实际代码来源及上游许可证不变。
+- VERSION、客户端/Host 启动日志与发布包统一为 1.1.1。详见 [补丁说明](docs/RELEASE-V1.1.1.md)。
+
+Fixes click-to-reactivate when returning to an open ReShade overlay after switching applications. The author confirmed normal operation in hardware testing; this is not blanket validation of all ReShade versions or x86 combinations. Optional diagnostics and Steam experiments remain off; no loading-speed improvement or Steam Overlay input support is claimed. The three-binary patch preserves existing backends/configuration/database. TXVK attribution now reflects its current closed-source license while retaining historical credit.
+
 ## 1.1
 
 当前作者确认的已测试/稳定配置；不宣称无 bug。正常安装与使用见 [README](README.md)，完整变化与升级步骤见 [v1.1 发布说明](docs/RELEASE-V1.1.md)。

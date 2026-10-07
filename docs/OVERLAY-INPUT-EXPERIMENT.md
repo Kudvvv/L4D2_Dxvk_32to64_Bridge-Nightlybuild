@@ -31,15 +31,15 @@ client.DirectInput.forward.keyboardPolicy = 0
 
 回退：关闭游戏，设置 `server.presenterWindow = False`，恢复此前输入设置；必要时恢复备份二进制。此实验不写 retention DB 或更改纹理策略。
 
-## 点击返回游戏的焦点修复（开发版，待实机验证）
+## v1.1.1 点击返回游戏的焦点修复（作者已确认实机正常运行）
 
 正式 v1.1.0 存在已报告的稳定复现步骤：打开 ReShade → 点击其他程序 → 再点击游戏画面。此时启用的 Host presenter 子窗口返回 `MA_NOACTIVATE`，点击不激活游戏主窗口；Home 转发又以游戏处于前台为条件，因此可能需要点击任务栏才能重新操作。原版本的 Home 开关测试未覆盖这一返回路径。
 
-开发版仅在捕获输入、游戏不在前台且收到实际 `WM_MOUSEACTIVATE` 时，请求 `SetForegroundWindow(game HWND)`。仍返回 `MA_NOACTIVATE`，避免让 Host 子窗口替代游戏成为键盘焦点目标。没有定时抢焦点，不处理后台鼠标移动，不更改 ReShade 快捷键或 Steam 支持状态。日志 `L4D2_OVERLAY event=click-reactivate requested=1 success=0/1` 记录 Win32 请求结果；成功请求仍需实机确认 Home 和鼠标响应。
+v1.1.1 仅在捕获输入、游戏不在前台且收到实际 `WM_MOUSEACTIVATE` 时，请求 `SetForegroundWindow(game HWND)`。仍返回 `MA_NOACTIVATE`，避免让 Host 子窗口替代游戏成为键盘焦点目标。没有定时抢焦点，不处理后台鼠标移动，不更改 ReShade 快捷键或 Steam 支持状态。日志 `L4D2_OVERLAY event=click-reactivate requested=1 success=0/1` 记录 Win32 请求结果；成功请求仍需实机确认 Home 和鼠标响应。
 
 原生跨进程测试使用另一前台窗口，并显式授予 Host 前台权限模拟用户点击条件，验证背景移动不抢焦点、激活请求回到游戏 root、Host child 不取得焦点以及关闭后捕获释放。它不代替真实 Windows 点击、Vulkan ReShade 和 L4D2 输入验收。
 
-实机验收：关闭加载/API 诊断，保留原 ReShade 配置。打开面板、操作控件、切换到其他程序，再直接点击游戏画面，确认能恢复操作和用 Home 关闭，无需点击任务栏；重复几次，再检查正常 Alt+Tab、关闭面板后的游戏输入。若失败，保存 `bridge64.log` 和 `ReShade.log`。
+作者已完成修复版实机验证并确认正常运行；未据此推广到所有 ReShade 版本、GPU 或 x86 组合。其他配置的验收步骤：关闭加载/API 诊断，保留原 ReShade 配置。打开面板、操作控件、切换到其他程序，再直接点击游戏画面，确认能恢复操作和用 Home 关闭，无需点击任务栏；重复几次，再检查正常 Alt+Tab、关闭面板后的游戏输入。若失败，保存 `bridge64.log` 和 `ReShade.log`。
 
 ## 实现和边界
 
