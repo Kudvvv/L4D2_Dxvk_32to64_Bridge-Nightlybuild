@@ -6,6 +6,8 @@
 
 这一生成来源声明不适用于上游原始代码，不改变任何原作者的版权或许可。项目特有的新增与修改遵循根目录 MIT 许可，上游部分继续遵循各自许可。
 
+三维纹理步长与上传修复移植自 [keyou91 的 PR #3](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/pull/3)（提交 `fb1507d`），保留原作者归属，不将其标记为本项目的 Codex 生成代码。详见 [修复说明](docs/VOLUME-TEXTURE-COLOR-FIX.md)。
+
 ## NVIDIA RTX Remix Bridge
 
 - 来源：https://github.com/NVIDIAGameWorks/dxvk-remix
