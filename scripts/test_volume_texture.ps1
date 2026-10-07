@@ -11,6 +11,10 @@ if ($CompileArchitecture) {
   SetupVS -Platform $CompileArchitecture -VcVarsVer '14.29'
   Push-Location $testDir
   try {
+    & cl.exe /nologo /std:c++17 /EHsc /W4 /WX "/I$source/bridge/src/util" "$repoRoot/tests/runtime_path.cpp" "/Fe:runtime-path-$CompileArchitecture.exe"
+    if ($LASTEXITCODE -ne 0) { throw 'Runtime path test compilation failed' }
+    & (Join-Path $testDir "runtime-path-$CompileArchitecture.exe")
+    if ($LASTEXITCODE -ne 0) { throw 'Runtime path test failed' }
     foreach ($mode in @('rows','blob')) {
       $options = @('/nologo','/std:c++17','/EHsc','/W4','/WX',"/I$testDir","$repoRoot/tests/volume_texture.cpp","/Fe:volume-$CompileArchitecture-$mode.exe")
       if ($mode -eq 'blob') { $options += '/DSEND_ALL_LOCK_DATA_AT_ONCE' }

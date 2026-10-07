@@ -68,7 +68,7 @@ index 1abdf20..ad3ed17 100644
  
  template<bool EnableSync>
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
-index 300aaf5..fff0a23 100644
+index 300aaf5..acf4dab 100644
 --- a/bridge/src/client/d3d9_lss.cpp
 +++ b/bridge/src/client/d3d9_lss.cpp
 @@ -1,3 +1,7 @@
@@ -79,7 +79,15 @@ index 300aaf5..fff0a23 100644
  /*
   * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -128,7 +132,7 @@ bool gbBridgeRunning = true;
+@@ -19,6 +23,7 @@
+  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  * DEALINGS IN THE SOFTWARE.
+  */
++#include "runtime_path.h"
+ #include "pch.h"
+ 
+ #include "version.h"
+@@ -128,7 +133,7 @@ bool gbBridgeRunning = true;
  std::string gRemixFolder = "";
  std::mutex gSwapChainMapMutex;
  SwapChainMap gSwapChainMap;
@@ -88,7 +96,16 @@ index 300aaf5..fff0a23 100644
  
  static fspath GetServerExecutablePath() {
    ONCE(Logger::info(std::string("Native arch: ") + getNativeArchString()));
-@@ -524,22 +528,25 @@ bool RemixAttach(HMODULE hModule) {
+@@ -427,7 +432,7 @@ bool InitRemixFolder(HMODULE hinst) {
+     --len;
+   }
+ 
+-  gRemixFolder = tmp;
++  gRemixFolder = l4d2_paths::runtimeBase(fspath(tmp), ".l4d2bridge").string();
+ 
+   return true;
+ }
+@@ -524,22 +529,25 @@ bool RemixAttach(HMODULE hModule) {
  
      // Setup Remix folder first hand
      if (!InitRemixFolder(hModule)) {
@@ -1283,14 +1300,38 @@ index 0000000..2a47a97
 +  return true;
 +}
 +}
+diff --git a/bridge/src/util/config/config.cpp b/bridge/src/util/config/config.cpp
+index 5e1deb0..144f4f8 100644
+--- a/bridge/src/util/config/config.cpp
++++ b/bridge/src/util/config/config.cpp
+@@ -26,6 +26,7 @@
+   * at https://github.com/doitsujin/dxvk/blob/master/src/util/config/config.cpp
+   */
+ 
++#include "runtime_path.h"
+ #include <bitset>
+ #include <cstdlib>
+ #include <filesystem>
+@@ -253,7 +254,9 @@ namespace bridge_util {
+     }
+     const std::string moduleDir = moduleFilePath.string().substr(0, finalDirPos + 1);
+     const std::string trexDirName = dxvk::util::RtxFileSys::runtimeDirName(getNativeArchString());
+-    const std::string trexDirPath = (app == App::Client) ? moduleDir + trexDirName + "\\" : moduleDir;
++    const std::string trexDirPath = (app == App::Client)
++      ? (l4d2_paths::runtimeBase(moduleDir, trexDirName) / trexDirName).string() + "\\"
++      : moduleDir;
+     const std::filesystem::path userConfPath = trexDirPath + "bridge.conf";
+ 
+     Logger::info(std::string("Trying to open config file: ") + userConfPath.string());
 diff --git a/bridge/src/util/meson.build b/bridge/src/util/meson.build
-index fb5d556..24b0fef 100644
+index fb5d556..de6faa6 100644
 --- a/bridge/src/util/meson.build
 +++ b/bridge/src/util/meson.build
-@@ -38,6 +38,9 @@ util_src = files([
+@@ -38,6 +38,10 @@ util_src = files([
  ])
  
  util_header = files([
++  "runtime_path.h",
 +  'ati_texture_layout.h',
 +  'queue_wait_diagnostics.h',
 +
@@ -1364,6 +1405,26 @@ index 0000000..ee686c7
 +    static_cast<unsigned long long>(s.signals), static_cast<unsigned long long>(s.signalFailures),
 +    static_cast<unsigned long long>(s.fullWaits), static_cast<unsigned long long>(s.fullWaitMs),
 +    static_cast<unsigned long long>(s.maxFullWaitMs));
++}
++}
+diff --git a/bridge/src/util/runtime_path.h b/bridge/src/util/runtime_path.h
+new file mode 100644
+index 0000000..419728f
+--- /dev/null
++++ b/bridge/src/util/runtime_path.h
+@@ -0,0 +1,14 @@
++// SPDX-License-Identifier: MIT
++#pragma once
++#include <filesystem>
++#include <string>
++
++namespace l4d2_paths {
++inline std::filesystem::path runtimeBase(const std::filesystem::path& moduleDir,
++                                        const std::string& runtimeName) {
++  std::error_code error;
++  const auto bin = moduleDir / "bin";
++  if (std::filesystem::is_directory(bin / runtimeName, error)) { return bin; }
++  return moduleDir;
 +}
 +}
 diff --git a/bridge/src/util/util_atomiccircularqueue.h b/bridge/src/util/util_atomiccircularqueue.h

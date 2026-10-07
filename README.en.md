@@ -13,7 +13,7 @@ Based on [NVIDIA dxvk-remix Bridge](https://github.com/NVIDIAGameWorks/dxvk-remi
 - Fixes volume-texture byte pitches and upload offsets to prevent corrupted color-correction lookup tables. See [fix provenance and validation](docs/VOLUME-TEXTURE-COLOR-FIX.md).
 - Ports texture-creation failure cleanup, ATI1/ATI2 compressed-transfer bounds fixes, and event-based command-queue wakeups from the original project, with native tests. See [update tracking](docs/ORIGINAL-PROJECT-UPDATES.md).
 
-`dxvk_d3d9.dll` is the 32-bit Bridge client; `d3d9vk_x64.dll` is the 64-bit DXVK backend. They serve different purposes.
+`d3d9.dll` is the 32-bit Bridge client; `d3d9vk_x64.dll` is the 64-bit DXVK backend. They serve different purposes.
 
 ## Automatic and manual builds
 
@@ -30,7 +30,9 @@ Deduplication checks both upstream SHA and a fingerprint of build/package/test i
 
 Download the ZIP from [Releases](https://github.com/Kudvvv/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases). It contains only runtime files, a short installation guide, and license notices. A separate `.sha256` checksum file is provided.
 
-For first installation, exit the game, back up files and merge the full package's `bin` folder into the game's `bin`, preserving `.l4d2bridge`. The full package contains configuration and backend files and replaces them when overwritten.
+For first installation, exit the game, back up files and merge the package into the game root beside `left4dead2.exe`. Put `d3d9.dll` in the root; Host, configuration and backend stay in `bin/.l4d2bridge`. The default installation does not use `-vulkan`. The full package replaces configuration and backend files when overwritten.
+
+To use `-vulkan`, rename the client to `dxvk_d3d9.dll` and move it to the game `bin`; remove this project's root `d3d9.dll`. When switching from the old installation to the default loading path, back up the old `bin/dxvk_d3d9.dll` and remove `-vulkan`. Both loading paths share `bin/.l4d2bridge`.
 
 For an existing installation, prefer the `l4d2-bridge-update-*` ZIP. It updates the client and Host together, preserving configuration, DXVK, ReShade and the retention DB. Roll back the client and Host together. See [game validation and performance baselines](docs/GAME-VALIDATION.md); measured game results are still pending.
 

@@ -37,6 +37,7 @@ def publish():
         "包含 x86 客户端和配套 x64 Host；编译与原生测试通过，游戏验收尚待完成。\n\n"
         "- 完整包包含配置及固定 DXVK 后端，适合首次安装。\n"
         "- update 包同时更新客户端和 Host，保留已有配置、DXVK、ReShade 和 DB。\n"
+        "- 客户端 d3d9.dll 放游戏根目录，默认移除 -vulkan；需要该启动项时自行改名为 dxvk_d3d9.dll 并移到 bin。Host 仍在 bin/.l4d2bridge。\n"
         "- 两个 ZIP 均包含 UPSTREAM.json 并附带 SHA-256；旧发布包不被覆盖。\n\n"
         f"上游：[NVIDIA 提交](https://github.com/NVIDIAGameWorks/dxvk-remix/commit/{upstream})\n\n"
         f"本项目：[构建配置](https://github.com/{repo}/commit/{recipe}) · "

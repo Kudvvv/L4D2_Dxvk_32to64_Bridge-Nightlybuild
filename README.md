@@ -13,7 +13,7 @@
 - 修复三维纹理字节步长及上传偏移，避免颜色校正查色表损坏造成的偏色。来源与复测步骤见 [偏色修复说明](docs/VOLUME-TEXTURE-COLOR-FIX.md)。
 - 移植原项目的纹理创建失败处理、ATI1/ATI2 压缩纹理边界修复和命令队列事件唤醒，带配套原生测试。移植基准见 [更新跟踪](docs/ORIGINAL-PROJECT-UPDATES.md)。
 
-`dxvk_d3d9.dll` 是 32 位 Bridge 客户端；`d3d9vk_x64.dll` 是 64 位 DXVK 后端，两者用途不同。
+`d3d9.dll` 是 32 位 Bridge 客户端；`d3d9vk_x64.dll` 是 64 位 DXVK 后端，两者用途不同。
 
 ## 自动与手动构建
 
@@ -30,7 +30,9 @@
 
 从 [Releases](https://github.com/Kudvvv/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases) 下载 ZIP。安装包仅包含运行文件、简短说明及许可证，旁附 `.sha256` 校验文件。
 
-首次安装使用完整 ZIP：退出游戏，备份原文件，将包内 `bin` 合并到游戏目录的 `bin`，保留 `.l4d2bridge` 结构。完整包包含配置和后端，覆盖会替换原文件。
+首次安装使用完整 ZIP：退出游戏，备份原文件，将包内内容合并到游戏根目录（`left4dead2.exe` 所在目录）。`d3d9.dll` 放在根目录，Host、配置及后端仍放在 `bin/.l4d2bridge`。默认不使用 `-vulkan` 启动项。完整包包含配置和后端，覆盖会替换原文件。
+
+如果要使用 `-vulkan`，请自行把客户端 `d3d9.dll` 改名为 `dxvk_d3d9.dll` 并移到游戏 `bin`，根目录不再保留本项目的 `d3d9.dll`。从旧版升级且改用默认加载方式时，先备份旧 `bin/dxvk_d3d9.dll`，移除 `-vulkan`，再安装新版。两种方式都使用同一个 `bin/.l4d2bridge`。
 
 升级已有安装优先使用 `l4d2-bridge-update-*` ZIP，它同时更新客户端与 Host，保留现有配置、DXVK、ReShade 和 DB。回退时同时恢复配对的客户端和 Host。卸载时移除本包安装的文件并恢复备份。
 
