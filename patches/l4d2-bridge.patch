@@ -1,3 +1,72 @@
+diff --git a/bridge/src/client/d3d9_device.cpp b/bridge/src/client/d3d9_device.cpp
+index 1abdf20..ad3ed17 100644
+--- a/bridge/src/client/d3d9_device.cpp
++++ b/bridge/src/client/d3d9_device.cpp
+@@ -44,6 +44,7 @@
+ 
+ #include "util_bridge_assert.h"
+ #include "util_semaphore.h"
++#include "texture_creation.h"
+ 
+ #include <wingdi.h>
+ #include <assert.h>
+@@ -564,15 +565,28 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
+     return D3DERR_INVALIDCALL;
+   }
+ 
++  // NV-DXVK start: Match D3D9/DXVK dimension validation before creating a wrapper.
++  *ppTexture = nullptr;
++  if (!Width || !Height) {
++    Logger::warn(format_string("L4D2 CreateTexture rejected on client: hresult=0x%08lx width=%u height=%u levels=%u usage=0x%08lx format=0x%08lx pool=%u reason=zero-dimension",
++      static_cast<unsigned long>(D3DERR_INVALIDCALL), Width, Height, Levels,
++      static_cast<unsigned long>(Usage), static_cast<unsigned long>(Format), static_cast<unsigned>(Pool)));
++    return D3DERR_INVALIDCALL;
++  }
++  // NV-DXVK end
++
+   // When Levels is 0, D3D9 will calculate the mip requirements
+   if (Levels == 0) {
+     Levels = CalculateNumMipLevels(Width, Height);
+   }
+ 
+   UID currentUID = 0;
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DTexture9_LSS* pLssTexture = nullptr;
++  // NV-DXVK end
+   {
+     const TEXTURE_DESC desc { Width, Height, 1, Levels, Usage, Format, Pool };
+-    auto* const pLssTexture = trackWrapper(new Direct3DTexture9_LSS(this, desc));
++    pLssTexture = trackWrapper(new Direct3DTexture9_LSS(this, desc));
+     (*ppTexture) = pLssTexture;
+     {
+       ClientMessage c(Commands::IDirect3DDevice9Ex_CreateTexture, getId());
+@@ -580,7 +594,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
+       c.send_many(Width, Height, Levels, Usage, Format, Pool, (uint32_t) pLssTexture->getId());
+     }
+   }
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateTexture()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateTexture()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateTexture failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssTexture->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssTexture, ppTexture, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
 index 300aaf5..fff0a23 100644
 --- a/bridge/src/client/d3d9_lss.cpp
@@ -51,7 +120,7 @@ index 300aaf5..fff0a23 100644
      DInputHookAttach();
  
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
-index e54aec5..fdcd086 100644
+index e54aec5..542f439 100644
 --- a/bridge/src/client/d3d9_surface.cpp
 +++ b/bridge/src/client/d3d9_surface.cpp
 @@ -1,3 +1,7 @@
@@ -62,11 +131,12 @@ index e54aec5..fdcd086 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -30,6 +34,17 @@
+@@ -30,6 +34,18 @@
  #include "d3d9_surfacebuffer_helper.h"
  #include "util_bridge_assert.h"
  #include "util_gdi.h"
 +#include "memory_diagnostics.h"
++#include "ati_texture_layout.h"
 +
 +namespace {
 +size_t surfaceShadowBudget() {
@@ -80,7 +150,7 @@ index e54aec5..fdcd086 100644
  
  Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
                                             const D3DSURFACE_DESC& desc, bool isBackBuffer)
-@@ -45,14 +60,6 @@ Direct3DSurface9_LSS::~Direct3DSurface9_LSS() {
+@@ -45,14 +61,6 @@ Direct3DSurface9_LSS::~Direct3DSurface9_LSS() {
      if (m_bufferId != SharedHeap::kInvalidId) {
        SharedHeap::deallocate(m_bufferId);
      }
@@ -95,7 +165,44 @@ index e54aec5..fdcd086 100644
    }
  }
  
-@@ -220,17 +227,14 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
+@@ -122,6 +130,19 @@ HRESULT Direct3DSurface9_LSS::GetDesc(D3DSURFACE_DESC* pDesc) {
+ 
+ HRESULT Direct3DSurface9_LSS::LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) {
+   LogFunctionCall();
++  // NV-DXVK start: ATI compatibility offsets must stay inside compressed storage.
++  if (!pLockedRect) { return D3DERR_INVALIDCALL; }
++  if (l4d2_ati::isFormat(m_desc.Format)) {
++    l4d2_ati::Layout layout;
++    l4d2_ati::Transfer transfer;
++    const RECT rect = resolveLockInfoRect(pRect, m_desc);
++    if (!l4d2_ati::layout(m_desc.Width, m_desc.Height, m_desc.Format, layout)
++      || !l4d2_ati::region(layout, rect.left, rect.top, rect.right, rect.bottom, transfer)) {
++      Logger::err("L4D2 ATI LockRect rejected: rectangle exceeds compressed storage");
++      return D3DERR_INVALIDCALL;
++    }
++  }
++  // NV-DXVK end
+   // Store locked rect pointer locally so we can copy the data on unlock
+   {
+     BRIDGE_PARENT_DEVICE_LOCKGUARD();
+@@ -205,8 +226,15 @@ HRESULT Direct3DSurface9_LSS::ReleaseDC(HDC hdc) {
+ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, const DWORD& flags) {
+   const RECT rect = resolveLockInfoRect(pRect, m_desc);
+   lockedRect.Pitch = bridge_util::calcRowSize(m_desc.Width, m_desc.Format);
+-  const auto surfaceSize =
++  auto surfaceSize =
+     bridge_util::calcTotalSizeOfRect(m_desc.Width, m_desc.Height, m_desc.Format);
++  // NV-DXVK start: Small ATI mips still require at least one complete BC block.
++  l4d2_ati::Layout atiLayout;
++  if (l4d2_ati::layout(m_desc.Width, m_desc.Height, m_desc.Format, atiLayout)) {
++    lockedRect.Pitch = atiLayout.apiPitch;
++    surfaceSize = static_cast<uint32_t>(atiLayout.backingBytes);
++  }
++  // NV-DXVK end
+   if (m_bUseSharedHeap) {
+     auto discardBufId = SharedHeap::kInvalidId;
+     const bool bDiscard = (flags & D3DLOCK_DISCARD) != 0;
+@@ -220,17 +248,14 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
      lockedRect.pBits = getBufPtr(lockedRect.Pitch, rect);
      m_lockInfoQueue.push({ lockedRect, rect, flags, m_bufferId, discardBufId });
    } else {
@@ -118,7 +225,7 @@ index e54aec5..fdcd086 100644
      m_lockInfoQueue.push({ lockedRect, rect, flags });
    }
    return true;
-@@ -247,6 +251,9 @@ void Direct3DSurface9_LSS::unlock() {
+@@ -247,6 +272,9 @@ void Direct3DSurface9_LSS::unlock() {
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
      sendDataToServer(lockInfo);
    }
@@ -128,7 +235,48 @@ index e54aec5..fdcd086 100644
  }
  
  RECT Direct3DSurface9_LSS::resolveLockInfoRect(const RECT* const pRect, const D3DSURFACE_DESC& desc) {
-@@ -296,4 +303,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -262,6 +290,40 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
+ }
+ 
+ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
++  // NV-DXVK start: ATI API pitch and compressed storage pitch are independent.
++  l4d2_ati::Layout atiLayout;
++  if (l4d2_ati::layout(m_desc.Width, m_desc.Height, m_desc.Format, atiLayout)) {
++    l4d2_ati::Transfer transfer;
++    if (!l4d2_ati::region(atiLayout, lockInfo.rect.left, lockInfo.rect.top,
++      lockInfo.rect.right, lockInfo.rect.bottom, transfer)) {
++      Logger::err("L4D2 ATI upload rejected: invalid compressed range");
++      return;
++    }
++    const auto dataFlag = m_bUseSharedHeap ? Commands::FlagBits::DataInSharedHeap : 0;
++    {
++      ClientMessage c(Commands::IDirect3DSurface9_UnlockRect, getId(), dataFlag);
++      c.send_data(sizeof(RECT), &lockInfo.rect);
++      c.send_data(lockInfo.flags);
++      c.send_data(m_desc.Format);
++      if (m_bUseSharedHeap) {
++        c.send_data(atiLayout.storagePitch);
++        c.send_data(lockInfo.bufId);
++      } else {
++        c.send_data(transfer.rowBytes);
++        if (auto* blob = c.begin_data_blob(transfer.bytes)) {
++          const bool copied = l4d2_ati::copyRows(blob, transfer.bytes, transfer.rowBytes,
++            lockInfo.lockedRect.pBits, atiLayout.bytes - transfer.offset, atiLayout.storagePitch, transfer);
++          if (!copied) { Logger::err("L4D2 ATI upload failed: compressed range copy"); }
++          c.end_data_blob();
++        }
++      }
++    }
++    if (m_bUseSharedHeap && lockInfo.discardBufId != SharedHeap::kInvalidId) {
++      SharedHeap::deallocate(lockInfo.discardBufId);
++    }
++    return;
++  }
++  // NV-DXVK end
+   const auto dataFlag = m_bUseSharedHeap ? Commands::FlagBits::DataInSharedHeap : 0;
+   {
+     ClientMessage c(Commands::IDirect3DSurface9_UnlockRect, getId(), dataFlag);
+@@ -296,4 +358,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
  std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions(const RECT& rect) {
    return { rect.right  - rect.left,
             rect.bottom - rect.top  };
@@ -173,6 +321,65 @@ index e4e9d51..177344f 100644
 -};
 \ No newline at end of file
 +};
+diff --git a/bridge/src/client/d3d9_surfacebuffer_helper.h b/bridge/src/client/d3d9_surfacebuffer_helper.h
+index 13afedc..1a533bb 100644
+--- a/bridge/src/client/d3d9_surfacebuffer_helper.h
++++ b/bridge/src/client/d3d9_surfacebuffer_helper.h
+@@ -1,3 +1,7 @@
++// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++// Original upstream code and copyright notices remain attributed to their original authors.
++
+ /*
+  * Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+  *
+@@ -24,6 +28,7 @@
+ #include "util_bridge_assert.h" 
+ #include "util_devicecommand.h"
+ #include "util_texture_and_volume.h"
++#include "ati_texture_layout.h"
+ 
+ #include <assert.h>
+ 
+@@ -49,6 +54,31 @@ static HRESULT copyServerSurfaceRawData(Direct3DSurface9_LSS* const pLssSurface,
+     void* pData = NULL;
+     size_t pulledSize = DeviceBridge::get_data(&pData);
+ 
++    // NV-DXVK start: ATI return data contains packed BC4/BC5 bytes.
++    if (l4d2_ati::isFormat(format)) {
++      l4d2_ati::Layout layout;
++      l4d2_ati::Transfer transfer;
++      D3DSURFACE_DESC desc {};
++      if (FAILED(pLssSurface->GetDesc(&desc)) || desc.Width != width || desc.Height != height || desc.Format != format
++        || !l4d2_ati::layout(width, height, format, layout)
++        || !l4d2_ati::region(layout, 0, 0, width, height, transfer)
++        || pulledSize != transfer.bytes) {
++        DeviceBridge::pop_front();
++        return D3DERR_INVALIDCALL;
++      }
++      D3DLOCKED_RECT locked {};
++      res = pLssSurface->LockRect(&locked, nullptr, D3DLOCK_DISCARD);
++      if (SUCCEEDED(res)) {
++        const bool copied = l4d2_ati::copyRows(locked.pBits, layout.bytes, layout.storagePitch,
++          pData, pulledSize, transfer.rowBytes, transfer);
++        res = pLssSurface->UnlockRect();
++        if (!copied) { res = D3DERR_INVALIDCALL; }
++      }
++      DeviceBridge::pop_front();
++      return res;
++    }
++    // NV-DXVK end
++
+     // Copy data into a surface
+     const size_t rowSize = bridge_util::calcRowSize(width, (D3DFORMAT) format);
+     const size_t numRows = bridge_util::calcStride(height, (D3DFORMAT) format);
+@@ -66,4 +96,4 @@ static HRESULT copyServerSurfaceRawData(Direct3DSurface9_LSS* const pLssSurface,
+   }
+   DeviceBridge::pop_front();
+   return res;
+-}
+\ No newline at end of file
++}
 diff --git a/bridge/src/client/d3d9_swapchain.cpp b/bridge/src/client/d3d9_swapchain.cpp
 index 86a19d4..4488d23 100644
 --- a/bridge/src/client/d3d9_swapchain.cpp
@@ -208,6 +415,99 @@ index 86a19d4..4488d23 100644
 -}
 \ No newline at end of file
 +}
+diff --git a/bridge/src/client/d3d9_texture.cpp b/bridge/src/client/d3d9_texture.cpp
+index 3f4a64f..7d39e2f 100644
+--- a/bridge/src/client/d3d9_texture.cpp
++++ b/bridge/src/client/d3d9_texture.cpp
+@@ -66,7 +66,11 @@ ULONG Direct3DTexture9_LSS::Release() {
+ }
+ 
+ void Direct3DTexture9_LSS::onDestroy() {
+-  ClientMessage { Commands::IDirect3DTexture9_Destroy, getId() };
++  // NV-DXVK start: A failed backend creation does not own a server object.
++  if (m_serverCreated) {
++    ClientMessage { Commands::IDirect3DTexture9_Destroy, getId() };
++  }
++  // NV-DXVK end
+ }
+ 
+ HRESULT Direct3DTexture9_LSS::GetLevelDesc(UINT Level, D3DSURFACE_DESC* pDesc) {
+diff --git a/bridge/src/client/d3d9_texture.h b/bridge/src/client/d3d9_texture.h
+index 2a4b9e4..51de5d2 100644
+--- a/bridge/src/client/d3d9_texture.h
++++ b/bridge/src/client/d3d9_texture.h
+@@ -32,8 +32,15 @@
+  */
+ class Direct3DTexture9_LSS: public LssBaseTexture2D<IDirect3DTexture9> {
+   void onDestroy() override;
++  // NV-DXVK start: Failed creation has no server resource to destroy.
++  bool m_serverCreated = true;
++  // NV-DXVK end
++
+ 
+ public:
++  // NV-DXVK start: Only an explicit failed server response cancels destruction.
++  void cancelServerCreation() { m_serverCreated = false; }
++  // NV-DXVK end
+   Direct3DTexture9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice, const TEXTURE_DESC& desc)
+     : Direct3DBaseTexture9_LSS(pDevice, desc) {
+     m_children.resize(GetLevelCount());
+diff --git a/bridge/src/client/d3d9_volume.cpp b/bridge/src/client/d3d9_volume.cpp
+index 11704cf..38460bb 100644
+--- a/bridge/src/client/d3d9_volume.cpp
++++ b/bridge/src/client/d3d9_volume.cpp
+@@ -134,8 +134,9 @@ bool Direct3DVolume9_LSS::lock(D3DLOCKED_BOX& lockedVolume, const D3DBOX* const
+   const auto columnStride = ((height + pixelsPerBlock - 1) / pixelsPerBlock);
+   const auto size = depth * columnStride * rowStride * bytesPerPixel;
+   void* const pData = new uint8_t[size];
+-  lockedVolume.RowPitch = rowStride;
+-  lockedVolume.SlicePitch = columnStride;
++  // D3DLOCKED_BOX exposes byte strides, including for block-compressed data.
++  lockedVolume.RowPitch = rowStride * bytesPerPixel;
++  lockedVolume.SlicePitch = columnStride * lockedVolume.RowPitch;
+   lockedVolume.pBits = pData;
+   m_lockInfoQueue.push({ lockedVolume, box, flags });
+   return true;
+@@ -154,8 +155,11 @@ void Direct3DVolume9_LSS::unlock() {
+   const auto& box = lockInfo.box;
+   const auto [width, height, depth] = getBoxDimensions(box);
+   const auto bytesPerPixel = bridge_util::getBytesFromFormat(m_desc.Format);
+-  const auto rowSize = lockedVolume.RowPitch * bytesPerPixel;
+-  const auto totalSize = depth * lockedVolume.SlicePitch * rowSize;
++  const auto pixelsPerBlock = bridge_util::getBlockSize(m_desc.Format);
++  const auto rows = (height + pixelsPerBlock - 1) / pixelsPerBlock;
++  const auto blocksPerRow = (width + pixelsPerBlock - 1) / pixelsPerBlock;
++  const auto rowSize = static_cast<size_t>(lockedVolume.RowPitch);
++  const auto totalSize = depth * static_cast<size_t>(lockedVolume.SlicePitch);
+ 
+   // Now send the box dimensions and surface handle
+   if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
+@@ -165,12 +169,14 @@ void Direct3DVolume9_LSS::unlock() {
+     c.send_data(lockInfo.flags);
+ 
+     // Now push actual bytes
+-    c.send_many(bytesPerPixel, lockedVolume.RowPitch, lockedVolume.SlicePitch, depth);
++    // Preserve the existing wire layout: block bytes, blocks per row, rows, depth.
++    c.send_many(bytesPerPixel, static_cast<uint32_t>(blocksPerRow),
++                static_cast<uint32_t>(rows), static_cast<uint32_t>(depth));
+ #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
+     if (auto* blobPacketPtr = c.begin_data_blob(totalSize))
+ #endif
+       for (uint32_t z = 0; z < depth; z++) {
+-        for (uint32_t y = 0; y < lockedVolume.SlicePitch; y++) {
++        for (uint32_t y = 0; y < rows; y++) {
+           auto ptr = static_cast<uint8_t*>(lockedVolume.pBits) +
+             y * lockedVolume.RowPitch + z * lockedVolume.SlicePitch;
+ #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
+@@ -185,7 +191,7 @@ void Direct3DVolume9_LSS::unlock() {
+     c.end_data_blob();
+ #endif
+   }
+-  delete lockedVolume.pBits;
++  delete[] static_cast<uint8_t*>(lockedVolume.pBits);
+ }
+ 
+ D3DBOX Direct3DVolume9_LSS::resolveLockInfoBox(const D3DBOX* const pBox, const D3DVOLUME_DESC& desc) {
 diff --git a/bridge/src/client/lockable_buffer.h b/bridge/src/client/lockable_buffer.h
 index fbfc565..2e1218a 100644
 --- a/bridge/src/client/lockable_buffer.h
@@ -407,7 +707,7 @@ index 0000000..94fd013
 +}
 +}
 diff --git a/bridge/src/client/meson.build b/bridge/src/client/meson.build
-index 2ad1e79..7532fcc 100644
+index 2ad1e79..3507efa 100644
 --- a/bridge/src/client/meson.build
 +++ b/bridge/src/client/meson.build
 @@ -1,3 +1,7 @@
@@ -418,7 +718,16 @@ index 2ad1e79..7532fcc 100644
  #############################################################################
  # Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
  #
-@@ -85,6 +89,8 @@ d3d9_header = files([
+@@ -56,6 +60,8 @@ d3d9_src = files([
+ ])
+ 
+ d3d9_header = files([
++  'texture_creation.h',
++
+   'base.h',
+   'client_options.h',
+   'd3d9_base_texture.h',
+@@ -85,6 +91,8 @@ d3d9_header = files([
    'framework.h',
    'lockable_buffer.h',
    'message_channels.h',
@@ -427,7 +736,7 @@ index 2ad1e79..7532fcc 100644
    'pch.h',
    'remix_state.h',
    'resource.h',
-@@ -116,4 +122,4 @@ custom_target('copy_d3d9_to_output',
+@@ -116,4 +124,4 @@ custom_target('copy_d3d9_to_output',
      build_by_default : true,
      depends          : [ d3d9_dll ],
      command          : [copy_script_path, meson.current_build_dir(), output_dir, 'd3d9*'] )
@@ -563,8 +872,40 @@ index 0000000..893edc4
 +    trim(budget);
 +  }
 +};
+diff --git a/bridge/src/client/texture_creation.h b/bridge/src/client/texture_creation.h
+new file mode 100644
+index 0000000..2d99dd4
+--- /dev/null
++++ b/bridge/src/client/texture_creation.h
+@@ -0,0 +1,26 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include <windows.h>
++
++namespace l4d2_texture {
++
++struct CreationResult {
++  HRESULT hresult;
++  bool serverResponded;
++};
++
++template<typename Texture, typename Interface>
++HRESULT completeCreation(Texture* texture, Interface** output, CreationResult result) {
++  if (FAILED(result.hresult)) {
++    // A timeout leaves creation unresolved; an ordered Destroy must still be sent.
++    if (result.serverResponded) { texture->cancelServerCreation(); }
++    *output = nullptr;
++    texture->Release();
++  }
++  return result.hresult;
++}
++
++}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..1a8ce1d 100644
+index 86434ec..496a6bc 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -575,7 +916,60 @@ index 86434ec..1a8ce1d 100644
  /*
   * Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -375,7 +379,13 @@ void ProcessDeviceCommandQueue() {
+@@ -42,6 +46,7 @@
+ #include "util_sharedheap.h"
+ #include "util_sharedmemory.h"
+ #include "util_texture_and_volume.h"
++#include "ati_texture_layout.h"
+ #include "util_version.h"
+ 
+ #include "log/log.h"
+@@ -242,17 +247,39 @@ HRESULT ReturnSurfaceDataToClient(IDirect3DSurface9* pReturnSurfaceData, HRESULT
+   }
+ 
+   // Sending raw surface buffer details to client
+-  const uint32_t totalSize = bridge_util::calcTotalSizeOfRect(width, height, format);
++  uint32_t totalSize = bridge_util::calcTotalSizeOfRect(width, height, format);
+   const uint32_t rowSize = bridge_util::calcRowSize(width, format);
++  // NV-DXVK start: Return ATI bytes using their compressed layout.
++  l4d2_ati::Layout atiLayout;
++  l4d2_ati::Transfer atiTransfer;
++  const bool ati = l4d2_ati::layout(width, height, format, atiLayout);
++  if (ati) {
++    if (!l4d2_ati::region(atiLayout, 0, 0, width, height, atiTransfer)
++      || !lockedRect.pBits || lockedRect.Pitch != static_cast<int32_t>(atiLayout.apiPitch)) {
++      pReturnSurfaceData->UnlockRect();
++      c.send_data(D3DERR_INVALIDCALL);
++      return D3DERR_INVALIDCALL;
++    }
++    totalSize = static_cast<uint32_t>(atiTransfer.bytes);
++  }
++  // NV-DXVK end
+   c.send_data(hresult);
+   c.send_data(width);
+   c.send_data(height);
+   c.send_data(format);
+   if (auto* blobPacketPtr = c.begin_data_blob(totalSize)) {
+-    FOR_EACH_RECT_ROW(lockedRect, height, format, {
+-      memcpy(blobPacketPtr, ptr, rowSize);
+-      blobPacketPtr += rowSize;
+-    });
++    // NV-DXVK start: Preserve the API pitch while packing real ATI block rows.
++    if (ati) {
++      const bool copied = l4d2_ati::copyRows(blobPacketPtr, totalSize, atiTransfer.rowBytes,
++        lockedRect.pBits, atiLayout.bytes, atiLayout.storagePitch, atiTransfer);
++      if (!copied) { Logger::err("L4D2 ATI return surface failed: compressed range copy"); }
++    } else {
++      FOR_EACH_RECT_ROW(lockedRect, height, format, {
++        memcpy(blobPacketPtr, ptr, rowSize);
++        blobPacketPtr += rowSize;
++      });
++    }
++    // NV-DXVK end
+     c.end_data_blob();
+   }
+ 
+@@ -375,7 +402,13 @@ void ProcessDeviceCommandQueue() {
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
  
          IDirect3DDevice9* pD3DDevice = nullptr;
@@ -589,7 +983,96 @@ index 86434ec..1a8ce1d 100644
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
            ss << format_string("CreateDevice() call failed with error code 0x%x", hresult) << std::endl;
-@@ -3268,7 +3278,16 @@ bool InitializeD3D() {
+@@ -787,12 +820,15 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DFORMAT, Format);
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+-        LPDIRECT3DTEXTURE9 pTexture;
++        LPDIRECT3DTEXTURE9 pTexture = nullptr;
+         const auto hresult = pD3DDevice->CreateTexture(IN Width, IN Height, IN Levels, IN Usage, IN Format, IN Pool, OUT & pTexture, IN nullptr);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pTexture;
+         }
+-        assert(SUCCEEDED(hresult));
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateTexture failed: hresult=0x%08lx resource_id=%u width=%u height=%u format=%u",
++            static_cast<unsigned long>(hresult), pHandle, Width, Height, static_cast<unsigned>(Format)));
++        }
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -2578,6 +2614,61 @@ void ProcessDeviceCommandQueue() {
+         PULL_OBJ(RECT, pRect);
+         PULL_D(Flags);
+         const auto pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
++        PULL_D(dFormat);
++        PULL_D(IncomingPitch);
++        // NV-DXVK start: DXVK's ATI Lock pitch does not describe compressed storage.
++        if (l4d2_ati::isFormat(dFormat)) {
++          void* data = nullptr;
++          size_t pulledSize = 0;
++          uint32_t allocId = 0;
++          const bool shared = Commands::IsDataInSharedHeap(rpcHeader.flags);
++          if (shared) {
++            allocId = DeviceBridge::get_data();
++          } else {
++            pulledSize = DeviceBridge::get_data(&data);
++          }
++          D3DSURFACE_DESC desc {};
++          l4d2_ati::Layout layout;
++          l4d2_ati::Transfer transfer;
++          const HRESULT descHr = pSurface ? pSurface->GetDesc(&desc) : D3DERR_INVALIDCALL;
++          if (FAILED(descHr) || static_cast<uint32_t>(desc.Format) != dFormat
++            || !l4d2_ati::layout(desc.Width, desc.Height, dFormat, layout)
++            || !l4d2_ati::region(layout, pRect->left, pRect->top, pRect->right, pRect->bottom, transfer)
++            || IncomingPitch != (shared ? layout.storagePitch : transfer.rowBytes)
++            || (!shared && pulledSize != transfer.bytes)) {
++            Logger::err(format_string("L4D2_ATI_UPLOAD event=rejected resource_id=%u reason=layout-or-payload format=%u incoming_pitch=%u bytes=%zu",
++              pHandle, dFormat, IncomingPitch, pulledSize));
++            break;
++          }
++          if (shared) { data = SharedHeap::getBuf(allocId) + transfer.offset; }
++          D3DLOCKED_RECT locked {};
++          HRESULT hr = pSurface->LockRect(&locked, pRect, Flags);
++          if (FAILED(hr)) {
++            Logger::err(format_string("L4D2_ATI_UPLOAD event=rejected resource_id=%u reason=backend-lock hresult=0x%08x",
++              pHandle, static_cast<uint32_t>(hr)));
++            break;
++          }
++          const size_t sourceBytes = shared ? layout.bytes - transfer.offset : pulledSize;
++          const bool copied = locked.Pitch == static_cast<int32_t>(layout.apiPitch)
++            && l4d2_ati::copyRows(locked.pBits, layout.bytes - transfer.offset, layout.storagePitch,
++              data, sourceBytes, IncomingPitch, transfer);
++          hr = pSurface->UnlockRect();
++          if (!copied || FAILED(hr)) {
++            Logger::err(format_string("L4D2_ATI_UPLOAD event=rejected resource_id=%u reason=copy-or-unlock hresult=0x%08x",
++              pHandle, static_cast<uint32_t>(hr)));
++          } else {
++            static bool logged[2] {};
++            const size_t index = dFormat == l4d2_ati::kAti1 ? 0u : 1u;
++            if (!logged[index]) {
++              logged[index] = true;
++              Logger::info(format_string("L4D2_ATI_UPLOAD event=success resource_id=%u format=%u width=%u height=%u api_pitch=%u storage_pitch=%u row_bytes=%u rows=%u bytes=%zu",
++                pHandle, dFormat, desc.Width, desc.Height, layout.apiPitch, layout.storagePitch,
++                transfer.rowBytes, transfer.rows, transfer.bytes));
++            }
++          }
++          break;
++        }
++        // NV-DXVK end
+         // Now lock the rect so we can copy the data into it
+         D3DLOCKED_RECT lockedRect;
+         auto hresult = pSurface->LockRect(OUT & lockedRect, IN pRect, IN Flags);
+@@ -2585,8 +2676,6 @@ void ProcessDeviceCommandQueue() {
+         // Copy the data over
+         const uint32_t width = pRect->right - pRect->left;
+         const uint32_t height = pRect->bottom - pRect->top;
+-        PULL_D(dFormat);
+-        PULL_D(IncomingPitch);
+         const D3DFORMAT format = (D3DFORMAT) dFormat;
+         const size_t rowSize = bridge_util::calcRowSize(width, format);
+         void* pData = nullptr;
+@@ -3268,7 +3357,16 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -607,7 +1090,7 @@ index 86434ec..1a8ce1d 100644
      if (ghModule) {
        Logger::info("Non-RTX standard d3d9vk_x64.dll loaded");
      } else {
-@@ -3285,6 +3304,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3383,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -618,7 +1101,7 @@ index 86434ec..1a8ce1d 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3334,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3413,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -629,7 +1112,7 @@ index 86434ec..1a8ce1d 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3488,12 +3515,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3488,12 +3594,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    ExceptionHandler::get().init();
  
    // Identify yourself
@@ -648,7 +1131,7 @@ index 86434ec..1a8ce1d 100644
  #endif
  
    BRIDGE_ASSERT_LOG((argCount >= 2), "Command line argument count received to launch server is not as expected");
-@@ -3624,4 +3654,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +3733,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;
@@ -695,6 +1178,402 @@ index 908d93f..9047f5f 100644
 -endif
 \ No newline at end of file
 +endif
+diff --git a/bridge/src/util/ati_texture_layout.h b/bridge/src/util/ati_texture_layout.h
+new file mode 100644
+index 0000000..2a47a97
+--- /dev/null
++++ b/bridge/src/util/ati_texture_layout.h
+@@ -0,0 +1,70 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <cstring>
++
++namespace l4d2_ati {
++constexpr uint32_t kAti1 = 0x31495441u, kAti2 = 0x32495441u;
++
++inline bool isFormat(uint32_t format) { return format == kAti1 || format == kAti2; }
++
++struct Layout {
++  uint32_t width = 0, height = 0, blockBytes = 0;
++  uint32_t apiPitch = 0, storagePitch = 0, rows = 0;
++  size_t bytes = 0, backingBytes = 0;
++};
++
++inline bool layout(uint32_t width, uint32_t height, uint32_t format, Layout& result) {
++  result = {};
++  if (!isFormat(format) || !width || !height || width > 16384 || height > 16384) { return false; }
++  const uint32_t blockBytes = format == kAti1 ? 8u : 16u;
++  const uint32_t apiPitch = (width + 3u) & ~3u;
++  const uint32_t storagePitch = ((width + 3u) / 4u) * blockBytes;
++  const uint32_t rows = (height + 3u) / 4u;
++  const size_t bytes = static_cast<size_t>(storagePitch) * rows;
++  const size_t apiBytes = static_cast<size_t>(apiPitch) * height;
++  result = { width, height, blockBytes, apiPitch, storagePitch, rows, bytes,
++    bytes > apiBytes ? bytes : apiBytes };
++  return true;
++}
++
++struct Transfer {
++  size_t offset = 0, bytes = 0;
++  uint32_t rowBytes = 0, rows = 0;
++};
++
++inline bool region(const Layout& l, int32_t left, int32_t top, int32_t right, int32_t bottom, Transfer& result) {
++  result = {};
++  if (!l.bytes || left < 0 || top < 0 || right <= left || bottom <= top
++    || static_cast<uint32_t>(right) > l.width || static_cast<uint32_t>(bottom) > l.height) { return false; }
++  // DXVK LockImage's ATI compatibility path uses this byte offset, not block coordinates.
++  const size_t offset = static_cast<size_t>(top) * l.apiPitch + static_cast<uint32_t>(left);
++  const uint32_t rowBytes = ((static_cast<uint32_t>(right - left) + 3u) / 4u) * l.blockBytes;
++  const uint32_t rows = (static_cast<uint32_t>(bottom - top) + 3u) / 4u;
++  const size_t span = static_cast<size_t>(rows - 1u) * l.storagePitch + rowBytes;
++  if (offset > l.bytes || span > l.bytes - offset) { return false; }
++  result = { offset, static_cast<size_t>(rowBytes) * rows, rowBytes, rows };
++  return true;
++}
++
++inline bool copyRows(void* destination, size_t destinationBytes, uint32_t destinationPitch,
++                    const void* source, size_t sourceBytes, uint32_t sourcePitch,
++                    const Transfer& t) {
++  if (!destination || !source || !t.rows || !t.rowBytes
++    || destinationPitch < t.rowBytes || sourcePitch < t.rowBytes) { return false; }
++  const uint64_t destinationSpan = static_cast<uint64_t>(t.rows - 1u) * destinationPitch + t.rowBytes;
++  const uint64_t sourceSpan = static_cast<uint64_t>(t.rows - 1u) * sourcePitch + t.rowBytes;
++  if (destinationSpan > destinationBytes || sourceSpan > sourceBytes) { return false; }
++  auto* dst = static_cast<uint8_t*>(destination);
++  const auto* src = static_cast<const uint8_t*>(source);
++  for (uint32_t row = 0; row < t.rows; ++row) {
++    std::memcpy(dst + static_cast<size_t>(row) * destinationPitch,
++      src + static_cast<size_t>(row) * sourcePitch, t.rowBytes);
++  }
++  return true;
++}
++}
+diff --git a/bridge/src/util/meson.build b/bridge/src/util/meson.build
+index fb5d556..24b0fef 100644
+--- a/bridge/src/util/meson.build
++++ b/bridge/src/util/meson.build
+@@ -38,6 +38,9 @@ util_src = files([
+ ])
+ 
+ util_header = files([
++  'ati_texture_layout.h',
++  'queue_wait_diagnostics.h',
++
+ 	'util_atomiccircularqueue.h',
+ 	'util_blockingcircularqueue.h',
+ 	'util_bridge_assert.h',
+diff --git a/bridge/src/util/queue_wait_diagnostics.h b/bridge/src/util/queue_wait_diagnostics.h
+new file mode 100644
+index 0000000..ee686c7
+--- /dev/null
++++ b/bridge/src/util/queue_wait_diagnostics.h
+@@ -0,0 +1,63 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++
++#pragma once
++
++#include <atomic>
++#include <cstddef>
++#include <cstdint>
++#include <cstdio>
++
++namespace l4d2_queue {
++struct Snapshot {
++  uint64_t waits, timeouts, failures, legacyWaits, signals, signalFailures;
++  uint64_t fullWaits, fullWaitMs, maxFullWaitMs;
++};
++
++class Counters {
++  std::atomic<uint64_t> m_waits{0}, m_timeouts{0}, m_failures{0}, m_legacyWaits{0};
++  std::atomic<uint64_t> m_signals{0}, m_signalFailures{0};
++  std::atomic<uint64_t> m_fullWaits{0}, m_fullWaitMs{0}, m_maxFullWaitMs{0};
++public:
++  void waited(bool timeout, bool failed) {
++    m_waits.fetch_add(1, std::memory_order_relaxed);
++    if (timeout) { m_timeouts.fetch_add(1, std::memory_order_relaxed); }
++    if (failed) { m_failures.fetch_add(1, std::memory_order_relaxed); }
++  }
++  void legacyWait() { m_legacyWaits.fetch_add(1, std::memory_order_relaxed); }
++  void signaled(bool success) {
++    (success ? m_signals : m_signalFailures).fetch_add(1, std::memory_order_relaxed);
++  }
++  void blocked(uint64_t elapsedMs) {
++    m_fullWaits.fetch_add(1, std::memory_order_relaxed);
++    m_fullWaitMs.fetch_add(elapsedMs, std::memory_order_relaxed);
++    auto previous = m_maxFullWaitMs.load(std::memory_order_relaxed);
++    while (previous < elapsedMs && !m_maxFullWaitMs.compare_exchange_weak(
++        previous, elapsedMs, std::memory_order_relaxed)) {}
++  }
++  Snapshot snapshot() const {
++    return {m_waits.load(std::memory_order_relaxed), m_timeouts.load(std::memory_order_relaxed),
++      m_failures.load(std::memory_order_relaxed), m_legacyWaits.load(std::memory_order_relaxed),
++      m_signals.load(std::memory_order_relaxed), m_signalFailures.load(std::memory_order_relaxed),
++      m_fullWaits.load(std::memory_order_relaxed), m_fullWaitMs.load(std::memory_order_relaxed),
++      m_maxFullWaitMs.load(std::memory_order_relaxed)};
++  }
++};
++
++// Local to each binary/process; records waiting and notifications, not every command.
++inline Counters counters;
++
++inline int format(char* destination, size_t capacity) {
++  const auto s = counters.snapshot();
++  return std::snprintf(destination, capacity,
++    " q_wait_events=%llu q_wait_timeouts=%llu q_wait_failures=%llu q_legacy_waits=%llu "
++    "q_wake_signals=%llu q_wake_failures=%llu q_full_waits=%llu "
++    "q_full_wait_ms=%llu q_full_wait_max_ms=%llu\r\n",
++    static_cast<unsigned long long>(s.waits), static_cast<unsigned long long>(s.timeouts),
++    static_cast<unsigned long long>(s.failures), static_cast<unsigned long long>(s.legacyWaits),
++    static_cast<unsigned long long>(s.signals), static_cast<unsigned long long>(s.signalFailures),
++    static_cast<unsigned long long>(s.fullWaits), static_cast<unsigned long long>(s.fullWaitMs),
++    static_cast<unsigned long long>(s.maxFullWaitMs));
++}
++}
+diff --git a/bridge/src/util/util_atomiccircularqueue.h b/bridge/src/util/util_atomiccircularqueue.h
+index 4be48da..18db8f4 100644
+--- a/bridge/src/util/util_atomiccircularqueue.h
++++ b/bridge/src/util/util_atomiccircularqueue.h
+@@ -22,16 +22,22 @@
+ #pragma once
+ 
+ #include "util_common.h"
+-
+-#include "../tracy/tracy.hpp"
++#include "queue_wait_diagnostics.h"
+ 
+ #include <cstdio>
++#include <algorithm>
+ #include <atomic>
+ #include <assert.h>
++#include <new>
++#include <string>
++#include <thread>
+ #include <vector>
+ #define WIN32_LEAN_AND_MEAN
+ #include <windows.h>
+ 
++// Copyright (c) 2026 yeyunyyds. Modifications licensed under MIT.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++
+ namespace bridge_util {
+ 
+   // Intra/Inter-process thread safe, shared circular queue.
+@@ -41,9 +47,12 @@ namespace bridge_util {
+   class AtomicCircularQueue {
+     std::atomic<uint32_t>* m_write;
+     std::atomic<uint32_t>* m_read;
++    std::atomic<uint32_t>* m_waiting;
++    std::atomic<uint32_t>* m_wakeProtocol;
++    HANDLE m_wakeEvent;
+ 
+     T* m_data;
+-    T m_default;
++    T m_default{};
+ 
+     const size_t m_queueSize;
+ 
+@@ -51,6 +60,42 @@ namespace bridge_util {
+     static const size_t kWriteAtomicOffset = 0;
+     static const size_t kReadAtomicOffset = kAlignment + kWriteAtomicOffset;
+     static const size_t kMemoryPoolOffset = kAlignment + kReadAtomicOffset;
++    static const size_t kWaitAtomicOffset = kWriteAtomicOffset + 64;
++    static const size_t kWakeProtocolOffset = kReadAtomicOffset + 64;
++    static constexpr uint32_t kWakeProtocol = 0x4c344431;
++    static constexpr uint32_t kSpinCount = 128;
++    static constexpr DWORD kIdleWaitMs = 10;
++
++    void waitForWrite(ULONGLONG start, DWORD timeoutMs, uint32_t& spins, bool& legacyCounted) const {
++      if (spins++ < kSpinCount) {
++        YieldProcessor();
++        return;
++      }
++      if (!m_wakeEvent || m_wakeProtocol->load(std::memory_order_acquire) != kWakeProtocol) {
++        if (!legacyCounted) {
++          l4d2_queue::counters.legacyWait();
++          legacyCounted = true;
++        }
++        std::this_thread::yield();
++        return;
++      }
++
++      // Pair the armed flag and index recheck with the producer's SC publication.
++      m_waiting->store(1, std::memory_order_seq_cst);
++      if (m_write->load(std::memory_order_relaxed) == m_read->load(std::memory_order_seq_cst)) {
++        DWORD waitMs = kIdleWaitMs;
++        if (timeoutMs) {
++          const ULONGLONG elapsed = GetTickCount64() - start;
++          waitMs = elapsed >= timeoutMs ? 0 :
++            static_cast<DWORD>((std::min)(static_cast<ULONGLONG>(waitMs), timeoutMs - elapsed));
++        }
++        // The bounded wait also observes cancellation and failed wake notifications.
++        const DWORD waitResult = WaitForSingleObject(m_wakeEvent, waitMs);
++        l4d2_queue::counters.waited(waitResult == WAIT_TIMEOUT, waitResult == WAIT_FAILED);
++      }
++      m_waiting->store(0, std::memory_order_seq_cst);
++      spins = 0;
++    }
+ 
+   public:
+     static size_t getExtraMemoryRequirements() {
+@@ -65,6 +110,12 @@ namespace bridge_util {
+       assert(memSize > kMemoryPoolOffset);
+       assert(memSize - kMemoryPoolOffset >= queueSize * sizeof(T));
+ 
++      m_wakeEvent = CreateEventA(nullptr, FALSE, FALSE, (name + "Wake").c_str());
++      m_waiting = reinterpret_cast<std::atomic<uint32_t>*>(
++        reinterpret_cast<uintptr_t>(pMemory) + kWaitAtomicOffset);
++      m_wakeProtocol = reinterpret_cast<std::atomic<uint32_t>*>(
++        reinterpret_cast<uintptr_t>(pMemory) + kWakeProtocolOffset);
++
+       // Writers own the memory, Readers are consumers
+       if constexpr(IS_READER(Accessor)) {
+         m_data = (T*) ((uintptr_t) pMemory + kMemoryPoolOffset);
+@@ -74,6 +125,8 @@ namespace bridge_util {
+         m_data = new((void*) ((uintptr_t) pMemory + kMemoryPoolOffset)) T[m_queueSize];
+         m_write = new((void*) ((uintptr_t) pMemory + kWriteAtomicOffset)) std::atomic<uint32_t>(0);
+         m_read = new((void*) ((uintptr_t) pMemory + kReadAtomicOffset)) std::atomic<uint32_t>(0);
++        new (m_waiting) std::atomic<uint32_t>(0);
++        new (m_wakeProtocol) std::atomic<uint32_t>(m_wakeEvent ? kWakeProtocol : 0);
+       }
+ 
+       assert(m_read->is_lock_free() && m_write->is_lock_free()); // Must be runtime check as it's CPU specific
+@@ -82,30 +135,42 @@ namespace bridge_util {
+     AtomicCircularQueue(const AtomicCircularQueue& q) = delete;
+ 
+     ~AtomicCircularQueue() {
++      if (m_wakeEvent) {
++        CloseHandle(m_wakeEvent);
++      }
+     }
+ 
+     // Push object to queue
+     Result push(const T& obj) {
+       ULONGLONG start = 0, curTick;
++      ULONGLONG fullStart = 0;
++      bool blocked = false;
+       const DWORD timeoutMS = GlobalOptions::getCommandTimeout();
+       do {
+         const auto currentRead = m_read->load(std::memory_order_relaxed);
+         const auto nextRead = queueIdxInc(currentRead);
+         if (nextRead != m_write->load(std::memory_order_acquire)) {
+           m_data[currentRead] = obj;
+-          // The store above is not atomic. Issue a membar after it to ensure
+-          // it is not reordered.
+-          std::atomic_thread_fence(std::memory_order_seq_cst);
+-          m_read->store(nextRead, std::memory_order_release);
++          m_read->store(nextRead, std::memory_order_seq_cst);
++          if (m_wakeEvent && m_waiting->load(std::memory_order_seq_cst) &&
++              m_waiting->exchange(0, std::memory_order_seq_cst)) {
++            l4d2_queue::counters.signaled(SetEvent(m_wakeEvent) != FALSE);
++          }
++          if (blocked) { l4d2_queue::counters.blocked(GetTickCount64() - fullStart); }
+           return Result::Success;
+         }
+ 
++        if (!blocked) {
++          fullStart = GetTickCount64();
++          blocked = true;
++        }
+         std::this_thread::yield();
+ 
+         curTick = GetTickCount64();
+         start = start > 0 ? start : curTick;
+       } while (timeoutMS == 0 || start + timeoutMS > curTick);
+ 
++      if (blocked) { l4d2_queue::counters.blocked(GetTickCount64() - fullStart); }
+       return Result::Failure;
+     }
+ 
+@@ -117,7 +182,9 @@ namespace bridge_util {
+     // Returns a ref to the first element in the queue
+     // Note: Blocks if the queue is empty
+     const T& peek(Result& result, const DWORD timeoutMS = 0, std::atomic<bool>* const pbEarlyOutSignal = nullptr) const {
+-      ULONGLONG start = 0, curTick;
++      const ULONGLONG start = GetTickCount64();
++      uint32_t spins = 0;
++      bool legacyCounted = false;
+       do {
+         const auto currentWrite = m_write->load(std::memory_order_relaxed);
+         if (currentWrite != m_read->load(std::memory_order_acquire)) {
+@@ -127,16 +194,15 @@ namespace bridge_util {
+           return m_data[currentWrite];
+         }
+ 
+-        std::this_thread::yield();
+-
+-        curTick = GetTickCount64();
+-        start = start > 0 ? start : curTick;
+-        
+         if (pbEarlyOutSignal && pbEarlyOutSignal->load()) {
+           result = Result::Timeout;
+           return m_default;
+         }
+-      } while (timeoutMS == 0 || start + timeoutMS > curTick);
++        if (timeoutMS && GetTickCount64() - start >= timeoutMS) {
++          break;
++        }
++        waitForWrite(start, timeoutMS, spins, legacyCounted);
++      } while (true);
+ 
+       result = Result::Timeout;
+ 
+@@ -145,29 +211,30 @@ namespace bridge_util {
+ 
+     // Returns a copy to the first element in queue, AND removes it
+     // Note: Blocks if queue is empty
+-    const T& pull(Result& result, const DWORD timeoutMS = 0, std::atomic<bool>* const pbEarlyOutSignal = nullptr) {
+-      ULONGLONG start = 0, curTick;
++    T pull(Result& result, const DWORD timeoutMS = 0, std::atomic<bool>* const pbEarlyOutSignal = nullptr) {
++      const ULONGLONG start = GetTickCount64();
++      uint32_t spins = 0;
++      bool legacyCounted = false;
+       do {
+         const auto currentWrite = m_write->load(std::memory_order_relaxed);
+         if (currentWrite != m_read->load(std::memory_order_acquire)) {
++          const T value = m_data[currentWrite];
+           m_write->store(queueIdxInc(currentWrite), std::memory_order_release);
+-          // Issue a membar before reading the data since it is not atomic
+-          std::atomic_thread_fence(std::memory_order_seq_cst);
+           result = Result::Success;
+-          return m_data[currentWrite];
++          return value;
+         }
+ 
+-        std::this_thread::yield();
+-
+-        curTick = GetTickCount64();
+-        start = start > 0 ? start : curTick;
+-
+         if (pbEarlyOutSignal && pbEarlyOutSignal->load()) {
+           result = Result::Timeout;
+           return m_default;
+         }
+-      } while (timeoutMS == 0 || start + timeoutMS > curTick);
++        if (timeoutMS && GetTickCount64() - start >= timeoutMS) {
++          break;
++        }
++        waitForWrite(start, timeoutMS, spins, legacyCounted);
++      } while (true);
+ 
++      result = Result::Timeout;
+       return m_default;
+     }
+ 
+@@ -214,4 +281,4 @@ namespace bridge_util {
+     }
+   };
+ 
+-}
+\ No newline at end of file
++}
 diff --git a/bridge/src/util/util_filesys.h b/bridge/src/util/util_filesys.h
 index 15915da..6571ee1 100644
 --- a/bridge/src/util/util_filesys.h
@@ -716,59 +1595,3 @@ index 15915da..6571ee1 100644
    }
  };
  
-diff --git a/bridge/src/client/d3d9_volume.cpp b/bridge/src/client/d3d9_volume.cpp
-index 11704cf..38460bb 100644
---- a/bridge/src/client/d3d9_volume.cpp
-+++ b/bridge/src/client/d3d9_volume.cpp
-@@ -134,8 +134,9 @@ bool Direct3DVolume9_LSS::lock(D3DLOCKED_BOX& lockedVolume, const D3DBOX* const
-   const auto columnStride = ((height + pixelsPerBlock - 1) / pixelsPerBlock);
-   const auto size = depth * columnStride * rowStride * bytesPerPixel;
-   void* const pData = new uint8_t[size];
--  lockedVolume.RowPitch = rowStride;
--  lockedVolume.SlicePitch = columnStride;
-+  // D3DLOCKED_BOX exposes byte strides, including for block-compressed data.
-+  lockedVolume.RowPitch = rowStride * bytesPerPixel;
-+  lockedVolume.SlicePitch = columnStride * lockedVolume.RowPitch;
-   lockedVolume.pBits = pData;
-   m_lockInfoQueue.push({ lockedVolume, box, flags });
-   return true;
-@@ -154,8 +155,11 @@ void Direct3DVolume9_LSS::unlock() {
-   const auto& box = lockInfo.box;
-   const auto [width, height, depth] = getBoxDimensions(box);
-   const auto bytesPerPixel = bridge_util::getBytesFromFormat(m_desc.Format);
--  const auto rowSize = lockedVolume.RowPitch * bytesPerPixel;
--  const auto totalSize = depth * lockedVolume.SlicePitch * rowSize;
-+  const auto pixelsPerBlock = bridge_util::getBlockSize(m_desc.Format);
-+  const auto rows = (height + pixelsPerBlock - 1) / pixelsPerBlock;
-+  const auto blocksPerRow = (width + pixelsPerBlock - 1) / pixelsPerBlock;
-+  const auto rowSize = static_cast<size_t>(lockedVolume.RowPitch);
-+  const auto totalSize = depth * static_cast<size_t>(lockedVolume.SlicePitch);
- 
-   // Now send the box dimensions and surface handle
-   if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
-@@ -165,12 +169,14 @@ void Direct3DVolume9_LSS::unlock() {
-     c.send_data(lockInfo.flags);
- 
-     // Now push actual bytes
--    c.send_many(bytesPerPixel, lockedVolume.RowPitch, lockedVolume.SlicePitch, depth);
-+    // Preserve the existing wire layout: block bytes, blocks per row, rows, depth.
-+    c.send_many(bytesPerPixel, static_cast<uint32_t>(blocksPerRow),
-+                static_cast<uint32_t>(rows), static_cast<uint32_t>(depth));
- #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
-     if (auto* blobPacketPtr = c.begin_data_blob(totalSize))
- #endif
-       for (uint32_t z = 0; z < depth; z++) {
--        for (uint32_t y = 0; y < lockedVolume.SlicePitch; y++) {
-+        for (uint32_t y = 0; y < rows; y++) {
-           auto ptr = static_cast<uint8_t*>(lockedVolume.pBits) +
-             y * lockedVolume.RowPitch + z * lockedVolume.SlicePitch;
- #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
-@@ -185,7 +191,7 @@ void Direct3DVolume9_LSS::unlock() {
-     c.end_data_blob();
- #endif
-   }
--  delete lockedVolume.pBits;
-+  delete[] static_cast<uint8_t*>(lockedVolume.pBits);
- }
- 
- D3DBOX Direct3DVolume9_LSS::resolveLockInfoBox(const D3DBOX* const pBox, const D3DVOLUME_DESC& desc) {

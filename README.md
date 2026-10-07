@@ -11,6 +11,7 @@
 - 默认使用 **DXVK-GPLALL 2.6.8-2 x64** 后端，版本和下载校验值独立固定在 [config/backend.json](config/backend.json)，不随 Bridge 自动升级。
 - 本仓库增加上游检查、自动编译、测试、Nightly 发布和精简安装包规则。
 - 修复三维纹理字节步长及上传偏移，避免颜色校正查色表损坏造成的偏色。来源与复测步骤见 [偏色修复说明](docs/VOLUME-TEXTURE-COLOR-FIX.md)。
+- 移植原项目的纹理创建失败处理、ATI1/ATI2 压缩纹理边界修复和命令队列事件唤醒，带配套原生测试。移植基准见 [更新跟踪](docs/ORIGINAL-PROJECT-UPDATES.md)。
 
 `dxvk_d3d9.dll` 是 32 位 Bridge 客户端；`d3d9vk_x64.dll` 是 64 位 DXVK 后端，两者用途不同。
 

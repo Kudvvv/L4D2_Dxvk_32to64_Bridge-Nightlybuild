@@ -64,6 +64,12 @@ jobs:
       - name: Test diagnostics and shadow eviction
         shell: powershell
         run: ./scripts/test_diagnostics.ps1
+      - name: Test ATI texture transfer bounds (x86 and x64)
+        shell: powershell
+        run: ./scripts/test_ati_texture_layout.ps1
+      - name: Test command queue wakeups and cross-process transport
+        shell: powershell
+        run: ./scripts/test_command_queue.ps1
       - name: Record provenance and archive
         shell: pwsh
         env:
