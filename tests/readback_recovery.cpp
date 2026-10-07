@@ -139,9 +139,11 @@ static int policyTests(const wchar_t* executable) {
       for (auto& sub : backing) {
         if (!sub.recoveryMissing() || sub.get() || sub.backingBytes() || sub.acquire(4096, 0)) { return 45; }
       }
+      if (!parent.allowsEviction(0)) { return 79; }
       if (l4d2_memory::surfaceBackingBytes != baseline || c.drops != 1 || c.db.records()) { return 46; }
       const RECT region { 0, 0, 8, 8 };
       if (!parent.beforeLock(1, D3DLOCK_READONLY, region)) { return 47; }
+      if (parent.allowsEviction(0)) { return 80; }
       if (c.misses != 1 || c.promotions != 1 || c.hashMatches != 3 || c.recovered != 3 || c.failures || c.fallback || c.db.records() != 1) { return 48; }
       for (uint32_t mip = 0; mip < 3; ++mip) {
         Layout l; layout(256 >> mip, 256 >> mip, kDxt5, l);

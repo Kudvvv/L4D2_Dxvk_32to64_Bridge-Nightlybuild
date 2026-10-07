@@ -36,6 +36,9 @@ int main() {
     assert(difference.mismatchBytes == 2 && difference.firstOffset == 0);
     assert(difference.expected == reference[0] && difference.actual == recovered[0]);
   }
+  assert(residencyLayout(1, 3, 28, l) && l.rowBytes == 1 && l.bytes == 3);
+  assert(!layout(1, 3, 28, l)); // Phase 1 format eligibility stays unchanged.
+  assert(!residencyLayout(256, 256, 999, l));
   Selection selection;
   assert(!selection.take(kDxt5, 32, 32, 20));
   assert(selection.take(kDxt5, 256, 256, 20));

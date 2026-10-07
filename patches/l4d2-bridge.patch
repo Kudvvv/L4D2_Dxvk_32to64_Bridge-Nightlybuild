@@ -430,7 +430,7 @@ index 1593d51..19d9962 100644
    {
      BRIDGE_PARENT_DEVICE_LOCKGUARD();
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
-index 300aaf5..84df744 100644
+index 300aaf5..352c9a2 100644
 --- a/bridge/src/client/d3d9_lss.cpp
 +++ b/bridge/src/client/d3d9_lss.cpp
 @@ -1,3 +1,7 @@
@@ -516,17 +516,28 @@ index 300aaf5..84df744 100644
  
      DInputHookAttach();
  
-@@ -606,6 +624,10 @@ void RemixDetach() {
+@@ -606,6 +624,11 @@ void RemixDetach() {
      // Clean up resources
      delete gpPresent;
  
 +    l4d2_pageblock::summary(true);
 +    l4d2_readback::summary();
 +    l4d2_retention::summary();
++    l4d2_residency::summary();
 +
      Logger::info("Shutdown cleanup successful, exiting now!");
      BridgeState::setClientState(BridgeState::ProcessState::Exited);
  
+diff --git a/bridge/src/client/d3d9_lss.def b/bridge/src/client/d3d9_lss.def
+index 0fbd289..e684b6e 100644
+--- a/bridge/src/client/d3d9_lss.def
++++ b/bridge/src/client/d3d9_lss.def
+@@ -20,3 +20,5 @@ EXPORTS
+ 
+   remixapi_InitializeLibrary @ 39
+   remixapi_RegisterCallbacks @ 40
++
++  L4D2BridgePageBlockControl @ 41
 diff --git a/bridge/src/client/d3d9_module.cpp b/bridge/src/client/d3d9_module.cpp
 index 175430f..c8b0ed4 100644
 --- a/bridge/src/client/d3d9_module.cpp
@@ -614,7 +625,7 @@ index 175430f..c8b0ed4 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
-index e54aec5..9f78378 100644
+index e54aec5..9cb2cbc 100644
 --- a/bridge/src/client/d3d9_surface.cpp
 +++ b/bridge/src/client/d3d9_surface.cpp
 @@ -1,3 +1,7 @@
@@ -653,7 +664,7 @@ index e54aec5..9f78378 100644
  
  Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
                                             const D3DSURFACE_DESC& desc, bool isBackBuffer)
-@@ -38,21 +56,41 @@ Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDev
+@@ -38,21 +56,47 @@ Direct3DSurface9_LSS::Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDev
    , m_desc(desc)
    , m_isBackBuffer(isBackBuffer)
  {
@@ -661,6 +672,10 @@ index e54aec5..9f78378 100644
 +}
 +
 +void Direct3DSurface9_LSS::initializeShadowDiagnostics() {
++  if (!m_bUseSharedHeap) {
++    m_residency = std::make_unique<l4d2_residency::Entry>(l4d2_residency::context(), m_shadow, getId(), m_desc);
++    if (m_isBackBuffer) { m_residency->type = l4d2_shadow::Type::BackBuffer; }
++  }
 +  // NV-DXVK start: Optional lifetime diagnostics retain no resource references.
 +  static const bool enabled = [] {
 +    try { return Config::getOption<bool>("client.pageBlockDiagnostics", false); }
@@ -685,6 +700,8 @@ index e54aec5..9f78378 100644
  }
  
  Direct3DSurface9_LSS::~Direct3DSurface9_LSS() {
++  std::lock_guard<std::recursive_mutex> guard(l4d2_residency::context().mutex);
++  m_residency.reset();
 +  // NV-DXVK start: Remove the non-owning policy view before destroying its backing.
 +  if (m_retention) { m_retention->detach(m_readbackMip); }
 +  // NV-DXVK end
@@ -703,7 +720,7 @@ index e54aec5..9f78378 100644
    }
  }
  
-@@ -121,7 +159,21 @@ HRESULT Direct3DSurface9_LSS::GetDesc(D3DSURFACE_DESC* pDesc) {
+@@ -121,7 +165,21 @@ HRESULT Direct3DSurface9_LSS::GetDesc(D3DSURFACE_DESC* pDesc) {
  }
  
  HRESULT Direct3DSurface9_LSS::LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) {
@@ -725,7 +742,7 @@ index e54aec5..9f78378 100644
    // Store locked rect pointer locally so we can copy the data on unlock
    {
      BRIDGE_PARENT_DEVICE_LOCKGUARD();
-@@ -148,9 +200,12 @@ HRESULT Direct3DSurface9_LSS::LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT*
+@@ -148,9 +206,12 @@ HRESULT Direct3DSurface9_LSS::LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT*
  }
  
  HRESULT Direct3DSurface9_LSS::UnlockRect() {
@@ -738,8 +755,11 @@ index e54aec5..9f78378 100644
      unlock();
    }
    return S_OK;
-@@ -205,8 +260,15 @@ HRESULT Direct3DSurface9_LSS::ReleaseDC(HDC hdc) {
+@@ -203,10 +264,18 @@ HRESULT Direct3DSurface9_LSS::ReleaseDC(HDC hdc) {
+ }
+ 
  bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, const DWORD& flags) {
++  std::lock_guard<std::recursive_mutex> residencyGuard(l4d2_residency::context().mutex);
    const RECT rect = resolveLockInfoRect(pRect, m_desc);
    lockedRect.Pitch = bridge_util::calcRowSize(m_desc.Width, m_desc.Format);
 -  const auto surfaceSize =
@@ -755,7 +775,7 @@ index e54aec5..9f78378 100644
    if (m_bUseSharedHeap) {
      auto discardBufId = SharedHeap::kInvalidId;
      const bool bDiscard = (flags & D3DLOCK_DISCARD) != 0;
-@@ -220,18 +282,31 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
+@@ -220,23 +289,39 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
      lockedRect.pBits = getBufPtr(lockedRect.Pitch, rect);
      m_lockInfoQueue.push({ lockedRect, rect, flags, m_bufferId, discardBufId });
    } else {
@@ -768,6 +788,7 @@ index e54aec5..9f78378 100644
 +    // NV-DXVK start: Missing contents are restored before publishing a client Lock pointer.
 +    {
 +      l4d2_api_wait::Span apiRetentionTiming(l4d2_api_wait::Metric::Retention);
++      if (m_residency && !m_residency->beforeLock(flags, rect)) { return false; }
 +      if (m_retention && !m_retention->beforeLock(m_readbackMip, flags, rect)) { return false; }
      }
 +    // NV-DXVK end
@@ -778,6 +799,7 @@ index e54aec5..9f78378 100644
 +    auto* shadow = m_shadow.acquire(surfaceSize, surfaceShadowBudget(), fullOverwrite);
 +    apiShadowTiming.finish();
 +    if (!shadow) { return false; }
++    if (m_residency) { m_residency->lockedSuccessfully(); }
 +    l4d2_memory::sample(false, "surface-mapped", l4d2_memory::Kind::Surface, surfaceSize,
 +      m_desc.Width, m_desc.Height, static_cast<unsigned>(m_desc.Format));
  
@@ -794,10 +816,22 @@ index e54aec5..9f78378 100644
    }
    return true;
  }
-@@ -247,6 +322,29 @@ void Direct3DSurface9_LSS::unlock() {
+ 
+ void Direct3DSurface9_LSS::unlock() {
++  std::lock_guard<std::recursive_mutex> residencyGuard(l4d2_residency::context().mutex);
+   // Some game engines may attempt to Unlock a non-locked resource "just in case"
+   if (m_lockInfoQueue.empty()) {
+     return;
+@@ -245,7 +330,34 @@ void Direct3DSurface9_LSS::unlock() {
+   m_lockInfoQueue.pop();
+   // If this is a read only access then don't bother sending anything to the server
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
-     sendDataToServer(lockInfo);
-   }
+-    sendDataToServer(lockInfo);
++    if (!m_bUseSharedHeap) {
++      PagefileShadow::Transfer transfer(m_shadow);
++      sendDataToServer(lockInfo);
++    } else { sendDataToServer(lockInfo); }
++  }
 +  if (!m_bUseSharedHeap) {
 +    {
 +      l4d2_api_wait::Span apiShadowTiming(l4d2_api_wait::Metric::ShadowRelease);
@@ -819,18 +853,19 @@ index e54aec5..9f78378 100644
 +      l4d2_api_wait::Span apiRetentionTiming(l4d2_api_wait::Metric::Retention);
 +      m_retention->uploaded(m_readbackMip, full, m_uploadHash, m_uploadHashResult);
 +    }
++    if (m_residency) { m_residency->becameIdle(); }
 +    // NV-DXVK end
-+  }
+   }
  }
  
- RECT Direct3DSurface9_LSS::resolveLockInfoRect(const RECT* const pRect, const D3DSURFACE_DESC& desc) {
-@@ -261,7 +359,51 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
+@@ -261,7 +373,53 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
    return ptr;
  }
  
 -void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
 +void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) {
 +  l4d2_api_wait::Span apiUploadTiming(l4d2_api_wait::Metric::UploadLocal);
++  if (m_residency) { m_residency->uploadFailed(); }
 +  // NV-DXVK start: ATI API pitch and compressed storage pitch are independent.
 +  l4d2_ati::Layout atiLayout;
 +  if (l4d2_ati::layout(m_desc.Width, m_desc.Height, m_desc.Format, atiLayout)) {
@@ -857,6 +892,7 @@ index e54aec5..9f78378 100644
 +            lockInfo.lockedRect.pBits, atiLayout.bytes - transfer.offset, atiLayout.storagePitch, transfer);
 +          apiCopyTiming.finish();
 +          if (!copied) { Logger::err("L4D2 ATI upload failed: compressed range copy"); }
++          else if (m_residency) { m_residency->uploaded(atiLayout.backingBytes); }
 +          c.end_data_blob();
 +        }
 +      }
@@ -877,7 +913,7 @@ index e54aec5..9f78378 100644
    const auto dataFlag = m_bUseSharedHeap ? Commands::FlagBits::DataInSharedHeap : 0;
    {
      ClientMessage c(Commands::IDirect3DSurface9_UnlockRect, getId(), dataFlag);
-@@ -277,11 +419,19 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -277,11 +435,20 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
        const size_t rowSize = bridge_util::calcRowSize(width, m_desc.Format);
        c.send_data(rowSize);
        if (auto* blobPacketPtr = c.begin_data_blob(totalSize)) {
@@ -890,6 +926,7 @@ index e54aec5..9f78378 100644
          });
 +        apiCopyTiming.finish();
          c.end_data_blob();
++        if (m_residency) { m_residency->uploaded(bridge_util::calcTotalSizeOfRect(m_desc.Width, m_desc.Height, m_desc.Format)); }
 +        if (hash) {
 +          l4d2_api_wait::Span apiHashTiming(l4d2_api_wait::Metric::UploadLocal);
 +          m_uploadHashResult = hash->finish(m_uploadHash);
@@ -897,7 +934,7 @@ index e54aec5..9f78378 100644
        }
      }
    }
-@@ -296,4 +446,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -296,4 +463,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
  std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions(const RECT& rect) {
    return { rect.right  - rect.left,
             rect.bottom - rect.top  };
@@ -905,7 +942,7 @@ index e54aec5..9f78378 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_surface.h b/bridge/src/client/d3d9_surface.h
-index e4e9d51..abe2347 100644
+index e4e9d51..dd77bc4 100644
 --- a/bridge/src/client/d3d9_surface.h
 +++ b/bridge/src/client/d3d9_surface.h
 @@ -1,3 +1,7 @@
@@ -916,23 +953,25 @@ index e4e9d51..abe2347 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -32,6 +36,9 @@
+@@ -32,6 +36,10 @@
  /*
   * IDirect3DSurface9 LSS Interceptor Class
   */
 +#include "pagefile_shadow.h"
 +#include "retention_policy.h"
++#include "pageblock_runtime.h"
 +
  class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
    void onDestroy() override;
  
-@@ -48,10 +55,21 @@ class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
+@@ -48,10 +56,24 @@ class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
    };
    std::queue<LockInfo> m_lockInfoQueue;
  
 -  std::unique_ptr<uint8_t[]> m_shadow;
 -  inline static size_t g_totalSurfaceShadow = 0;
 +  PagefileShadow m_shadow;
++  std::unique_ptr<l4d2_residency::Entry> m_residency;
 +  void initializeShadowDiagnostics();
 +  // NV-DXVK start: Experimental readback identity is independent of diagnostics.
 +  uint32_t m_readbackParentId = 0, m_readbackMip = UINT32_MAX;
@@ -944,13 +983,15 @@ index e4e9d51..abe2347 100644
  
  public:
 +  void attachRetention(const std::shared_ptr<l4d2_retention::Parent>& policy, uint32_t mip) {
++    std::lock_guard<std::recursive_mutex> guard(l4d2_residency::context().mutex);
 +    m_retention = policy;
++    if (m_residency) { m_residency->learnedEligible = [this, mip] { return m_retention && m_retention->allowsEviction(mip); }; }
 +    if (m_retention) { m_retention->attach(mip, getId(), m_shadow); }
 +  }
    Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
                         const D3DSURFACE_DESC& desc, 
                         bool isBackBuffer = false);
-@@ -65,10 +83,20 @@ public:
+@@ -65,10 +87,22 @@ public:
      , m_bUseSharedHeap(GlobalOptions::getUseSharedHeapForTextures())
      , m_desc(desc)
      , m_isBackBuffer(isBackBuffer) {
@@ -960,7 +1001,9 @@ index e4e9d51..abe2347 100644
    ~Direct3DSurface9_LSS();
  
 +  void describeShadowParent(uint64_t parentId, l4d2_shadow::Type type, uint32_t mip, uint32_t face) {
++    std::lock_guard<std::recursive_mutex> guard(l4d2_residency::context().mutex);
 +    m_shadow.describeParent(parentId, type, mip, face);
++    if (m_residency) { m_residency->parentId = parentId; m_residency->type = type; m_residency->mip = mip; m_residency->face = face; }
 +    // NV-DXVK start: Value metadata never retains the parent object.
 +    m_readbackParentId = static_cast<uint32_t>(parentId);
 +    m_readbackMip = mip;
@@ -971,7 +1014,7 @@ index e4e9d51..abe2347 100644
    /*** IUnknown methods ***/
    STDMETHOD(QueryInterface)(THIS_ REFIID riid, void** ppvObj);
    STDMETHOD_(ULONG, AddRef)(THIS);
-@@ -97,6 +125,6 @@ private:
+@@ -97,6 +131,6 @@ private:
    void unlock();
    static RECT resolveLockInfoRect(const RECT* const pRect, const D3DSURFACE_DESC& desc);
    void* getBufPtr(const int pitch, const RECT& rect);
@@ -1649,7 +1692,7 @@ index 0000000..f4f8b17
 +}
 +}
 diff --git a/bridge/src/client/meson.build b/bridge/src/client/meson.build
-index 2ad1e79..5b4092a 100644
+index 2ad1e79..04264f2 100644
 --- a/bridge/src/client/meson.build
 +++ b/bridge/src/client/meson.build
 @@ -1,3 +1,7 @@
@@ -1660,12 +1703,22 @@ index 2ad1e79..5b4092a 100644
  #############################################################################
  # Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
  #
-@@ -85,10 +89,19 @@ d3d9_header = files([
+@@ -49,6 +53,7 @@ d3d9_src = files([
+   'd3d9_volumetexture.cpp',
+   'di_hook.cpp',
+   'message_channels.cpp',
++  'pageblock_control.cpp',
+   'pch.cpp',
+   'remix_api.cpp',
+   'remix_state.cpp',
+@@ -85,10 +90,21 @@ d3d9_header = files([
    'framework.h',
    'lockable_buffer.h',
    'message_channels.h',
 +  'memory_diagnostics.h',
 +  'pageblock_diagnostics.h',
++  'pageblock_residency.h',
++  'pageblock_runtime.h',
 +  'pagefile_shadow.h',
 +  'readback_recovery.h',
 +  'retention_database.h',
@@ -1680,7 +1733,7 @@ index 2ad1e79..5b4092a 100644
    'window.h',
  ])
  
-@@ -102,7 +115,7 @@ thread_dep = dependency('threads')
+@@ -102,7 +118,7 @@ thread_dep = dependency('threads')
  
  d3d9_dll = shared_library('d3d9', d3d9_header, d3d9_src, d3d9_res, 
    sources             : [ bridge_version ],
@@ -1689,13 +1742,61 @@ index 2ad1e79..5b4092a 100644
    include_directories : [ bridge_include_path, util_include_path, detours_include_path, public_include_path ],
    vs_module_defs      : 'd3d9_lss.def')
  
-@@ -116,4 +129,4 @@ custom_target('copy_d3d9_to_output',
+@@ -116,4 +132,4 @@ custom_target('copy_d3d9_to_output',
      build_by_default : true,
      depends          : [ d3d9_dll ],
      command          : [copy_script_path, meson.current_build_dir(), output_dir, 'd3d9*'] )
 -endif
 \ No newline at end of file
 +endif
+diff --git a/bridge/src/client/pageblock_control.cpp b/bridge/src/client/pageblock_control.cpp
+new file mode 100644
+index 0000000..343356b
+--- /dev/null
++++ b/bridge/src/client/pageblock_control.cpp
+@@ -0,0 +1,42 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#include "pch.h"
++#include "pageblock_runtime.h"
++#include "pageblock_control.h"
++
++// This ABI is independent of Source/L4N; UI plugins only submit controls and display results.
++extern "C" HRESULT WINAPI L4D2BridgePageBlockControl(const l4d2_control::Request* request, l4d2_control::Response* response) {
++  if (!request || !response || request->bytes != sizeof(*request) || request->version != l4d2_control::kVersion
++    || response->bytes != sizeof(*response) || response->version != l4d2_control::kVersion) { return E_INVALIDARG; }
++  try {
++    auto& c = l4d2_residency::context();
++    std::lock_guard<std::recursive_mutex> guard(c.mutex);
++    l4d2_control::Response result;
++    if (request->operation == l4d2_control::Operation::SetPolicy) {
++      if (request->value > 2) { return E_INVALIDARG; }
++      if (!l4d2_residency::setPolicy(static_cast<l4d2_residency::Policy>(request->value))) { return E_ACCESSDENIED; }
++    } else if (request->operation == l4d2_control::Operation::Gc) {
++      if (request->value > 2) { return E_INVALIDARG; }
++      const auto gc = l4d2_residency::RunPageBlockGc(c, static_cast<l4d2_residency::PageBlockGcMode>(request->value));
++      result.pageBlocksScanned = gc.pageBlocksScanned; result.pageBlocksEvicted = gc.pageBlocksEvicted;
++      result.pageBlocksSkippedLocked = gc.pageBlocksSkippedLocked; result.pageBlocksSkippedTransferring = gc.pageBlocksSkippedTransferring;
++      result.pageBlocksSkippedPolicy = gc.pageBlocksSkippedPolicy; result.pageBlocksSkippedUnsynchronized = gc.pageBlocksSkippedUnsynchronized;
++      result.failures = gc.failures; result.bytesUnmapped = gc.bytesUnmapped; result.backingBytesReleased = gc.backingBytesReleased;
++      result.mappedBytesBefore = gc.mappedBytesBefore; result.mappedBytesAfter = gc.mappedBytesAfter;
++      result.transfersDrained = gc.transfersDrained; result.drainWaitCount = gc.drainWaitCount; result.drainWaitTimeMs = gc.drainWaitTimeMs;
++    } else if (request->operation != l4d2_control::Operation::Stats) { return E_INVALIDARG; }
++    result.policy = static_cast<l4d2_control::Policy>(c.policy);
++    result.flags = (c.referenceTest ? 1u : 0u) | (c.supported ? 2u : 0u);
++    for (const auto* entry : c.entries) {
++      const auto state = entry->state(); ++result.pageBlocks;
++      result.backingBytes += state.backingBytes; result.mappedBytes += state.mappedBytes;
++      result.locked += state.exposed ? 1u : 0u; result.transferring += state.transferring ? 1u : 0u;
++    }
++    result.dropEvictionCount = c.dropEvictionCount; result.dropEvictedBytes = c.dropEvictedBytes;
++    result.remapCountAfterDrop = c.remapCountAfterDrop; result.remapBytesAfterDrop = c.remapBytesAfterDrop;
++    result.reconstructionFailures = c.reconstructionFailures;
++    *response = result;
++    return S_OK;
++  } catch (...) { return E_FAIL; }
++}
 diff --git a/bridge/src/client/pageblock_diagnostics.h b/bridge/src/client/pageblock_diagnostics.h
 new file mode 100644
 index 0000000..2778ec3
@@ -1932,12 +2033,355 @@ index 0000000..2778ec3
 +  if (final && context.log != INVALID_HANDLE_VALUE) { FlushFileBuffers(context.log); }
 +}
 +}
+diff --git a/bridge/src/client/pageblock_residency.h b/bridge/src/client/pageblock_residency.h
+new file mode 100644
+index 0000000..c10b3bf
+--- /dev/null
++++ b/bridge/src/client/pageblock_residency.h
+@@ -0,0 +1,260 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include <algorithm>
++#include <cstdarg>
++#include <cstdio>
++#include <functional>
++#include <mutex>
++#include <unordered_set>
++#include <vector>
++#include <string>
++#include "pagefile_shadow.h"
++#include "../util/readback_transport.h"
++
++namespace l4d2_residency {
++enum class Policy { Keep, LearnedAggressive, Drop };
++enum class PageBlockGcMode { Learned, Aggressive, Force };
++inline const char* modeName(PageBlockGcMode mode) {
++  switch (mode) {
++  case PageBlockGcMode::Learned: return "learned";
++  case PageBlockGcMode::Aggressive: return "aggressive";
++  case PageBlockGcMode::Force: return "force";
++  }
++  return "invalid";
++}
++inline bool parsePolicy(const std::string& name, Policy& policy) {
++  if (name == "keep") { policy = Policy::Keep; return true; }
++  if (name == "learned-aggressive") { policy = Policy::LearnedAggressive; return true; }
++  if (name == "drop") { policy = Policy::Drop; return true; }
++  return false;
++}
++struct PageBlockGcResult {
++  uint64_t pageBlocksScanned = 0, pageBlocksEvicted = 0, pageBlocksSkippedLocked = 0;
++  uint64_t pageBlocksSkippedTransferring = 0, pageBlocksSkippedPolicy = 0, pageBlocksSkippedUnsynchronized = 0;
++  uint64_t failures = 0, bytesUnmapped = 0, backingBytesReleased = 0, mappedBytesBefore = 0, mappedBytesAfter = 0;
++  uint64_t transfersDrained = 0, drainWaitCount = 0;
++  double drainWaitTimeMs = 0;
++};
++class Entry;
++struct Context {
++  // Order: residency gate -> learned Context mutex -> PagefileShadow mutex.
++  // Surface Lock/Unlock/destruction take this gate; exposed pointers stay pinned after return.
++  std::recursive_mutex mutex;
++  Policy policy = Policy::Keep;
++  bool referenceTest = false, supported = true, diagnostics = false;
++  std::unordered_set<Entry*> entries;
++  std::function<HRESULT(const l4d2_readback::Request&, l4d2_readback::Temporary&, l4d2_readback::Response&, uint64_t&)> exchange;
++  std::function<void(const char*)> log, error;
++  uint64_t sequence = 0, dropEvictionCount = 0, dropEvictedBytes = 0;
++  uint64_t remapCountAfterDrop = 0, remapBytesAfterDrop = 0, reconstructionFailures = 0;
++  void write(const char* format, ...) const {
++    if (!log) { return; }
++    char line[2200] {}; va_list args; va_start(args, format);
++    const int count = vsnprintf_s(line, sizeof(line), _TRUNCATE, format, args); va_end(args);
++    if (count >= 0) { log(line); }
++  }
++};
++class Entry {
++  Context& m_context;
++  PagefileShadow& m_backing;
++  D3DSURFACE_DESC m_desc;
++  uint32_t m_id;
++  uint64_t m_size = 0;
++  bool m_uploaded = false, m_synchronized = false, m_residencyMissing = false, m_wasDrop = false;
++
++  l4d2_readback::Request request(bool acknowledgement) {
++    l4d2_readback::Request r;
++    r.resourceId = m_id; r.parentId = m_id; r.mip = 0;
++    r.width = m_desc.Width; r.height = m_desc.Height; r.format = static_cast<uint32_t>(m_desc.Format);
++    r.pool = static_cast<uint32_t>(m_desc.Pool); r.usage = m_desc.Usage;
++    l4d2_readback::Layout layout;
++    r.bytes = acknowledgement ? static_cast<uint32_t>(m_size)
++      : (l4d2_readback::residencyLayout(r.width, r.height, r.format, layout) ? layout.bytes : 0u);
++    r.operation = acknowledgement ? 3u : 2u;
++    LARGE_INTEGER nonce {}; QueryPerformanceCounter(&nonce);
++    swprintf_s(r.name, L"Local\\L4D2Recovery-%lu-%llu-%llu", GetCurrentProcessId(),
++      static_cast<unsigned long long>(++m_context.sequence), static_cast<unsigned long long>(nonce.QuadPart));
++    return r;
++  }
++  HRESULT exchange(bool acknowledgement, l4d2_readback::Temporary& temporary) {
++    if (!m_context.exchange || !m_context.supported) { return E_NOTIMPL; }
++    const auto r = request(acknowledgement);
++    l4d2_readback::Layout layout;
++    if (!l4d2_readback::requestValid(r, layout)) { return E_NOTIMPL; }
++    l4d2_readback::Response response; uint64_t elapsed = 0;
++    HRESULT hr = m_context.exchange(r, temporary, response, elapsed);
++    if (SUCCEEDED(hr) && (response.version != r.version || response.stage != l4d2_readback::Stage::Complete
++      || response.bytes != (acknowledgement ? 0u : r.bytes) || response.width != r.width || response.height != r.height
++      || response.format != r.format || response.mip != r.mip || response.deviceIdle
++      || (!acknowledgement && (response.rowBytes != layout.rowBytes || response.rows != layout.rows
++        || response.blockWidth != layout.blockWidth || response.blockHeight != layout.blockHeight || response.blockBytes != layout.blockBytes)))) {
++      hr = E_INVALIDARG;
++    }
++    if (m_context.diagnostics) {
++      m_context.write("PB_RESIDENCY event=host-result resource_id=%u operation=%s success=%u hresult=0x%08lx stage=%s elapsed_us=%llu queue_flush=%u event_wait=%u device_idle=%u",
++        m_id, acknowledgement ? "ack" : "readback", SUCCEEDED(hr) ? 1u : 0u, static_cast<unsigned long>(hr),
++        l4d2_readback::stageName(response.stage), static_cast<unsigned long long>(elapsed), response.flushRequested, response.eventWait, response.deviceIdle);
++    }
++    return hr;
++  }
++public:
++  uint64_t parentId = 0;
++  uint32_t mip = UINT32_MAX, face = UINT32_MAX;
++  l4d2_shadow::Type type = l4d2_shadow::Type::Surface;
++  std::function<bool()> learnedEligible;
++  // Only a known Bridge-owned operation may supply a safe drain. Game locks never use it.
++  std::function<bool()> drain;
++  Entry(Context& context, PagefileShadow& backing, uint32_t id, const D3DSURFACE_DESC& desc)
++    : m_context(context), m_backing(backing), m_desc(desc), m_id(id) {
++    std::lock_guard<std::recursive_mutex> guard(context.mutex); context.entries.insert(this);
++  }
++  ~Entry() { std::lock_guard<std::recursive_mutex> guard(m_context.mutex); m_context.entries.erase(this); }
++  Entry(const Entry&) = delete;
++  Entry& operator=(const Entry&) = delete;
++  PagefileShadow::State state() const { return m_backing.state(); }
++  void uploaded(size_t size) {
++    m_size = size; m_uploaded = true; m_synchronized = false;
++  }
++  void uploadFailed() { m_uploaded = false; m_synchronized = false; }
++  bool pendingSynchronization() const { return m_uploaded && !m_synchronized; }
++  bool synchronize() {
++    if (!m_uploaded) { return false; }
++    if (m_synchronized) { return true; }
++    l4d2_readback::Temporary temporary;
++    m_synchronized = SUCCEEDED(exchange(true, temporary));
++    return m_synchronized;
++  }
++  // All residency policies and GC modes share PagefileShadow::evictBacking.
++  bool evict(bool drop, PageBlockGcResult* result = nullptr) {
++    const auto before = state();
++    if (!before.backingBytes || before.exposed || before.transferring) { return false; }
++    if (!synchronize()) {
++      if (result) { ++result->pageBlocksSkippedUnsynchronized; }
++      m_context.write("PB_RESIDENCY event=implementation-gap resource_id=%u stage=host-ack reason=upload-not-confirmed backing_preserved=1", m_id);
++      return false;
++    }
++    const HRESULT hr = m_backing.evictBacking(before.backingBytes);
++    if (FAILED(hr)) {
++      if (result) { ++result->failures; }
++      m_context.write("PB_RESIDENCY event=eviction-failure resource_id=%u hresult=0x%08lx", m_id, static_cast<unsigned long>(hr));
++      return false;
++    }
++    m_residencyMissing = true; m_wasDrop = drop;
++    if (drop) { ++m_context.dropEvictionCount; m_context.dropEvictedBytes += before.backingBytes; }
++    if (result) {
++      ++result->pageBlocksEvicted; result->bytesUnmapped += before.mappedBytes; result->backingBytesReleased += before.backingBytes;
++    }
++    if (m_context.diagnostics) {
++      m_context.write("PB_RESIDENCY event=evicted resource_id=%u parent_id=%llu mip=%u bytes=%llu mapped_va_released=%llu cause=%s server_resource_preserved=1",
++        m_id, static_cast<unsigned long long>(parentId), mip, static_cast<unsigned long long>(before.backingBytes),
++        static_cast<unsigned long long>(before.mappedBytes), drop ? "drop" : "gc");
++    }
++    return true;
++  }
++  bool beforeLock(uint32_t flags, const RECT& region) {
++    const bool missing = m_backing.recoveryMissing();
++    const bool full = region.left == 0 && region.top == 0 && region.right == static_cast<LONG>(m_desc.Width)
++      && region.bottom == static_cast<LONG>(m_desc.Height);
++    const bool oldRequired = (flags & D3DLOCK_READONLY) || !(flags & D3DLOCK_DISCARD) || !full;
++    if (m_context.diagnostics) {
++      m_context.write("PB_RESIDENCY event=lock resource_id=%u parent_id=%llu type=%u format=0x%x usage=0x%x pool=%u width=%u height=%u mip=%u face=%u size=%llu lock_flags=0x%x rect=%ld,%ld,%ld,%ld old_contents_required=%u previously_evicted=%u reconstruction_required=%u",
++        m_id, static_cast<unsigned long long>(parentId), static_cast<uint32_t>(type), static_cast<uint32_t>(m_desc.Format), m_desc.Usage,
++        static_cast<uint32_t>(m_desc.Pool), m_desc.Width, m_desc.Height, mip, face, static_cast<unsigned long long>(m_size), flags,
++        region.left, region.top, region.right, region.bottom, oldRequired ? 1u : 0u, missing ? 1u : 0u,
++        missing && m_residencyMissing && oldRequired ? 1u : 0u);
++    }
++    // Learned misses still use the original hash-verified recovery/promotion path.
++    if (!missing || !m_residencyMissing) { return true; }
++    if (oldRequired) {
++      l4d2_readback::Temporary temporary;
++      HRESULT hr = exchange(false, temporary);
++      if (SUCCEEDED(hr)) {
++        l4d2_readback::Layout layout;
++        const bool supported = l4d2_readback::residencyLayout(m_desc.Width, m_desc.Height, static_cast<uint32_t>(m_desc.Format), layout);
++        const size_t pitch = (std::max)(layout.rowBytes, 4u);
++        if (!supported || pitch * layout.rows != m_size) { hr = E_NOTIMPL; }
++        else if (layout.bytes == m_size) { hr = m_backing.restoreCurrent(temporary.data(), static_cast<size_t>(m_size)); }
++        else {
++          std::vector<uint8_t> padded(static_cast<size_t>(m_size), 0);
++          for (uint32_t row = 0; row < layout.rows; ++row) {
++            std::memcpy(padded.data() + row * pitch, temporary.data() + static_cast<size_t>(row) * layout.rowBytes, layout.rowBytes);
++          }
++          hr = m_backing.restoreCurrent(padded.data(), padded.size());
++        }
++      }
++      if (FAILED(hr)) {
++        ++m_context.reconstructionFailures;
++        char line[300] {};
++        sprintf_s(line, "PB_RESIDENCY event=implementation-gap resource_id=%u stage=reconstruction hresult=0x%08lx lock_result=error silent_zero_fill=0", m_id, static_cast<unsigned long>(hr));
++        if (m_context.error) { m_context.error(line); }
++        m_context.write("%s", line);
++        return false;
++      }
++    }
++    return true;
++  }
++  void lockedSuccessfully() {
++    if (!m_residencyMissing) { return; }
++    if (m_wasDrop) { ++m_context.remapCountAfterDrop; m_context.remapBytesAfterDrop += m_size; }
++    m_residencyMissing = false;
++    if (m_context.diagnostics) {
++      m_context.write("PB_RESIDENCY event=remapped resource_id=%u bytes=%llu after_drop=%u", m_id, static_cast<unsigned long long>(m_size), m_wasDrop ? 1u : 0u);
++    }
++  }
++  void becameIdle() {
++    const auto current = state();
++    if (m_context.policy == Policy::Drop && !m_context.referenceTest && current.backingBytes
++      && !current.exposed && !current.transferring) { evict(true); }
++  }
++};
++inline PageBlockGcResult RunPageBlockGc(Context& context, PageBlockGcMode mode) {
++  PageBlockGcResult result;
++  std::lock_guard<std::recursive_mutex> guard(context.mutex);
++  for (const auto* entry : context.entries) { result.mappedBytesBefore += entry->state().mappedBytes; }
++  for (auto* entry : context.entries) {
++    ++result.pageBlocksScanned;
++    auto state = entry->state();
++    if (!state.backingBytes) { continue; }
++    if (state.exposed) { ++result.pageBlocksSkippedLocked; continue; }
++    if (state.transferring && mode == PageBlockGcMode::Force && entry->drain) {
++      LARGE_INTEGER begin {}, end {}; QueryPerformanceCounter(&begin); ++result.drainWaitCount;
++      const bool drained = entry->drain(); QueryPerformanceCounter(&end);
++      result.drainWaitTimeMs += static_cast<double>(l4d2_readback::microseconds(begin, end)) / 1000.0;
++      state = entry->state();
++      if (drained && !state.transferring) { ++result.transfersDrained; }
++    }
++    if (state.exposed) { ++result.pageBlocksSkippedLocked; continue; }
++    if (state.transferring) { ++result.pageBlocksSkippedTransferring; continue; }
++    if (context.referenceTest || !context.supported || (mode == PageBlockGcMode::Learned
++      && (!entry->learnedEligible || !entry->learnedEligible()))) { ++result.pageBlocksSkippedPolicy; continue; }
++    if (mode == PageBlockGcMode::Force && entry->pendingSynchronization()) {
++      LARGE_INTEGER begin {}, end {}; QueryPerformanceCounter(&begin);
++      const bool synchronized = entry->synchronize(); QueryPerformanceCounter(&end);
++      ++result.drainWaitCount;
++      result.drainWaitTimeMs += static_cast<double>(l4d2_readback::microseconds(begin, end)) / 1000.0;
++      if (!synchronized) { ++result.pageBlocksSkippedUnsynchronized; continue; }
++      ++result.transfersDrained;
++    }
++    entry->evict(false, &result);
++  }
++  for (const auto* entry : context.entries) { result.mappedBytesAfter += entry->state().mappedBytes; }
++  context.write("PB_GC mode=%s pageBlocksScanned=%llu pageBlocksEvicted=%llu pageBlocksSkippedLocked=%llu pageBlocksSkippedTransferring=%llu pageBlocksSkippedPolicy=%llu pageBlocksSkippedUnsynchronized=%llu failures=%llu bytesUnmapped=%llu backingBytesReleased=%llu mappedBytesBefore=%llu mappedBytesAfter=%llu transfersDrained=%llu drainWaitCount=%llu drainWaitTimeMs=%.3f",
++    modeName(mode), static_cast<unsigned long long>(result.pageBlocksScanned), static_cast<unsigned long long>(result.pageBlocksEvicted),
++    static_cast<unsigned long long>(result.pageBlocksSkippedLocked), static_cast<unsigned long long>(result.pageBlocksSkippedTransferring),
++    static_cast<unsigned long long>(result.pageBlocksSkippedPolicy), static_cast<unsigned long long>(result.pageBlocksSkippedUnsynchronized),
++    static_cast<unsigned long long>(result.failures), static_cast<unsigned long long>(result.bytesUnmapped), static_cast<unsigned long long>(result.backingBytesReleased),
++    static_cast<unsigned long long>(result.mappedBytesBefore), static_cast<unsigned long long>(result.mappedBytesAfter),
++    static_cast<unsigned long long>(result.transfersDrained), static_cast<unsigned long long>(result.drainWaitCount), result.drainWaitTimeMs);
++  return result;
++}
++inline void summary(Context& c) {
++  std::lock_guard<std::recursive_mutex> guard(c.mutex);
++  c.write("PB_DROP_SUMMARY dropEvictionCount=%llu dropEvictedBytes=%llu remapCountAfterDrop=%llu remapBytesAfterDrop=%llu reconstructionFailures=%llu",
++    static_cast<unsigned long long>(c.dropEvictionCount), static_cast<unsigned long long>(c.dropEvictedBytes),
++    static_cast<unsigned long long>(c.remapCountAfterDrop), static_cast<unsigned long long>(c.remapBytesAfterDrop),
++    static_cast<unsigned long long>(c.reconstructionFailures));
++}
++}
+diff --git a/bridge/src/client/pageblock_runtime.h b/bridge/src/client/pageblock_runtime.h
+new file mode 100644
+index 0000000..67f72d0
+--- /dev/null
++++ b/bridge/src/client/pageblock_runtime.h
+@@ -0,0 +1,71 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include "pageblock_residency.h"
++#include "retention_runtime.h"
++
++namespace l4d2_residency {
++struct Runtime {
++  Context context;
++  HANDLE file = INVALID_HANDLE_VALUE;
++  void write(const char* message) {
++    if (file == INVALID_HANDLE_VALUE) {
++      const auto directory = l4d2_retention::clientDirectory();
++      if (!directory.empty()) {
++        file = CreateFileW((directory / L"l4d2-pageblock-gc.log").c_str(), GENERIC_WRITE, FILE_SHARE_READ,
++          nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
++      }
++    }
++    if (file == INVALID_HANDLE_VALUE) { return; }
++    char line[2400] {}; SYSTEMTIME now {}; GetLocalTime(&now);
++    const int count = sprintf_s(line, "%02u:%02u:%02u.%03u pid=%lu %s\n", now.wHour, now.wMinute,
++      now.wSecond, now.wMilliseconds, GetCurrentProcessId(), message);
++    if (count > 0) { DWORD written = 0; WriteFile(file, line, static_cast<DWORD>(count), &written, nullptr); }
++  }
++  Runtime() {
++    const auto name = bridge_util::Config::getOption<std::string>("client.pageBlockRetentionPolicy", "keep");
++    if (!parsePolicy(name, context.policy)) {
++      bridge_util::Logger::warn("PB_RESIDENCY unknown policy; using keep");
++    }
++    context.diagnostics = bridge_util::Config::getOption<bool>("client.pageBlockDiagnostics", false);
++    context.referenceTest = bridge_util::Config::getOption<bool>("client.testReadbackRecovery", false);
++    context.supported = !bridge_util::Config::getOption<bool>("useSharedHeap", false)
++      && bridge_util::Config::getOption<bool>("server.useVanillaDxvk", true);
++    context.log = [this](const char* message) { write(message); };
++    context.error = [](const char* message) { bridge_util::Logger::err(message); };
++    context.exchange = [](const l4d2_readback::Request& r, l4d2_readback::Temporary& temporary,
++        l4d2_readback::Response& response, uint64_t& elapsed) -> HRESULT {
++      HRESULT hr = temporary.create(r);
++      if (FAILED(hr)) { return hr; }
++      LARGE_INTEGER begin {}, end {}; QueryPerformanceCounter(&begin);
++      { ClientMessage command(Commands::Bridge_TestReadbackRecovery, r.resourceId); command.send_data(static_cast<uint32_t>(sizeof(r)), &r); }
++      const auto wait = temporary.wait(20000); QueryPerformanceCounter(&end); elapsed = l4d2_readback::microseconds(begin, end);
++      if (wait != WAIT_OBJECT_0) { return HRESULT_FROM_WIN32(wait == WAIT_TIMEOUT ? ERROR_TIMEOUT : GetLastError()); }
++      response = temporary.response(); return response.hresult;
++    };
++    if (context.policy == Policy::Drop) {
++      context.write("PB_RESIDENCY event=config policy=drop experimental=1 reference_test=%u supported=%u", context.referenceTest ? 1u : 0u, context.supported ? 1u : 0u);
++      bridge_util::Logger::info("PB_RESIDENCY policy=drop experimental=1 host_ack_before_eviction=1");
++    }
++  }
++};
++inline Runtime& runtime() { static auto* instance = new Runtime(); return *instance; }
++inline Context& context() { return runtime().context; }
++inline bool setPolicy(Policy policy) {
++  auto& c = context(); std::lock_guard<std::recursive_mutex> guard(c.mutex);
++  if (c.referenceTest || !c.supported) { return false; }
++  l4d2_retention::runtime().setEnabled(policy == Policy::LearnedAggressive);
++  c.policy = policy;
++  c.write("PB_RESIDENCY event=policy-changed policy=%s persistent_config_changed=0",
++    policy == Policy::Drop ? "drop" : policy == Policy::LearnedAggressive ? "learned-aggressive" : "keep");
++  return true;
++}
++inline PageBlockGcResult RunPageBlockGc(PageBlockGcMode mode) { return RunPageBlockGc(context(), mode); }
++inline void summary() {
++  auto& r = runtime();
++  if (r.context.dropEvictionCount || r.context.diagnostics || r.context.policy == Policy::Drop) { summary(r.context); }
++  if (r.file != INVALID_HANDLE_VALUE) { FlushFileBuffers(r.file); }
++}
++}
 diff --git a/bridge/src/client/pagefile_shadow.h b/bridge/src/client/pagefile_shadow.h
 new file mode 100644
-index 0000000..141122a
+index 0000000..77aee22
 --- /dev/null
 +++ b/bridge/src/client/pagefile_shadow.h
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,277 @@
 +// SPDX-License-Identifier: MIT
 +// Project-specific additions and modifications: Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -1957,8 +2401,8 @@ index 0000000..141122a
 +  HANDLE m_section = nullptr;
 +  uint8_t* m_view = nullptr;
 +  size_t m_size = 0;
-+  size_t m_viewCost = 0;
-+  unsigned m_locks = 0;
++  size_t m_viewCost = 0, m_mappedVaBytes = 0;
++  unsigned m_locks = 0, m_transfers = 0;
 +  bool m_listed = false;
 +  // NV-DXVK start: Only the explicitly enabled real-miss experiment sets this state.
 +  bool m_recoveryMissing = false;
@@ -1993,6 +2437,7 @@ index 0000000..141122a
 +  static void trim(size_t budget) {
 +    while (s_mappedBytes > budget && s_tail) {
 +      auto victim = s_tail;
++      if (victim->m_transfers) { break; }
 +      victim->unmap();
 +      if (victim->m_view) { break; }
 +    }
@@ -2049,10 +2494,48 @@ index 0000000..141122a
 +    return m_section ? m_size : 0;
 +  }
 +
++  // NV-DXVK start: One physical eviction guard covers game pointers and Bridge transfers.
++  struct State {
++    size_t backingBytes = 0, mappedBytes = 0;
++    unsigned exposed = 0, transferring = 0;
++    bool missing = false;
++  };
++  State state() const {
++    std::lock_guard<std::mutex> guard(s_mutex);
++    return { m_section ? m_size : 0, m_view ? m_mappedVaBytes : 0, m_locks, m_transfers, m_recoveryMissing };
++  }
++  void beginTransfer() { std::lock_guard<std::mutex> guard(s_mutex); ++m_transfers; }
++  void endTransfer() { std::lock_guard<std::mutex> guard(s_mutex); if (m_transfers) { --m_transfers; } }
++  class Transfer {
++    PagefileShadow& m_backing;
++  public:
++    explicit Transfer(PagefileShadow& backing) : m_backing(backing) { backing.beginTransfer(); }
++    ~Transfer() { m_backing.endTransfer(); }
++    Transfer(const Transfer&) = delete;
++    Transfer& operator=(const Transfer&) = delete;
++  };
++  // Rebuild from current Host bytes. Verification hashes belong to the experiment, not residency.
++  HRESULT restoreCurrent(const uint8_t* recovered, size_t bytes) {
++    std::lock_guard<std::mutex> guard(s_mutex);
++    if (!m_recoveryMissing || m_section || m_view || m_locks || m_transfers || bytes != m_size || !recovered) { return E_INVALIDARG; }
++    const auto section = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, static_cast<DWORD>(bytes), nullptr);
++    if (!section) { return HRESULT_FROM_WIN32(GetLastError()); }
++    auto* view = static_cast<uint8_t*>(MapViewOfFile(section, FILE_MAP_ALL_ACCESS, 0, 0, bytes));
++    if (!view) { const auto error = GetLastError(); CloseHandle(section); return HRESULT_FROM_WIN32(error); }
++    std::memcpy(view, recovered, bytes);
++    if (!UnmapViewOfFile(view)) { const auto error = GetLastError(); CloseHandle(section); return HRESULT_FROM_WIN32(error); }
++    m_section = section; m_recoveryMissing = false;
++    l4d2_memory::surfaceBackingBytes.fetch_add(m_size);
++    l4d2_memory::surfaceBackingCount.fetch_add(1);
++    noteBackingPeak();
++    return S_OK;
++  }
++  // NV-DXVK end
++
 +  // NV-DXVK start: Ground truth is accessed only after independent recovery completes.
 +  HRESULT compareRecovered(const uint8_t* recovered, size_t bytes, l4d2_readback::Comparison& result) const {
 +    std::lock_guard<std::mutex> guard(s_mutex);
-+    if (!m_section || m_locks || bytes != m_size || !recovered) { return E_INVALIDARG; }
++    if (!m_section || (m_locks || m_transfers) || bytes != m_size || !recovered) { return E_INVALIDARG; }
 +    const auto* reference = static_cast<const uint8_t*>(MapViewOfFile(m_section, FILE_MAP_READ, 0, 0, m_size));
 +    if (!reference) { return HRESULT_FROM_WIN32(GetLastError()); }
 +    result = l4d2_readback::compare(reference, recovered, bytes);
@@ -2061,12 +2544,12 @@ index 0000000..141122a
 +
 +  bool recoveryMissing() const {
 +    std::lock_guard<std::mutex> guard(s_mutex);
-+    return m_recoveryMissing && !m_section && !m_view && !m_locks;
++    return m_recoveryMissing && !m_section && !m_view && !m_locks && !m_transfers;
 +  }
 +
 +  HRESULT hashBacking(size_t bytes, l4d2_readback::Digest& digest) const {
 +    std::lock_guard<std::mutex> guard(s_mutex);
-+    if (!m_section || m_locks || bytes != m_size) { return E_INVALIDARG; }
++    if (!m_section || (m_locks || m_transfers) || bytes != m_size) { return E_INVALIDARG; }
 +    const auto* reference = static_cast<const uint8_t*>(MapViewOfFile(m_section, FILE_MAP_READ, 0, 0, m_size));
 +    if (!reference) { return HRESULT_FROM_WIN32(GetLastError()); }
 +    const HRESULT hr = l4d2_readback::hashBytes(reference, bytes, digest);
@@ -2076,7 +2559,7 @@ index 0000000..141122a
 +
 +  HRESULT evictBacking(size_t bytes) {
 +    std::lock_guard<std::mutex> guard(s_mutex);
-+    if (!m_section || m_recoveryMissing || m_locks || bytes != m_size) { return E_INVALIDARG; }
++    if (!m_section || m_recoveryMissing || (m_locks || m_transfers) || bytes != m_size) { return E_INVALIDARG; }
 +    unmap();
 +    if (m_view) { return HRESULT_FROM_WIN32(GetLastError()); }
 +    if (!CloseHandle(m_section)) { return HRESULT_FROM_WIN32(GetLastError()); }
@@ -2090,7 +2573,7 @@ index 0000000..141122a
 +  HRESULT restoreRecovered(const uint8_t* recovered, size_t bytes, const l4d2_readback::Digest& expected,
 +      l4d2_readback::Digest& rebuilt) {
 +    std::lock_guard<std::mutex> guard(s_mutex);
-+    if (!m_recoveryMissing || m_section || m_view || m_locks || bytes != m_size || !recovered) { return E_INVALIDARG; }
++    if (!m_recoveryMissing || m_section || m_view || (m_locks || m_transfers) || bytes != m_size || !recovered) { return E_INVALIDARG; }
 +    const auto section = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
 +      0, static_cast<DWORD>(bytes), nullptr);
 +    if (!section) { return HRESULT_FROM_WIN32(GetLastError()); }
@@ -2154,6 +2637,8 @@ index 0000000..141122a
 +        }
 +        return nullptr;
 +      }
++      MEMORY_BASIC_INFORMATION mapping {};
++      m_mappedVaBytes = VirtualQuery(m_view, &mapping, sizeof(mapping)) ? mapping.RegionSize : m_size;
 +      s_mappedBytes += m_viewCost;
 +      l4d2_memory::surfaceViewBudgetBytes.fetch_add(m_viewCost);
 +      l4d2_memory::bytes[0].fetch_add(m_size);
@@ -2499,10 +2984,10 @@ index 0000000..baf85fd
 +}
 diff --git a/bridge/src/client/retention_policy.h b/bridge/src/client/retention_policy.h
 new file mode 100644
-index 0000000..036373d
+index 0000000..cd675df
 --- /dev/null
 +++ b/bridge/src/client/retention_policy.h
-@@ -0,0 +1,289 @@
+@@ -0,0 +1,296 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -2710,11 +3195,11 @@ index 0000000..036373d
 +  }
 +  bool hashUpload(uint32_t mip, bool full) {
 +    std::lock_guard<std::recursive_mutex> guard(m_context.mutex);
-+    return m_eligible && !m_keep && !m_context.fallback && mip < m_mips.size() && full;
++    return m_context.enabled && m_eligible && !m_keep && !m_context.fallback && mip < m_mips.size() && full;
 +  }
 +  void uploaded(uint32_t mip, bool full, const Digest& digest, HRESULT hashResult) {
 +    std::lock_guard<std::recursive_mutex> guard(m_context.mutex);
-+    if (!m_eligible || m_keep || mip >= m_mips.size()) { return; }
++    if (!m_context.enabled || !m_eligible || m_keep || mip >= m_mips.size()) { return; }
 +    if (m_context.fallback) { keep("session-fallback"); return; }
 +    auto& sub = m_mips[mip];
 +    if (!full || FAILED(hashResult)) { m_eligible = false; keep("unreliable-initial-content-hash"); return; }
@@ -2770,6 +3255,13 @@ index 0000000..036373d
 +    }
 +    return true;
 +  }
++  // NV-DXVK start: Manual learned GC uses the established eligibility and promotion state.
++  bool allowsEviction(uint32_t mip) const {
++    std::lock_guard<std::recursive_mutex> guard(m_context.mutex);
++    return m_eligible && m_identified && !m_keep && !m_context.fallback
++      && mip < m_mips.size() && m_mips[mip].uploaded;
++  }
++  // NV-DXVK end
 +  uint64_t retainedBytes() const {
 +    if (!m_keep) { return 0; }
 +    uint64_t bytes = 0;
@@ -2794,10 +3286,10 @@ index 0000000..036373d
 +}
 diff --git a/bridge/src/client/retention_runtime.h b/bridge/src/client/retention_runtime.h
 new file mode 100644
-index 0000000..f5b0e3a
+index 0000000..299144b
 --- /dev/null
 +++ b/bridge/src/client/retention_runtime.h
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,132 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -2857,10 +3349,20 @@ index 0000000..f5b0e3a
 +struct Runtime {
 +  Context context;
 +  HANDLE file = INVALID_HANDLE_VALUE;
++  bool initialized = false;
 +  Runtime() {
++    context.enabled = bridge_util::Config::getOption<std::string>("client.pageBlockRetentionPolicy", "keep") == "learned-aggressive";
++    if (context.enabled) { initialize(); }
++  }
++  void setEnabled(bool enabled) {
++    std::lock_guard<std::recursive_mutex> guard(context.mutex);
++    context.enabled = enabled;
++    if (enabled) { initialize(); }
++  }
++  void initialize() {
++    if (initialized) { return; }
++    initialized = true;
 +    try {
-+      context.enabled = bridge_util::Config::getOption<std::string>("client.pageBlockRetentionPolicy", "keep") == "learned-aggressive";
-+      if (!context.enabled) { return; }
 +      const auto directory = clientDirectory();
 +      if (!directory.empty()) {
 +        file = CreateFileW((directory / L"l4d2-retention.log").c_str(), GENERIC_WRITE, FILE_SHARE_READ,
@@ -2904,10 +3406,11 @@ index 0000000..f5b0e3a
 +  }
 +};
 +inline Runtime& runtime() { static auto* instance = new Runtime(); return *instance; }
-+inline bool enabled() { return runtime().context.enabled; }
++inline bool enabled() { auto& c = runtime().context; std::lock_guard<std::recursive_mutex> guard(c.mutex); return c.enabled; }
 +inline std::shared_ptr<Parent> create(uint32_t id, uint32_t width, uint32_t height, uint32_t levels,
 +    uint32_t format, uint32_t usage, uint32_t pool, std::string site) {
 +  auto& c = runtime().context;
++  std::lock_guard<std::recursive_mutex> guard(c.mutex);
 +  if (!c.enabled) { return {}; }
 +  try { return std::make_shared<Parent>(c, id, width, height, levels, format, usage, pool, std::move(site)); }
 +  catch (...) { std::lock_guard<std::recursive_mutex> guard(c.mutex); c.disable("policy-metadata-allocation-failed"); return {}; }
@@ -3782,7 +4285,7 @@ index 0000000..c6ccbb1
 +};
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..51571ea 100644
+index 86434ec..6bb5f1b 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -4515,7 +5018,7 @@ index 86434ec..51571ea 100644
          break;
        }
        case IDirect3DSurface9_GetDevice:
-@@ -2559,10 +2729,55 @@ void ProcessDeviceCommandQueue() {
+@@ -2559,10 +2729,61 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(D3DSURFACE_DESC, orig_desc);
          const auto& pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
          D3DSURFACE_DESC pDesc;
@@ -4544,7 +5047,8 @@ index 86434ec..51571ea 100644
 +        bool enabled = false;
 +        try {
 +          enabled = (Config::getOption<bool>("client.testReadbackRecovery", false)
-+            || Config::getOption<std::string>("client.pageBlockRetentionPolicy", "keep") == "learned-aggressive")
++            || Config::getOption<std::string>("client.pageBlockRetentionPolicy", "keep") == "learned-aggressive"
++            || request.operation >= 2)
 +            && ServerOptions::getUseVanillaDxvk();
 +        }
 +        catch (...) { enabled = false; }
@@ -4562,6 +5066,11 @@ index 86434ec..51571ea 100644
 +          if (request.levels && static_cast<IDirect3DTexture9*>(parent->second)->GetLevelCount() != request.levels) { valid = false; }
 +          if (expected) { expected->Release(); }
 +        }
++        if (enabled && request.operation >= 2 && child != gpD3DResources.end()
++          && child->second && child->second->GetType() == D3DRTYPE_SURFACE) {
++          surface = static_cast<IDirect3DSurface9*>(child->second);
++          valid = request.parentId == pHandle;
++        }
 +        l4d2_readback::D3D9Backend backend(surface);
 +        if (!l4d2_readback::runShared(backend, request, enabled, valid)) {
 +          Logger::err("PB_READBACK_TEST event=server-failure stage=temporary-transport");
@@ -4572,7 +5081,7 @@ index 86434ec..51571ea 100644
        case IDirect3DSurface9_LockRect:
        {
          // Currently we only recieve calls for LockRect in cases where backbuffer data is to be copied for screenshots
-@@ -2578,15 +2793,68 @@ void ProcessDeviceCommandQueue() {
+@@ -2578,15 +2799,68 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RECT, pRect);
          PULL_D(Flags);
          const auto pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
@@ -4644,7 +5153,7 @@ index 86434ec..51571ea 100644
          const D3DFORMAT format = (D3DFORMAT) dFormat;
          const size_t rowSize = bridge_util::calcRowSize(width, format);
          void* pData = nullptr;
-@@ -2607,7 +2875,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2607,7 +2881,7 @@ void ProcessDeviceCommandQueue() {
          FOR_EACH_RECT_ROW(lockedRect, height, format,
            memcpy(ptr, (PBYTE) pData + y * IncomingPitch, rowSize);
          )
@@ -4653,7 +5162,7 @@ index 86434ec..51571ea 100644
          assert(SUCCEEDED(hresult));
  
          break;
-@@ -2653,7 +2921,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2653,7 +2927,7 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(D3DVOLUME_DESC, orig_desc);
          const auto& pVolume = gpD3DVolumes[pHandle];
          D3DVOLUME_DESC pDesc;
@@ -4662,7 +5171,7 @@ index 86434ec..51571ea 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2670,7 +2938,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2670,7 +2944,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolume = gpD3DVolumes[pHandle];
          // Now lock the box so we can copy the data into it
          D3DLOCKED_BOX pLockedVolume;
@@ -4671,7 +5180,7 @@ index 86434ec..51571ea 100644
          assert(S_OK == hresult);
          // Copy the data over
          PULL_U(bytesPerPixel);
-@@ -2699,7 +2967,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2699,7 +2973,7 @@ void ProcessDeviceCommandQueue() {
  #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
          assert(pulledSize == depth * slice_size);
  #endif
@@ -4680,7 +5189,7 @@ index 86434ec..51571ea 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2806,6 +3074,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2806,6 +3080,7 @@ void ProcessDeviceCommandQueue() {
        {
          GET_HND(pHandle);
          gpD3DResources.erase(pHandle);
@@ -4688,7 +5197,7 @@ index 86434ec..51571ea 100644
          break;
        }
        case Bridge_UnlinkVolumeResource:
-@@ -3209,6 +3478,9 @@ void ProcessDeviceCommandQueue() {
+@@ -3209,6 +3484,9 @@ void ProcessDeviceCommandQueue() {
  
      const auto count = DeviceBridge::end_read_data();
  
@@ -4698,7 +5207,7 @@ index 86434ec..51571ea 100644
  #ifdef ENABLE_DATA_BATCHING_TRACE
      Logger::trace(format_string("Finished batch data read with %d data items.", count));
  #endif
-@@ -3268,14 +3540,26 @@ bool InitializeD3D() {
+@@ -3268,14 +3546,26 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -4728,7 +5237,7 @@ index 86434ec..51571ea 100644
      // Since vanilla dxvk is diabled attempt loading regular d3d9.dll which
      // could be either the system d3d9 one or our own Remix dxvk flavor of it.
      ghModule = LoadLibraryExA("d3d9.dll", nullptr,
-@@ -3285,6 +3569,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3575,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -4739,7 +5248,7 @@ index 86434ec..51571ea 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3599,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3605,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -4750,7 +5259,7 @@ index 86434ec..51571ea 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3483,17 +3775,24 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3483,17 +3781,24 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    Config::init(Config::App::Server);
    GlobalOptions::init();
    Logger::init();
@@ -4778,7 +5287,7 @@ index 86434ec..51571ea 100644
  #endif
  
    BRIDGE_ASSERT_LOG((argCount >= 2), "Command line argument count received to launch server is not as expected");
-@@ -3554,6 +3853,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3554,6 +3859,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    }
    const SentryShutdownOnExit sentryShutdownOnExit;
  
@@ -4787,7 +5296,7 @@ index 86434ec..51571ea 100644
    // (3) Send ACK to Client. Connection has been established
    Logger::info("Sync request received, sending ACK response...");
    ServerMessage { Commands::Bridge_Ack, (uintptr_t) gpClientMessageChannel->getWorkerThreadId() };
-@@ -3589,12 +3890,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3589,12 +3896,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    bSignalDone.store(true);
    moduleCmdProcessingThread.join();
  
@@ -4803,7 +5312,7 @@ index 86434ec..51571ea 100644
    if (ghModule) {
      // Skip unloading the d3d9.dll for now, since it seems to be doing more harm than good
      // especially with other dependencies loaded by dxvk and threads that may deadlock due
-@@ -3624,4 +3928,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +3934,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;
@@ -5266,10 +5775,10 @@ index 0000000..7806c05
 +}
 diff --git a/bridge/src/server/readback_backend.h b/bridge/src/server/readback_backend.h
 new file mode 100644
-index 0000000..22832fe
+index 0000000..b999706
 --- /dev/null
 +++ b/bridge/src/server/readback_backend.h
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,127 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -5335,12 +5844,13 @@ index 0000000..22832fe
 +  response.width = desc.Width; response.height = desc.Height; response.format = static_cast<uint32_t>(desc.Format);
 +  response.mip = request.mip;
 +  if (desc.Width != request.width || desc.Height != request.height || static_cast<uint32_t>(desc.Format) != request.format
-+    || desc.Usage != 0 || desc.Pool != D3DPOOL_MANAGED || desc.MultiSampleType != D3DMULTISAMPLE_NONE) {
++    || desc.Usage != request.usage || static_cast<uint32_t>(desc.Pool) != request.pool
++    || (!acknowledgement(request) && desc.MultiSampleType != D3DMULTISAMPLE_NONE)) {
 +    response.hresult = D3DERR_INVALIDCALL; return response;
 +  }
 +  response.rowBytes = l.rowBytes; response.rows = l.rows;
 +  response.blockWidth = l.blockWidth; response.blockHeight = l.blockHeight; response.blockBytes = l.blockBytes;
-+  if (request.operation == 1) {
++  if (acknowledgement(request)) {
 +    // Ordered acknowledgement: earlier uploads were consumed; no pixel recovery or GPU wait is needed.
 +    response.stage = Stage::Complete; response.hresult = S_OK;
 +    return response;
@@ -5383,7 +5893,7 @@ index 0000000..22832fe
 +  if (!done) { return false; }
 +  HANDLE section = OpenFileMappingW(FILE_MAP_WRITE, FALSE, request.name);
 +  uint8_t* view = section ? static_cast<uint8_t*>(MapViewOfFile(section, FILE_MAP_WRITE,
-+    0, 0, sizeof(Response) + (request.operation ? 0 : request.bytes))) : nullptr;
++    0, 0, sizeof(Response) + (acknowledgement(request) ? 0 : request.bytes))) : nullptr;
 +  Response response;
 +  if (!view) { response.stage = Stage::Mapping; response.hresult = HRESULT_FROM_WIN32(GetLastError()); }
 +  else if (!enabled) { response.stage = Stage::Disabled; response.hresult = E_ACCESSDENIED; }
@@ -5852,7 +6362,7 @@ index e3722e6..d012e8e 100644
        auto logPath = RtxFileSys::path(RtxFileSys::Logs);
        logPath /= logName;
 diff --git a/bridge/src/util/meson.build b/bridge/src/util/meson.build
-index fb5d556..906bb79 100644
+index fb5d556..a18fe2c 100644
 --- a/bridge/src/util/meson.build
 +++ b/bridge/src/util/meson.build
 @@ -1,3 +1,7 @@
@@ -5863,7 +6373,7 @@ index fb5d556..906bb79 100644
  #############################################################################
  # Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
  #
-@@ -38,6 +42,15 @@ util_src = files([
+@@ -38,6 +42,16 @@ util_src = files([
  ])
  
  util_header = files([
@@ -5873,6 +6383,7 @@ index fb5d556..906bb79 100644
 +  'ati_texture_layout.h',
 +  'overlay_input_diagnostics.h',
 +  'steam_activity_diagnostics.h',
++  'pageblock_control.h',
 +  'readback_hash.h',
 +  'readback_layout.h',
 +  'readback_transport.h',
@@ -6022,6 +6533,47 @@ index 0000000..d04d82b
 +  }
 +};
 +}
+diff --git a/bridge/src/util/pageblock_control.h b/bridge/src/util/pageblock_control.h
+new file mode 100644
+index 0000000..c0c55a1
+--- /dev/null
++++ b/bridge/src/util/pageblock_control.h
+@@ -0,0 +1,35 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++#include <cstdint>
++#include <windows.h>
++
++namespace l4d2_control {
++constexpr uint32_t kVersion = 1;
++constexpr const char* kExport = "L4D2BridgePageBlockControl";
++enum class Operation : uint32_t { Stats, SetPolicy, Gc };
++enum class Policy : uint32_t { Keep, LearnedAggressive, Drop };
++enum class GcMode : uint32_t { Learned, Aggressive, Force };
++#pragma pack(push, 8)
++struct Request {
++  uint32_t bytes = 16, version = kVersion;
++  Operation operation = Operation::Stats;
++  uint32_t value = 0;
++};
++struct Response {
++  uint32_t bytes = 208, version = kVersion;
++  Policy policy = Policy::Keep;
++  uint32_t flags = 0; // bit 0: reference test active; bit 1: supported backing/backend.
++  uint64_t pageBlocks = 0, backingBytes = 0, mappedBytes = 0, locked = 0, transferring = 0;
++  uint64_t dropEvictionCount = 0, dropEvictedBytes = 0, remapCountAfterDrop = 0, remapBytesAfterDrop = 0, reconstructionFailures = 0;
++  uint64_t pageBlocksScanned = 0, pageBlocksEvicted = 0, pageBlocksSkippedLocked = 0, pageBlocksSkippedTransferring = 0;
++  uint64_t pageBlocksSkippedPolicy = 0, pageBlocksSkippedUnsynchronized = 0, failures = 0, bytesUnmapped = 0;
++  uint64_t backingBytesReleased = 0, mappedBytesBefore = 0, mappedBytesAfter = 0, transfersDrained = 0, drainWaitCount = 0;
++  double drainWaitTimeMs = 0;
++};
++#pragma pack(pop)
++static_assert(sizeof(Request) == 16, "Control request ABI");
++static_assert(sizeof(Response) == 208, "Control response ABI");
++using Invoke = HRESULT (WINAPI*)(const Request*, Response*);
++}
 diff --git a/bridge/src/util/queue_wait_diagnostics.h b/bridge/src/util/queue_wait_diagnostics.h
 new file mode 100644
 index 0000000..ee686c7
@@ -6169,10 +6721,10 @@ index 0000000..875a4bd
 +}
 diff --git a/bridge/src/util/readback_layout.h b/bridge/src/util/readback_layout.h
 new file mode 100644
-index 0000000..a774273
+index 0000000..0957863
 --- /dev/null
 +++ b/bridge/src/util/readback_layout.h
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,108 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -6205,6 +6757,25 @@ index 0000000..a774273
 +  const uint64_t bytes = rowBytes * rows;
 +  if (bytes > kMaxBytes) { return false; }
 +  result = { static_cast<uint32_t>(rowBytes), rows, static_cast<uint32_t>(bytes), block, block, element };
++  return true;
++}
++
++// Residency extends the experiment layout without widening Phase 1 eligibility.
++inline bool residencyLayout(uint32_t width, uint32_t height, uint32_t format, Layout& result) {
++  if (layout(width, height, format, result)) { return true; }
++  if (!width || !height || width > 16384 || height > 16384) { return false; }
++  uint32_t element = 0;
++  switch (format) {
++  case 28: case 50: element = 1; break; // A8, L8
++  case 23: case 24: case 25: case 26: case 51: case 81: case 111: element = 2; break;
++  case 31: case 32: case 33: case 34: case 35: case 112: case 114: element = 4; break;
++  case 36: case 110: case 113: case 115: element = 8; break;
++  case 116: element = 16; break;
++  default: return false;
++  }
++  const uint64_t bytes = static_cast<uint64_t>(width) * height * element;
++  if (bytes > kMaxBytes) { return false; }
++  result = { width * element, height, static_cast<uint32_t>(bytes), 1, 1, element };
 +  return true;
 +}
 +
@@ -6264,10 +6835,10 @@ index 0000000..a774273
 +}
 diff --git a/bridge/src/util/readback_transport.h b/bridge/src/util/readback_transport.h
 new file mode 100644
-index 0000000..7a2737b
+index 0000000..713c431
 --- /dev/null
 +++ b/bridge/src/util/readback_transport.h
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,129 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -6334,11 +6905,19 @@ index 0000000..7a2737b
 +  return frequency.QuadPart ? static_cast<uint64_t>((end.QuadPart - begin.QuadPart) * 1000000 / frequency.QuadPart) : 0;
 +}
 +
++inline bool acknowledgement(const Request& request) { return request.operation == 1 || request.operation == 3; }
 +inline bool requestValid(const Request& request, Layout& l) {
-+  return request.version == kVersion && request.resourceId && request.parentId && request.mip < 15 && request.operation <= 1 && request.levels <= 15
-+    && request.pool == 1 && request.usage == 0
-+    && layout(request.width, request.height, request.format, l) && request.bytes == l.bytes
-+    && request.name[95] == 0 && std::wcsncmp(request.name, L"Local\\L4D2Recovery-", 19) == 0;
++  const bool residency = request.operation == 2 || request.operation == 3;
++  const bool identity = request.version == kVersion && request.resourceId && request.parentId && request.mip < 15
++    && request.levels <= 15 && request.name[95] == 0 && std::wcsncmp(request.name, L"Local\\L4D2Recovery-", 19) == 0;
++  if (!identity || request.operation > 3) { return false; }
++  if (residency) {
++    if (request.pool > 3 || !request.width || !request.height || request.width > 16384 || request.height > 16384
++      || !request.bytes || request.bytes > kMaxBytes) { return false; }
++    if (acknowledgement(request)) { l = {}; return true; }
++  } else if (request.pool != 1 || request.usage != 0) { return false; }
++  return (residency ? residencyLayout(request.width, request.height, request.format, l)
++    : layout(request.width, request.height, request.format, l)) && request.bytes == l.bytes;
 +}
 +
 +// Independent section: no PagefileShadow, retained data or upload cache is used.
@@ -6360,7 +6939,7 @@ index 0000000..7a2737b
 +  }
 +  HRESULT create(const Request& request) {
 +    m_section = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
-+      0, (request.operation ? 0 : request.bytes) + static_cast<DWORD>(sizeof(Response)), request.name);
++      0, (acknowledgement(request) ? 0 : request.bytes) + static_cast<DWORD>(sizeof(Response)), request.name);
 +    const auto sectionError = GetLastError();
 +    if (!m_section || sectionError == ERROR_ALREADY_EXISTS) {
 +      return HRESULT_FROM_WIN32(sectionError ? sectionError : ERROR_INVALID_HANDLE);
@@ -6373,7 +6952,7 @@ index 0000000..7a2737b
 +      return HRESULT_FROM_WIN32(eventError ? eventError : ERROR_INVALID_HANDLE);
 +    }
 +    m_view = static_cast<uint8_t*>(MapViewOfFile(m_section, FILE_MAP_ALL_ACCESS, 0, 0,
-+      (request.operation ? 0 : request.bytes) + sizeof(Response)));
++      (acknowledgement(request) ? 0 : request.bytes) + sizeof(Response)));
 +    if (!m_view) { return HRESULT_FROM_WIN32(GetLastError()); }
 +    const Response pending;
 +    std::memcpy(m_view, &pending, sizeof(pending));

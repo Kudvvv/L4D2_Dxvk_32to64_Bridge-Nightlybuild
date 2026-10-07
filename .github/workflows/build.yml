@@ -39,6 +39,14 @@ jobs:
       - name: Build x86 client, x64 host and isolated x86 comparison host
         shell: powershell
         run: ./scripts/build_bridge.ps1 -DxvkDll .deps/dxvk-2.6.1/x64/d3d9.dll -Dxvk32Dll .deps/dxvk-2.6.1/x32/d3d9.dll
+      - name: Build optional L4N v2 HUD control plugin
+        shell: powershell
+        run: ./scripts/build_l4n_plugin.ps1
+      - name: Test PageBlock residency, GC and L4N v2 callbacks
+        shell: powershell
+        run: ./scripts/test_pageblock_gc.ps1
+      - name: Package experimental PageBlock controls
+        run: python scripts/package_pageblock_experiment.py
       - name: Test x86 diagnostics and shadow eviction
         shell: powershell
         run: ./scripts/test_diagnostics.ps1
@@ -129,5 +137,11 @@ jobs:
         with:
           name: l4d2-bridge-patch-v${{ env.L4D2_PROJECT_VERSION }}
           path: dist/l4d2-bridge-patch/
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: l4d2-bridge-pageblock-drop-experiment
+          path: dist/l4d2-pageblock-drop-experiment/
           include-hidden-files: true
           if-no-files-found: error

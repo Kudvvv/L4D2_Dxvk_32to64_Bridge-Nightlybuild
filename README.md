@@ -298,3 +298,7 @@ Builds use a pinned upstream Bridge plus the [fork patch](patches/l4d2-bridge.pa
 本项目新增代码和修改采用 **MIT License**，Copyright © 2026 yeyunyyds，全文见 [LICENSE](LICENSE)。原代码继续遵循原许可证；本项目 MIT 不重新授权 DXVK、Tracy、游戏或显卡驱动。
 
 New fork implementation and modifications are released under MIT, Copyright © 2026 yeyunyyds. Original upstream code retains its own copyrights/licenses; the project's MIT license does not relicense third-party components. Preserve the original notices when redistributing.
+
+<!-- Experimental development documentation; released v1.1.1 defaults are unchanged. -->
+
+开发实验：[`drop`、三种手动 PageBlock GC 与 L4N v2 HUD 控制](docs/PAGEBLOCK-DROP-GC.md)。默认配置不启用此实验。 / Development experiment: opt-in PageBlock residency and L4N v2 controls; released defaults remain unchanged.
