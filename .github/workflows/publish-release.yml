@@ -38,7 +38,10 @@ jobs:
           run = api(f'repos/{repo}/actions/runs/{run_id}')
           assert run['conclusion'] == 'success', 'Build did not pass'
           assert run['name'] == 'Build L4D2 D3D9 Bridge', 'Unexpected build workflow'
-          release = api(f'repos/{repo}/releases/tags/v{version}')
+          releases = api(f'repos/{repo}/releases?per_page=100')
+          drafts = [r for r in releases if r['tag_name'] == f'v{version}']
+          assert len(drafts) == 1, 'Missing or ambiguous release draft'
+          release = drafts[0]
           assert release['draft'], 'Release must be a draft'
           assert release['target_commitish'] == run['head_sha'], 'Draft does not target tested commit'
           artifacts = api(f'repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100')['artifacts']
@@ -58,7 +61,7 @@ jobs:
           sums = pathlib.Path('SHA256SUMS.txt')
           sums.write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in files))
           subprocess.run(['gh', 'release', 'upload', f'v{version}', *map(str, files), str(sums), '--clobber'], check=True)
-          uploaded = api(f'repos/{repo}/releases/tags/v{version}')['assets']
+          uploaded = api(f"repos/{repo}/releases/{release['id']}")['assets']
           for path in [*files, sums]:
               assert any(a['name'] == path.name and a['size'] == path.stat().st_size for a in uploaded), 'Asset verification failed'
           subprocess.run(['gh', 'release', 'edit', f'v{version}', '--draft=false', '--latest'], check=True)
