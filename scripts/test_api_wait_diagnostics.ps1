@@ -7,6 +7,22 @@ $repoRoot = Split-Path $PSScriptRoot -Parent
 $source = Join-Path $repoRoot '.deps/dxvk-remix'
 $testDir = Join-Path $repoRoot '.deps/api-wait-test'
 New-Item -ItemType Directory -Force $testDir | Out-Null
+# Regression: the first Logger::init is inside --sentry-upload-only. A native
+# counter/worker test cannot prove that normal Host startup enables diagnostics.
+$serverMain = Get-Content (Join-Path $source 'bridge/src/server/main.cpp') -Raw
+$regularStart = $serverMain.IndexOf('Config::init(Config::App::Server);')
+$handlerStart = $serverMain.IndexOf('// Always setup exception handler on server', $regularStart)
+if ($regularStart -lt 0 -or $handlerStart -le $regularStart) {
+  throw 'Cannot locate normal Host configuration/startup boundary'
+}
+$startup = $serverMain.Substring($regularStart, $handlerStart - $regularStart)
+if ($startup -notmatch 'Logger::init\(\);[\s\S]*server\.apiWaitDiagnostics[\s\S]*l4d2_api_wait::initialize\(true, "host"') {
+  throw 'API wait diagnostics must initialize in normal Host startup after configuration and logging'
+}
+$uploadBranch = $serverMain.Substring(0, $regularStart)
+if ($uploadBranch.Contains('l4d2_api_wait::initialize(true, "host"')) {
+  throw 'API wait diagnostics must not initialize in the crash-upload-only path'
+}
 if ($CompileArchitecture) {
   . (Join-Path $source 'bridge/build_common.ps1')
   SetupVS -Platform $CompileArchitecture -VcVarsVer '14.29'

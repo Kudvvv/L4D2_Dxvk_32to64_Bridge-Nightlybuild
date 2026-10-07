@@ -3759,7 +3759,7 @@ index 0000000..c6ccbb1
 +};
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..94a4b3f 100644
+index 86434ec..51571ea 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -4727,18 +4727,16 @@ index 86434ec..94a4b3f 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3446,6 +3738,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
-       std::string dbPath = std::string(logsDirUtf8.data()) + "/.sentry-native";
-       if (initFileSys()) {
-         Logger::init();
+@@ -3483,17 +3775,24 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+   Config::init(Config::App::Server);
+   GlobalOptions::init();
+   Logger::init();
 +  if (Config::getOption<bool>("server.apiWaitDiagnostics", false)) {
 +    const bool ready = l4d2_api_wait::initialize(true, "host", Config::getOption<unsigned>("server.apiWaitSnapshotMs", 5000));
 +    Logger::info(ready ? "L4D2 API wait diagnostics enabled: host" : "L4D2 API wait diagnostics failed to initialize: host");
 +  }
-       }
  
-       // Crash type is passed as optional third arg ("GPU" or "CPU"); recorded in crash-upload.log.
-@@ -3488,12 +3784,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+   // Always setup exception handler on server
    ExceptionHandler::get().init();
  
    // Identify yourself
