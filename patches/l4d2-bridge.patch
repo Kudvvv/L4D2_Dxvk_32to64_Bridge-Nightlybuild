@@ -1324,14 +1324,14 @@ index 5e1deb0..144f4f8 100644
  
      Logger::info(std::string("Trying to open config file: ") + userConfPath.string());
 diff --git a/bridge/src/util/meson.build b/bridge/src/util/meson.build
-index fb5d556..de6faa6 100644
+index fb5d556..54261a1 100644
 --- a/bridge/src/util/meson.build
 +++ b/bridge/src/util/meson.build
 @@ -38,6 +38,10 @@ util_src = files([
  ])
  
  util_header = files([
-+  "runtime_path.h",
++  'runtime_path.h',
 +  'ati_texture_layout.h',
 +  'queue_wait_diagnostics.h',
 +
