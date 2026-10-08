@@ -1,5 +1,5 @@
 diff --git a/bridge/src/client/d3d9_cubetexture.cpp b/bridge/src/client/d3d9_cubetexture.cpp
-index 9de506f..43f2bc2 100644
+index 9de506f439ba966a9d22083d47736d83e400a119..43f2bc25fa543dbd5193b32da854ab0ecc115c02 100644
 --- a/bridge/src/client/d3d9_cubetexture.cpp
 +++ b/bridge/src/client/d3d9_cubetexture.cpp
 @@ -65,7 +65,11 @@ ULONG Direct3DCubeTexture9_LSS::Release() {
@@ -23,7 +23,7 @@ index 9de506f..43f2bc2 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_cubetexture.h b/bridge/src/client/d3d9_cubetexture.h
-index 4af8177..6aec65f 100644
+index 4af81775aea4b6bc84a8a8ef599de8f57823ad61..6aec65f4f55e5e29b3eef24facf59dd19c322d7e 100644
 --- a/bridge/src/client/d3d9_cubetexture.h
 +++ b/bridge/src/client/d3d9_cubetexture.h
 @@ -29,7 +29,13 @@
@@ -48,7 +48,7 @@ index 4af8177..6aec65f 100644
 \ No newline at end of file
 +};
 diff --git a/bridge/src/client/d3d9_device.cpp b/bridge/src/client/d3d9_device.cpp
-index 1abdf20..85f3f03 100644
+index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..97ce697551a41dcb4b6b271ff0aa94def216c073 100644
 --- a/bridge/src/client/d3d9_device.cpp
 +++ b/bridge/src/client/d3d9_device.cpp
 @@ -44,6 +44,7 @@
@@ -171,7 +171,7 @@ index 1abdf20..85f3f03 100644
      (*ppCubeTexture) = pLssCubeTexture;
      {
        ClientMessage c(Commands::IDirect3DDevice9Ex_CreateCubeTexture, getId());
-@@ -636,7 +692,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateCubeTexture(UINT EdgeLength, UI
+@@ -636,25 +692,48 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateCubeTexture(UINT EdgeLength, UI
        c.send_many(EdgeLength, Levels, Usage, Format, Pool, (uint32_t) pLssCubeTexture->getId());
      }
    }
@@ -198,8 +198,464 @@ index 1abdf20..85f3f03 100644
  }
  
  template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool, IDirect3DVertexBuffer9** ppVertexBuffer, HANDLE* pSharedHandle) {
+   ZoneScoped;
+   LogFunctionCall();
+-  if (Length == 0) {
++  // NV-DXVK start: Every failed call leaves a null output.
++  if (ppVertexBuffer == nullptr) {
+     return D3DERR_INVALIDCALL;
+   }
+-
+-  if (ppVertexBuffer == nullptr) {
++  *ppVertexBuffer = nullptr;
++  if (Length == 0) {
+     return D3DERR_INVALIDCALL;
+   }
++  // NV-DXVK end
+ 
+   const D3DVERTEXBUFFER_DESC desc { D3DFMT_VERTEXDATA, D3DRTYPE_VERTEXBUFFER, Usage, Pool, Length, FVF };
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DVertexBuffer9_LSS* pLssVertexBuffer = nullptr;
++  // NV-DXVK end
+   UID currentUID = 0;
+   {
+-    auto* const pLssVertexBuffer = trackWrapper(new Direct3DVertexBuffer9_LSS(this, desc));
++    pLssVertexBuffer = trackWrapper(new Direct3DVertexBuffer9_LSS(this, desc));
+     (*ppVertexBuffer) = pLssVertexBuffer;
+     {
+       ClientMessage c(Commands::IDirect3DDevice9Ex_CreateVertexBuffer, getId());
+@@ -662,7 +741,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexBuffer(UINT Length, DWORD
+       c.send_many(Length, Usage, FVF, Pool, (uint32_t) pLssVertexBuffer->getId());
+     }
+   }
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateVertexBuffer()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateVertexBuffer()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateVertexBuffer failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssVertexBuffer->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssVertexBuffer, ppVertexBuffer, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
+@@ -670,18 +767,23 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateIndexBuffer(UINT Length, DWORD
+   ZoneScoped;
+   LogFunctionCall();
+ 
+-  if (Length == 0) {
++  // NV-DXVK start: Every failed call leaves a null output.
++  if (ppIndexBuffer == nullptr) {
+     return D3DERR_INVALIDCALL;
+   }
+-
+-  if (ppIndexBuffer == nullptr) {
++  *ppIndexBuffer = nullptr;
++  if (Length == 0) {
+     return D3DERR_INVALIDCALL;
+   }
++  // NV-DXVK end
+ 
+   const D3DINDEXBUFFER_DESC desc { Format, D3DRTYPE_INDEXBUFFER, Usage, Pool, Length };
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DIndexBuffer9_LSS* pLssIndexBuffer = nullptr;
++  // NV-DXVK end
+   UID currentUID = 0;
+   {
+-    auto* const pLssIndexBuffer = trackWrapper(new Direct3DIndexBuffer9_LSS(this, desc));
++    pLssIndexBuffer = trackWrapper(new Direct3DIndexBuffer9_LSS(this, desc));
+     (*ppIndexBuffer) = (IDirect3DIndexBuffer9*) pLssIndexBuffer;
+     {
+       ClientMessage c(Commands::IDirect3DDevice9Ex_CreateIndexBuffer, getId());
+@@ -689,7 +791,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateIndexBuffer(UINT Length, DWORD
+       c.send_many(Length, Usage, Format, Pool, (uint32_t) pLssIndexBuffer->getId());
+     }
+   }
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateIndexBuffer()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateIndexBuffer()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateIndexBuffer failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssIndexBuffer->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssIndexBuffer, ppIndexBuffer, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
+@@ -697,10 +817,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTarget(UINT Width, UINT H
+   ZoneScoped;
+   LogFunctionCall();
+ 
+-  if (ppSurface == nullptr || Width == 0 || Height == 0) {
++  // NV-DXVK start: Every failed call leaves a null output.
++  if (ppSurface == nullptr) {
++    return D3DERR_INVALIDCALL;
++  }
++  *ppSurface = nullptr;
++  if (Width == 0 || Height == 0) {
+     return D3DERR_INVALIDCALL;
+   }
++  // NV-DXVK end
+ 
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DSurface9_LSS* pLssSurface = nullptr;
++  // NV-DXVK end
+   UID currentUID = 0;
+   {
+     D3DSURFACE_DESC desc;
+@@ -714,7 +843,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTarget(UINT Width, UINT H
+     desc.Type = D3DRTYPE_SURFACE;
+ 
+     // Insert our own IDirect3DSurface9 interface implementation
+-    Direct3DSurface9_LSS* pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
++    pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
+     (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
+ 
+     {
+@@ -724,7 +853,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTarget(UINT Width, UINT H
+       c.send_many(Width, Height, Format, MultiSample, MultisampleQuality, Lockable, pLssSurface->getId());
+     }
+   }
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateRenderTarget()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateRenderTarget()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateRenderTarget failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssSurface->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssSurface, ppSurface, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
+@@ -732,10 +879,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurface(UINT Width,
+   ZoneScoped;
+   LogFunctionCall();
+ 
+-  if (ppSurface == nullptr || Width == 0 || Height == 0) {
++  // NV-DXVK start: Every failed call leaves a null output.
++  if (ppSurface == nullptr) {
+     return D3DERR_INVALIDCALL;
+   }
++  *ppSurface = nullptr;
++  if (Width == 0 || Height == 0) {
++    return D3DERR_INVALIDCALL;
++  }
++  // NV-DXVK end
+ 
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DSurface9_LSS* pLssSurface = nullptr;
++  // NV-DXVK end
+   UID currentUID = 0;
+   {
+     D3DSURFACE_DESC desc;
+@@ -748,7 +904,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurface(UINT Width,
+     desc.Pool = D3DPOOL_DEFAULT;
+     desc.Type = D3DRTYPE_SURFACE;
+ 
+-    Direct3DSurface9_LSS* pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
++    pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
+     (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
+ 
+     {
+@@ -757,7 +913,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurface(UINT Width,
+       c.send_many(Width, Height, Format, MultiSample, MultisampleQuality, Discard, pLssSurface->getId());
+     }
+   }
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateDepthStencilSurface()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateDepthStencilSurface()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateDepthStencilSurface failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssSurface->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssSurface, ppSurface, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
+@@ -926,7 +1100,13 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurface(UINT Widt
+   if (ppSurface == nullptr) {
+     return D3DERR_INVALIDCALL;
+   }
++  // NV-DXVK start: Every failed call leaves a null output.
++  *ppSurface = nullptr;
++  // NV-DXVK end
+ 
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DSurface9_LSS* pLssSurface = nullptr;
++  // NV-DXVK end
+   UID currentUID = 0;
+   {
+     D3DSURFACE_DESC desc;
+@@ -940,7 +1120,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurface(UINT Widt
+     desc.Type = D3DRTYPE_SURFACE;
+ 
+     // Insert our own IDirect3DSurface9 interface implementation
+-    Direct3DSurface9_LSS* pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
++    pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
+     (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
+ 
+     {
+@@ -950,7 +1130,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurface(UINT Widt
+       c.send_many(Width, Height, Format, Pool, pLssSurface->getId());
+     }
+   }
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateOffscreenPlainSurface()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateOffscreenPlainSurface()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateOffscreenPlainSurface failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssSurface->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssSurface, ppSurface, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
+@@ -3330,7 +3528,13 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
+   if (ppSurface == nullptr) {
+     return D3DERR_INVALIDCALL;
+   }
++  // NV-DXVK start: Every failed call leaves a null output.
++  *ppSurface = nullptr;
++  // NV-DXVK end
+ 
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DSurface9_LSS* pLssSurface = nullptr;
++  // NV-DXVK end
+   D3DSURFACE_DESC desc;
+   desc.Width = Width;
+   desc.Height = Height;
+@@ -3342,7 +3546,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
+   desc.Type = D3DRTYPE_SURFACE;
+ 
+   // Insert our own IDirect3DSurface9 interface implementation
+-  Direct3DSurface9_LSS* pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
++  pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
+   (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
+ 
+   UID currentUID = 0;
+@@ -3353,7 +3557,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
+     c.send_many(Width, Height, Format, MultiSample, MultisampleQuality, Lockable, Usage, pLssSurface->getId());
+   }
+ 
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateRenderTargetEx()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateRenderTargetEx()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateRenderTargetEx failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssSurface->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssSurface, ppSurface, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
+@@ -3365,7 +3587,13 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+   if (ppSurface == nullptr) {
+     return D3DERR_INVALIDCALL;
+   }
++  // NV-DXVK start: Every failed call leaves a null output.
++  *ppSurface = nullptr;
++  // NV-DXVK end
+ 
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DSurface9_LSS* pLssSurface = nullptr;
++  // NV-DXVK end
+   D3DSURFACE_DESC desc;
+   desc.Width = Width;
+   desc.Height = Height;
+@@ -3377,7 +3605,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+   desc.Type = D3DRTYPE_SURFACE;
+ 
+   // Insert our own IDirect3DSurface9 interface implementation
+-  Direct3DSurface9_LSS* pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
++  pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
+   (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
+ 
+   UID currentUID = 0;
+@@ -3388,7 +3616,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+     c.send_many(Width, Height, Format, Pool, Usage, pLssSurface->getId());
+   }
+ 
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateOffscreenPlainSurfaceEx()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateOffscreenPlainSurfaceEx()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateOffscreenPlainSurfaceEx failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssSurface->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssSurface, ppSurface, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
+@@ -3400,7 +3646,13 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
+   if (ppSurface == nullptr) {
+     return D3DERR_INVALIDCALL;
+   }
++  // NV-DXVK start: Every failed call leaves a null output.
++  *ppSurface = nullptr;
++  // NV-DXVK end
+ 
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DSurface9_LSS* pLssSurface = nullptr;
++  // NV-DXVK end
+   D3DSURFACE_DESC desc;
+   desc.Width = Width;
+   desc.Height = Height;
+@@ -3411,7 +3663,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
+   desc.Pool = D3DPOOL_DEFAULT;
+   desc.Type = D3DRTYPE_SURFACE;
+ 
+-  Direct3DSurface9_LSS* pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
++  pLssSurface = trackWrapper(new Direct3DSurface9_LSS(this, desc));
+   (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
+ 
+   UID currentUID = 0;
+@@ -3421,7 +3673,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
+     c.send_many(Width, Height, Format, MultiSample, MultisampleQuality, Discard, Usage, pLssSurface->getId());
+   }
+ 
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateDepthStencilSurfaceEx()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateDepthStencilSurfaceEx()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateDepthStencilSurfaceEx failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssSurface->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssSurface, ppSurface, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
+diff --git a/bridge/src/client/d3d9_indexbuffer.cpp b/bridge/src/client/d3d9_indexbuffer.cpp
+index 1593d51ad30d0a460683b5787801ab0cabf8d615..57fce28a29f9cad2a488155926ac0c0e8d92f7ba 100644
+--- a/bridge/src/client/d3d9_indexbuffer.cpp
++++ b/bridge/src/client/d3d9_indexbuffer.cpp
+@@ -63,6 +63,9 @@ ULONG Direct3DIndexBuffer9_LSS::Release() {
+ }
+ 
+ void Direct3DIndexBuffer9_LSS::onDestroy() {
++  // NV-DXVK start: A failed backend creation does not own a server object.
++  if (!m_serverCreated) { return; }
++  // NV-DXVK end
+   ClientMessage { Commands::IDirect3DIndexBuffer9_Destroy, getId() };
+ }
+ 
+diff --git a/bridge/src/client/d3d9_indexbuffer.h b/bridge/src/client/d3d9_indexbuffer.h
+index 20a5e2b6b6f6b19da9ceb60e0213039dd6cc2c27..ae74cf278bc3c362dc33f9d60aac5b52cebdf561 100644
+--- a/bridge/src/client/d3d9_indexbuffer.h
++++ b/bridge/src/client/d3d9_indexbuffer.h
+@@ -26,8 +26,14 @@
+ 
+ class Direct3DIndexBuffer9_LSS: public LockableBuffer<IDirect3DIndexBuffer9> {
+   void onDestroy() override;
++  // NV-DXVK start: Failed creation has no server resource to destroy.
++  bool m_serverCreated = true;
++  // NV-DXVK end
+ 
+ public:
++  // NV-DXVK start: Only an explicit failed server response cancels destruction.
++  void cancelServerCreation() { m_serverCreated = false; }
++  // NV-DXVK end
+   Direct3DIndexBuffer9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice, const D3DINDEXBUFFER_DESC& desc)
+     : LockableBuffer((IDirect3DIndexBuffer9*)nullptr, pDevice, desc) {
+   }
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
-index 300aaf5..acf4dab 100644
+index 300aaf52349174026c589c75ab88d7b0192369a6..acf4dabf399c57bcab1c4fbaf51c752095a9ec9f 100644
 --- a/bridge/src/client/d3d9_lss.cpp
 +++ b/bridge/src/client/d3d9_lss.cpp
 @@ -1,3 +1,7 @@
@@ -268,7 +724,7 @@ index 300aaf5..acf4dab 100644
      DInputHookAttach();
  
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
-index e54aec5..542f439 100644
+index e54aec56f6a42f37dce303845cde33fe5eada0c4..e29ad879cabc81817af2ef683938bdaf6a769456 100644
 --- a/bridge/src/client/d3d9_surface.cpp
 +++ b/bridge/src/client/d3d9_surface.cpp
 @@ -1,3 +1,7 @@
@@ -313,7 +769,17 @@ index e54aec5..542f439 100644
    }
  }
  
-@@ -122,6 +130,19 @@ HRESULT Direct3DSurface9_LSS::GetDesc(D3DSURFACE_DESC* pDesc) {
+@@ -87,6 +95,9 @@ ULONG Direct3DSurface9_LSS::Release() {
+ }
+ 
+ void Direct3DSurface9_LSS::onDestroy() {
++  // NV-DXVK start: A failed backend creation does not own a server object.
++  if (!m_serverCreated) { return; }
++  // NV-DXVK end
+   // The standalone surfaces use normal destroy command, however child surfaces
+   // are completely owned and managed by their parent container, and so only need
+   // to be unlinked from x64 counterpart to prevent hash collisions at server side.
+@@ -122,6 +133,19 @@ HRESULT Direct3DSurface9_LSS::GetDesc(D3DSURFACE_DESC* pDesc) {
  
  HRESULT Direct3DSurface9_LSS::LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) {
    LogFunctionCall();
@@ -333,7 +799,7 @@ index e54aec5..542f439 100644
    // Store locked rect pointer locally so we can copy the data on unlock
    {
      BRIDGE_PARENT_DEVICE_LOCKGUARD();
-@@ -205,8 +226,15 @@ HRESULT Direct3DSurface9_LSS::ReleaseDC(HDC hdc) {
+@@ -205,8 +229,15 @@ HRESULT Direct3DSurface9_LSS::ReleaseDC(HDC hdc) {
  bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, const DWORD& flags) {
    const RECT rect = resolveLockInfoRect(pRect, m_desc);
    lockedRect.Pitch = bridge_util::calcRowSize(m_desc.Width, m_desc.Format);
@@ -350,7 +816,7 @@ index e54aec5..542f439 100644
    if (m_bUseSharedHeap) {
      auto discardBufId = SharedHeap::kInvalidId;
      const bool bDiscard = (flags & D3DLOCK_DISCARD) != 0;
-@@ -220,17 +248,14 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
+@@ -220,17 +251,14 @@ bool Direct3DSurface9_LSS::lock(D3DLOCKED_RECT& lockedRect, const RECT* pRect, c
      lockedRect.pBits = getBufPtr(lockedRect.Pitch, rect);
      m_lockInfoQueue.push({ lockedRect, rect, flags, m_bufferId, discardBufId });
    } else {
@@ -373,7 +839,7 @@ index e54aec5..542f439 100644
      m_lockInfoQueue.push({ lockedRect, rect, flags });
    }
    return true;
-@@ -247,6 +272,9 @@ void Direct3DSurface9_LSS::unlock() {
+@@ -247,6 +275,9 @@ void Direct3DSurface9_LSS::unlock() {
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
      sendDataToServer(lockInfo);
    }
@@ -383,7 +849,7 @@ index e54aec5..542f439 100644
  }
  
  RECT Direct3DSurface9_LSS::resolveLockInfoRect(const RECT* const pRect, const D3DSURFACE_DESC& desc) {
-@@ -262,6 +290,40 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
+@@ -262,6 +293,40 @@ void* Direct3DSurface9_LSS::getBufPtr(const int pitch, const RECT& rect) {
  }
  
  void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
@@ -424,7 +890,7 @@ index e54aec5..542f439 100644
    const auto dataFlag = m_bUseSharedHeap ? Commands::FlagBits::DataInSharedHeap : 0;
    {
      ClientMessage c(Commands::IDirect3DSurface9_UnlockRect, getId(), dataFlag);
-@@ -296,4 +358,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -296,4 +361,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
  std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions(const RECT& rect) {
    return { rect.right  - rect.left,
             rect.bottom - rect.top  };
@@ -432,7 +898,7 @@ index e54aec5..542f439 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_surface.h b/bridge/src/client/d3d9_surface.h
-index e4e9d51..177344f 100644
+index e4e9d51705c4cc95d80e20858db1951ec4f1c4aa..92975d7dd396960f84a1924e1443cf79365ebb59 100644
 --- a/bridge/src/client/d3d9_surface.h
 +++ b/bridge/src/client/d3d9_surface.h
 @@ -1,3 +1,7 @@
@@ -443,7 +909,7 @@ index e4e9d51..177344f 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -32,6 +36,8 @@
+@@ -32,8 +36,13 @@
  /*
   * IDirect3DSurface9 LSS Interceptor Class
   */
@@ -451,8 +917,13 @@ index e4e9d51..177344f 100644
 +
  class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
    void onDestroy() override;
++  // NV-DXVK start: Failed creation has no server resource to destroy.
++  bool m_serverCreated = true;
++  // NV-DXVK end
  
-@@ -48,8 +54,7 @@ class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
+   const D3DSURFACE_DESC m_desc;
+   const bool m_bUseSharedHeap = false;
+@@ -48,10 +57,12 @@ class Direct3DSurface9_LSS: public Direct3DResource9_LSS<IDirect3DSurface9> {
    };
    std::queue<LockInfo> m_lockInfoQueue;
  
@@ -461,8 +932,13 @@ index e4e9d51..177344f 100644
 +  PagefileShadow m_shadow;
  
  public:
++  // NV-DXVK start: Only an explicit failed server response cancels destruction.
++  void cancelServerCreation() { m_serverCreated = false; }
++  // NV-DXVK end
    Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice,
-@@ -99,4 +104,4 @@ private:
+                        const D3DSURFACE_DESC& desc, 
+                        bool isBackBuffer = false);
+@@ -99,4 +110,4 @@ private:
    void* getBufPtr(const int pitch, const RECT& rect);
    void sendDataToServer(const LockInfo& lockInfo) const;
    static std::tuple<size_t, size_t> getRectDimensions(const RECT& box);
@@ -470,7 +946,7 @@ index e4e9d51..177344f 100644
 \ No newline at end of file
 +};
 diff --git a/bridge/src/client/d3d9_surfacebuffer_helper.h b/bridge/src/client/d3d9_surfacebuffer_helper.h
-index 13afedc..1a533bb 100644
+index 13afedcc34a8ec49c5b75e959813ebdd2ffc9e25..1a533bbc860903cd83abd8147af47910298467a7 100644
 --- a/bridge/src/client/d3d9_surfacebuffer_helper.h
 +++ b/bridge/src/client/d3d9_surfacebuffer_helper.h
 @@ -1,3 +1,7 @@
@@ -529,7 +1005,7 @@ index 13afedc..1a533bb 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_swapchain.cpp b/bridge/src/client/d3d9_swapchain.cpp
-index 86a19d4..4488d23 100644
+index 86a19d4ca25f46b6eda91c3d883c6b5ada79bfb8..4488d23b611a2bcf9d9fd9a4dbb8d62b19a7b8f7 100644
 --- a/bridge/src/client/d3d9_swapchain.cpp
 +++ b/bridge/src/client/d3d9_swapchain.cpp
 @@ -1,3 +1,7 @@
@@ -564,7 +1040,7 @@ index 86a19d4..4488d23 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_texture.cpp b/bridge/src/client/d3d9_texture.cpp
-index 3f4a64f..7d39e2f 100644
+index 3f4a64f66b274da916ba3fd09e7d52e5d057a6ee..7d39e2f0283e57c0cb0f069dc71b5c21ebbca39f 100644
 --- a/bridge/src/client/d3d9_texture.cpp
 +++ b/bridge/src/client/d3d9_texture.cpp
 @@ -66,7 +66,11 @@ ULONG Direct3DTexture9_LSS::Release() {
@@ -581,7 +1057,7 @@ index 3f4a64f..7d39e2f 100644
  
  HRESULT Direct3DTexture9_LSS::GetLevelDesc(UINT Level, D3DSURFACE_DESC* pDesc) {
 diff --git a/bridge/src/client/d3d9_texture.h b/bridge/src/client/d3d9_texture.h
-index 2a4b9e4..51de5d2 100644
+index 2a4b9e459991bbcd51d12b0b741ca9ee79fc7c4c..51de5d295ac2b6ef49b4282c392757c84d5456aa 100644
 --- a/bridge/src/client/d3d9_texture.h
 +++ b/bridge/src/client/d3d9_texture.h
 @@ -32,8 +32,15 @@
@@ -600,19 +1076,79 @@ index 2a4b9e4..51de5d2 100644
    Direct3DTexture9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice, const TEXTURE_DESC& desc)
      : Direct3DBaseTexture9_LSS(pDevice, desc) {
      m_children.resize(GetLevelCount());
+diff --git a/bridge/src/client/d3d9_vertexbuffer.cpp b/bridge/src/client/d3d9_vertexbuffer.cpp
+index 36ebe3aa806dea61d2005543e0b8b473c97ea4a1..854fe6132ef0839f0c07d2034117ffc7cfd66646 100644
+--- a/bridge/src/client/d3d9_vertexbuffer.cpp
++++ b/bridge/src/client/d3d9_vertexbuffer.cpp
+@@ -63,6 +63,9 @@ ULONG Direct3DVertexBuffer9_LSS::Release() {
+ }
+ 
+ void Direct3DVertexBuffer9_LSS::onDestroy() {
++  // NV-DXVK start: A failed backend creation does not own a server object.
++  if (!m_serverCreated) { return; }
++  // NV-DXVK end
+   ClientMessage { Commands::IDirect3DVertexBuffer9_Destroy, getId() };
+ }
+ 
+diff --git a/bridge/src/client/d3d9_vertexbuffer.h b/bridge/src/client/d3d9_vertexbuffer.h
+index fa70ec36b48d3e72070851f10cbe0b7e6ae3e3f2..cd72463a61c58b15102aa23a9d13597453ee6ddd 100644
+--- a/bridge/src/client/d3d9_vertexbuffer.h
++++ b/bridge/src/client/d3d9_vertexbuffer.h
+@@ -26,8 +26,14 @@
+ 
+ class Direct3DVertexBuffer9_LSS: public LockableBuffer<IDirect3DVertexBuffer9> {
+   void onDestroy() override;
++  // NV-DXVK start: Failed creation has no server resource to destroy.
++  bool m_serverCreated = true;
++  // NV-DXVK end
+ 
+ public:
++  // NV-DXVK start: Only an explicit failed server response cancels destruction.
++  void cancelServerCreation() { m_serverCreated = false; }
++  // NV-DXVK end
+   Direct3DVertexBuffer9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice, const D3DVERTEXBUFFER_DESC& desc)
+     : LockableBuffer((IDirect3DVertexBuffer9*)nullptr, pDevice, desc) {
+   }
 diff --git a/bridge/src/client/d3d9_volume.cpp b/bridge/src/client/d3d9_volume.cpp
-index 11704cf..2fc8826 100644
+index 11704cf11f84124439968a5f0e1bdb84382bdf91..227a52a847f78a680879d11e9c4a5edb4a7669f3 100644
 --- a/bridge/src/client/d3d9_volume.cpp
 +++ b/bridge/src/client/d3d9_volume.cpp
-@@ -21,6 +21,7 @@
+@@ -21,6 +21,9 @@
   */
  #include "pch.h"
  #include "d3d9_volume.h"
 +#include <limits>
++#include <new>
++#include <utility>
  
  #include "util_bridge_assert.h"
  
-@@ -127,15 +128,27 @@ HRESULT Direct3DVolume9_LSS::UnlockBox() {
+@@ -102,16 +105,19 @@ HRESULT Direct3DVolume9_LSS::GetDesc(D3DVOLUME_DESC* pDesc) {
+ 
+ HRESULT Direct3DVolume9_LSS::LockBox(D3DLOCKED_BOX* pLockedVolume, CONST D3DBOX* pBox, DWORD Flags) {
+   LogFunctionCall();
+-  // Store locked rect pointer locally so we can copy the data on unlock
+-  {
++  // NV-DXVK start: Publish the output only after its owning queue entry exists.
++  if (!pLockedVolume) { return D3DERR_INVALIDCALL; }
++  *pLockedVolume = {};
++  try {
+     BRIDGE_PARENT_DEVICE_LOCKGUARD();
+     if (!lock(*pLockedVolume, pBox, Flags)) {
+-      std::stringstream ss;
+-      ss << "[Direct3DVolume9_LSS][LockBox] Failed!";
+-      Logger::err(ss.str());
++      Logger::err("[Direct3DVolume9_LSS][LockBox] Failed!");
+       return E_FAIL;
+     }
++  } catch (const std::bad_alloc&) {
++    return E_OUTOFMEMORY;
+   }
++  // NV-DXVK end
+   // Do nothing on lock on server side for now, all logic happens on unlock!
+   return S_OK;
+ }
+@@ -127,17 +133,33 @@ HRESULT Direct3DVolume9_LSS::UnlockBox() {
  
  bool Direct3DVolume9_LSS::lock(D3DLOCKED_BOX& lockedVolume, const D3DBOX* const pBox, const DWORD flags) {
    const D3DBOX box = resolveLockInfoBox(pBox, m_desc);
@@ -626,6 +1162,11 @@ index 11704cf..2fc8826 100644
 -  const auto rowStride = ((width + pixelsPerBlock - 1) / pixelsPerBlock);
 -  const auto columnStride = ((height + pixelsPerBlock - 1) / pixelsPerBlock);
 -  const auto size = depth * columnStride * rowStride * bytesPerPixel;
+-  void* const pData = new uint8_t[size];
+-  lockedVolume.RowPitch = rowStride;
+-  lockedVolume.SlicePitch = columnStride;
+-  lockedVolume.pBits = pData;
+-  m_lockInfoQueue.push({ lockedVolume, box, flags });
 +  if (!pixelsPerBlock || !bytesPerPixel) { return false; }
 +  const auto rowStride = width / pixelsPerBlock + (width % pixelsPerBlock != 0);
 +  const auto columnStride = height / pixelsPerBlock + (height % pixelsPerBlock != 0);
@@ -636,16 +1177,31 @@ index 11704cf..2fc8826 100644
 +  const size_t slicePitch = columnStride * rowPitch;
 +  if (depth > (std::numeric_limits<size_t>::max)() / slicePitch) { return false; }
 +  const size_t size = depth * slicePitch;
-   void* const pData = new uint8_t[size];
--  lockedVolume.RowPitch = rowStride;
--  lockedVolume.SlicePitch = columnStride;
++  // NV-DXVK start: Allocation and queue growth both leave the output untouched on failure.
++  auto data = std::unique_ptr<uint8_t[]>(new uint8_t[size]);
 +  // D3DLOCKED_BOX exposes byte strides, including for block-compressed data.
-+  lockedVolume.RowPitch = static_cast<INT>(rowPitch);
-+  lockedVolume.SlicePitch = static_cast<INT>(slicePitch);
-   lockedVolume.pBits = pData;
-   m_lockInfoQueue.push({ lockedVolume, box, flags });
++  D3DLOCKED_BOX pending {};
++  pending.RowPitch = static_cast<INT>(rowPitch);
++  pending.SlicePitch = static_cast<INT>(slicePitch);
++  pending.pBits = data.get();
++  m_lockInfoQueue.push({ std::move(data), pending, box, flags });
++  lockedVolume = pending;
++  // NV-DXVK end
    return true;
-@@ -154,8 +167,11 @@ void Direct3DVolume9_LSS::unlock() {
+ }
+ 
+@@ -146,7 +168,9 @@ void Direct3DVolume9_LSS::unlock() {
+   if (m_lockInfoQueue.empty()) {
+     return;
+   }
+-  const auto lockInfo = m_lockInfoQueue.front();
++  // NV-DXVK start: Keep ownership through transport calls, including stack unwinding.
++  const auto lockInfo = std::move(m_lockInfoQueue.front());
++  // NV-DXVK end
+   m_lockInfoQueue.pop();
+ 
+   // Prep command send
+@@ -154,8 +178,9 @@ void Direct3DVolume9_LSS::unlock() {
    const auto& box = lockInfo.box;
    const auto [width, height, depth] = getBoxDimensions(box);
    const auto bytesPerPixel = bridge_util::getBytesFromFormat(m_desc.Format);
@@ -654,12 +1210,10 @@ index 11704cf..2fc8826 100644
 +  const auto pixelsPerBlock = bridge_util::getBlockSize(m_desc.Format);
 +  const auto rows = (height + pixelsPerBlock - 1) / pixelsPerBlock;
 +  const auto blocksPerRow = (width + pixelsPerBlock - 1) / pixelsPerBlock;
-+  const auto rowSize = static_cast<size_t>(lockedVolume.RowPitch);
-+  const auto totalSize = depth * static_cast<size_t>(lockedVolume.SlicePitch);
  
    // Now send the box dimensions and surface handle
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
-@@ -165,12 +181,14 @@ void Direct3DVolume9_LSS::unlock() {
+@@ -165,27 +190,28 @@ void Direct3DVolume9_LSS::unlock() {
      c.send_data(lockInfo.flags);
  
      // Now push actual bytes
@@ -668,25 +1222,71 @@ index 11704cf..2fc8826 100644
 +    c.send_many(bytesPerPixel, static_cast<uint32_t>(blocksPerRow),
 +                static_cast<uint32_t>(rows), static_cast<uint32_t>(depth));
  #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
-     if (auto* blobPacketPtr = c.begin_data_blob(totalSize))
- #endif
-       for (uint32_t z = 0; z < depth; z++) {
+-    if (auto* blobPacketPtr = c.begin_data_blob(totalSize))
+-#endif
+-      for (uint32_t z = 0; z < depth; z++) {
 -        for (uint32_t y = 0; y < lockedVolume.SlicePitch; y++) {
-+        for (uint32_t y = 0; y < rows; y++) {
-           auto ptr = static_cast<uint8_t*>(lockedVolume.pBits) +
-             y * lockedVolume.RowPitch + z * lockedVolume.SlicePitch;
- #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
-@@ -185,7 +203,7 @@ void Direct3DVolume9_LSS::unlock() {
-     c.end_data_blob();
+-          auto ptr = static_cast<uint8_t*>(lockedVolume.pBits) +
+-            y * lockedVolume.RowPitch + z * lockedVolume.SlicePitch;
+-#ifdef SEND_ALL_LOCK_DATA_AT_ONCE
+-          memcpy(blobPacketPtr, ptr, rowSize);
+-          blobPacketPtr += rowSize;
++    const auto totalSize = depth * static_cast<size_t>(lockedVolume.SlicePitch);
++    if (auto* blobPacketPtr = c.begin_data_blob(totalSize)) {
++      // NV-DXVK start: lock() stores every row and slice contiguously.
++      memcpy(blobPacketPtr, lockedVolume.pBits, totalSize);
++      // NV-DXVK end
++    }
++    c.end_data_blob();
+ #else
+-          c.send_data(rowSize, ptr);
+-#endif
+-        }
++    const auto rowSize = static_cast<size_t>(lockedVolume.RowPitch);
++    for (uint32_t z = 0; z < depth; z++) {
++      for (uint32_t y = 0; y < rows; y++) {
++        auto ptr = static_cast<uint8_t*>(lockedVolume.pBits) +
++          y * lockedVolume.RowPitch + z * lockedVolume.SlicePitch;
++        c.send_data(rowSize, ptr);
+       }
+-#ifdef SEND_ALL_LOCK_DATA_AT_ONCE
+-    c.end_data_blob();
++    }
  #endif
    }
 -  delete lockedVolume.pBits;
-+  delete[] static_cast<uint8_t*>(lockedVolume.pBits);
  }
  
  D3DBOX Direct3DVolume9_LSS::resolveLockInfoBox(const D3DBOX* const pBox, const D3DVOLUME_DESC& desc) {
+diff --git a/bridge/src/client/d3d9_volume.h b/bridge/src/client/d3d9_volume.h
+index ba9821dd8d163e302980b1e2449b9620f93175e6..5536d0acc3785f9bdcd72994f9e27c137df13a32 100644
+--- a/bridge/src/client/d3d9_volume.h
++++ b/bridge/src/client/d3d9_volume.h
+@@ -22,11 +22,15 @@
+ #pragma once
+ 
+ #include "d3d9_lss.h"
++#include <memory>
+ 
+ class Direct3DVolume9_LSS: public D3DBase<IDirect3DVolume9> {
+   void onDestroy() override;
+   D3DVOLUME_DESC m_desc;
+   struct LockInfo {
++    // NV-DXVK start: Queued locks own their temporary CPU data.
++    std::unique_ptr<uint8_t[]> data;
++    // NV-DXVK end
+     D3DLOCKED_BOX lockedVolume;
+     D3DBOX box;
+     DWORD flags;
+@@ -71,4 +75,4 @@ private:
+   void unlock();
+   static D3DBOX resolveLockInfoBox(const D3DBOX* const pBox, const D3DVOLUME_DESC& desc);
+   static std::tuple<size_t, size_t, size_t> getBoxDimensions(const D3DBOX& box);
+-};
+\ No newline at end of file
++};
 diff --git a/bridge/src/client/d3d9_volumetexture.cpp b/bridge/src/client/d3d9_volumetexture.cpp
-index 3df797e..69084ad 100644
+index 3df797eb05ec60779eb4233489ab54fa6812136f..69084ad9ce57938deee332b5b5028f9e5e28e570 100644
 --- a/bridge/src/client/d3d9_volumetexture.cpp
 +++ b/bridge/src/client/d3d9_volumetexture.cpp
 @@ -61,7 +61,11 @@ ULONG Direct3DVolumeTexture9_LSS::Release() {
@@ -703,7 +1303,7 @@ index 3df797e..69084ad 100644
  
  HRESULT Direct3DVolumeTexture9_LSS::GetLevelDesc(UINT Level, D3DVOLUME_DESC* pDesc) {
 diff --git a/bridge/src/client/d3d9_volumetexture.h b/bridge/src/client/d3d9_volumetexture.h
-index 5d82999..f3dc973 100644
+index 5d8299940f4d64315b7d6a55d761e725932db6c0..f3dc9738f1707b7b714dccda3771693175d961b6 100644
 --- a/bridge/src/client/d3d9_volumetexture.h
 +++ b/bridge/src/client/d3d9_volumetexture.h
 @@ -26,8 +26,14 @@
@@ -729,7 +1329,7 @@ index 5d82999..f3dc973 100644
 \ No newline at end of file
 +};
 diff --git a/bridge/src/client/lockable_buffer.h b/bridge/src/client/lockable_buffer.h
-index fbfc565..2e1218a 100644
+index fbfc565185489c07cc26a60c37df15d451b81b97..76aff94e0bc951d0981c9b92fe22fddd1b9bc9e4 100644
 --- a/bridge/src/client/lockable_buffer.h
 +++ b/bridge/src/client/lockable_buffer.h
 @@ -1,3 +1,7 @@
@@ -759,7 +1359,19 @@ index fbfc565..2e1218a 100644
      g_totalBufferShadow += m_desc.Size;
      Logger::trace(format_string("Allocated a shadow for dynamic %s buffer [%p] "
                                  "(size: %zd, total shadow size: %zd)",
-@@ -104,6 +111,8 @@ protected:
+@@ -88,8 +95,10 @@ protected:
+ 
+   LockableBuffer(T* const pD3dBuf, BaseDirect3DDevice9Ex_LSS* const pDevice, const DescType& desc)
+     : Direct3DResource9_LSS<T>(pD3dBuf, pDevice)
++    // NV-DXVK start: The policy precedes m_desc in member initialization order.
++    , m_bUseSharedHeap(getSharedHeapPolicy(desc))
++    // NV-DXVK end
+     , m_desc(desc)
+-    , m_bUseSharedHeap(getSharedHeapPolicy(m_desc))
+     , m_sendWhole((desc.Usage& D3DUSAGE_DYNAMIC) == 0 && GlobalOptions::getAlwaysCopyEntireStaticBuffer())
+     , m_optimizedLock((desc.Usage& D3DUSAGE_DYNAMIC) != 0 && ClientOptions::getOptimizedDynamicLock()) {
+     if (!m_bUseSharedHeap) {
+@@ -104,6 +113,8 @@ protected:
        }
      } else if (m_shadow) {
        g_totalBufferShadow -= m_desc.Size;
@@ -768,7 +1380,44 @@ index fbfc565..2e1218a 100644
        Logger::trace(format_string("Released shadow of dynamic %s buffer [%p] "
                                    "(size: %zd, total shadow size: %zd)",
                                    bIsVertexBuffer ? "vertex" : "index",
-@@ -227,4 +236,4 @@ protected:
+@@ -115,6 +126,12 @@ protected:
+     if (ppbData == nullptr) {
+       return D3DERR_INVALIDCALL;
+     }
++    // NV-DXVK start: Validate the offset before forming pointers or subtracting it.
++    if (offset > m_desc.Size) {
++      *ppbData = nullptr;
++      return D3DERR_INVALIDCALL;
++    }
++    // NV-DXVK end
+ 
+     uint32_t* checkPtr = nullptr;
+ 
+@@ -146,7 +163,9 @@ protected:
+       *ppbData = m_shadow.get() + offset;
+ 
+       if (m_optimizedLock) {
+-        const size_t dataSize = (size == 0) ? m_desc.Size : size;
++        // NV-DXVK start: Reserve the same bounded range that unlock transmits.
++        const size_t dataSize = (size == 0) ? m_desc.Size - offset : std::min(size, m_desc.Size - offset);
++        // NV-DXVK end
+ 
+         // Send the buffer lock parameters and handle
+         ClientMessage c(LockCmd, getId(), 0);
+@@ -213,8 +232,10 @@ protected:
+           c.send_data(lockInfo.bufferId);
+         } else if (m_optimizedLock) {
+           // Now send data offset in the channel
+-          const uint32_t dataOffset = static_cast<uint32_t*>(ptr) -
+-            DeviceBridge::getWriterChannel().get_data_ptr();
++          // NV-DXVK start: Reserved channel offsets use the existing 32-bit wire field.
++          const uint32_t dataOffset = static_cast<uint32_t>(static_cast<uint32_t*>(ptr) -
++            DeviceBridge::getWriterChannel().get_data_ptr());
++          // NV-DXVK end
+           c.send_many(dataOffset);
+         } else {
+           // Now send the buffer bytes
+@@ -227,4 +248,4 @@ protected:
      }
      m_lockInfos.pop();
    }
@@ -777,7 +1426,7 @@ index fbfc565..2e1218a 100644
 +};
 diff --git a/bridge/src/client/memory_diagnostics.h b/bridge/src/client/memory_diagnostics.h
 new file mode 100644
-index 0000000..94fd013
+index 0000000000000000000000000000000000000000..94fd0130e805a0a563cfdb3e3a51fab51a5b66e9
 --- /dev/null
 +++ b/bridge/src/client/memory_diagnostics.h
 @@ -0,0 +1,145 @@
@@ -927,7 +1576,7 @@ index 0000000..94fd013
 +}
 +}
 diff --git a/bridge/src/client/meson.build b/bridge/src/client/meson.build
-index 2ad1e79..3507efa 100644
+index 2ad1e7905bf3ad00dd6d021e7fc535fd2d600c46..3507efa1f3bc387749c6ab940641dac681f7c7da 100644
 --- a/bridge/src/client/meson.build
 +++ b/bridge/src/client/meson.build
 @@ -1,3 +1,7 @@
@@ -965,7 +1614,7 @@ index 2ad1e79..3507efa 100644
 +endif
 diff --git a/bridge/src/client/pagefile_shadow.h b/bridge/src/client/pagefile_shadow.h
 new file mode 100644
-index 0000000..893edc4
+index 0000000000000000000000000000000000000000..893edc4fc2e0b97bb1bf21c2ba5a9ba9bfb586ff
 --- /dev/null
 +++ b/bridge/src/client/pagefile_shadow.h
 @@ -0,0 +1,123 @@
@@ -1094,7 +1743,7 @@ index 0000000..893edc4
 +};
 diff --git a/bridge/src/client/texture_creation.h b/bridge/src/client/texture_creation.h
 new file mode 100644
-index 0000000..2d99dd4
+index 0000000000000000000000000000000000000000..2d99dd46410aa137a04a6e357b7f476e05d2a157
 --- /dev/null
 +++ b/bridge/src/client/texture_creation.h
 @@ -0,0 +1,26 @@
@@ -1125,7 +1774,7 @@ index 0000000..2d99dd4
 +
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..c129cc8 100644
+index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726de67a03d 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -1203,7 +1852,67 @@ index 86434ec..c129cc8 100644
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
            ss << format_string("CreateDevice() call failed with error code 0x%x", hresult) << std::endl;
-@@ -787,12 +820,15 @@ void ProcessDeviceCommandQueue() {
+@@ -425,12 +458,17 @@ void ProcessDeviceCommandQueue() {
+         PULL(BOOL, Lockable);
+         PULL(DWORD, Usage);
+         PULL_HND(pHandle);
+-        LPDIRECT3DSURFACE9 pSurface;
++        LPDIRECT3DSURFACE9 pSurface = nullptr;
+         const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateRenderTargetEx(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr, IN Usage);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pSurface;
+         }
+-        assert(SUCCEEDED(hresult));
++        // NV-DXVK start: Forward recoverable creation failures to the client.
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateRenderTargetEx failed: hresult=0x%08lx resource_id=%u",
++            static_cast<unsigned long>(hresult), pHandle));
++        }
++        // NV-DXVK end
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -443,12 +481,17 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DPOOL, Pool);
+         PULL(DWORD, Usage);
+         PULL_HND(pHandle);
+-        LPDIRECT3DSURFACE9 pSurface;
++        LPDIRECT3DSURFACE9 pSurface = nullptr;
+         const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateOffscreenPlainSurfaceEx(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr, IN Usage);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pSurface;
+         }
+-        assert(SUCCEEDED(hresult));
++        // NV-DXVK start: Forward recoverable creation failures to the client.
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateOffscreenPlainSurfaceEx failed: hresult=0x%08lx resource_id=%u",
++            static_cast<unsigned long>(hresult), pHandle));
++        }
++        // NV-DXVK end
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -463,12 +506,17 @@ void ProcessDeviceCommandQueue() {
+         PULL(BOOL, Discard);
+         PULL(DWORD, Usage);
+         PULL_HND(pHandle);
+-        LPDIRECT3DSURFACE9 pSurface;
++        LPDIRECT3DSURFACE9 pSurface = nullptr;
+         const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->CreateDepthStencilSurfaceEx(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr, IN Usage);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pSurface;
+         }
+-        assert(SUCCEEDED(hresult));
++        // NV-DXVK start: Forward recoverable creation failures to the client.
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateDepthStencilSurfaceEx failed: hresult=0x%08lx resource_id=%u",
++            static_cast<unsigned long>(hresult), pHandle));
++        }
++        // NV-DXVK end
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -787,12 +835,15 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -1221,7 +1930,7 @@ index 86434ec..c129cc8 100644
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -807,12 +843,17 @@ void ProcessDeviceCommandQueue() {
+@@ -807,12 +858,17 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -1241,7 +1950,7 @@ index 86434ec..c129cc8 100644
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -825,12 +866,17 @@ void ProcessDeviceCommandQueue() {
+@@ -825,12 +881,17 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -1261,7 +1970,107 @@ index 86434ec..c129cc8 100644
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -2578,6 +2624,61 @@ void ProcessDeviceCommandQueue() {
+@@ -842,12 +903,17 @@ void ProcessDeviceCommandQueue() {
+         PULL_D(FVF);
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+-        LPDIRECT3DVERTEXBUFFER9 pVertexBuffer;
++        LPDIRECT3DVERTEXBUFFER9 pVertexBuffer = nullptr;
+         const auto hresult = pD3DDevice->CreateVertexBuffer(IN Length, IN Usage, IN FVF, IN Pool, OUT & pVertexBuffer, IN nullptr);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pVertexBuffer;
+         }
+-        assert(SUCCEEDED(hresult));
++        // NV-DXVK start: Forward recoverable creation failures to the client.
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateVertexBuffer failed: hresult=0x%08lx resource_id=%u",
++            static_cast<unsigned long>(hresult), pHandle));
++        }
++        // NV-DXVK end
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -859,12 +925,17 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DFORMAT, Format);
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+-        LPDIRECT3DINDEXBUFFER9 pIndexBuffer;
++        LPDIRECT3DINDEXBUFFER9 pIndexBuffer = nullptr;
+         const auto hresult = pD3DDevice->CreateIndexBuffer(IN Length, IN Usage, IN Format, IN Pool, OUT & pIndexBuffer, IN nullptr);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pIndexBuffer;
+         }
+-        assert(SUCCEEDED(hresult));
++        // NV-DXVK start: Forward recoverable creation failures to the client.
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateIndexBuffer failed: hresult=0x%08lx resource_id=%u",
++            static_cast<unsigned long>(hresult), pHandle));
++        }
++        // NV-DXVK end
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -878,12 +949,17 @@ void ProcessDeviceCommandQueue() {
+         PULL_D(MultisampleQuality);
+         PULL(BOOL, Lockable);
+         PULL_HND(pHandle);
+-        LPDIRECT3DSURFACE9 pSurface;
++        LPDIRECT3DSURFACE9 pSurface = nullptr;
+         const auto hresult = pD3DDevice->CreateRenderTarget(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Lockable, OUT & pSurface, IN nullptr);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pSurface;
+         }
+-        assert(SUCCEEDED(hresult));
++        // NV-DXVK start: Forward recoverable creation failures to the client.
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateRenderTarget failed: hresult=0x%08lx resource_id=%u",
++            static_cast<unsigned long>(hresult), pHandle));
++        }
++        // NV-DXVK end
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -897,12 +973,17 @@ void ProcessDeviceCommandQueue() {
+         PULL_D(MultisampleQuality);
+         PULL(BOOL, Discard);
+         PULL_HND(pHandle);
+-        LPDIRECT3DSURFACE9 pSurface;
++        LPDIRECT3DSURFACE9 pSurface = nullptr;
+         const auto hresult = pD3DDevice->CreateDepthStencilSurface(IN Width, IN Height, IN Format, IN MultiSample, IN MultisampleQuality, IN Discard, OUT & pSurface, IN nullptr);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pSurface;
+         }
+-        assert(SUCCEEDED(hresult));
++        // NV-DXVK start: Forward recoverable creation failures to the client.
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateDepthStencilSurface failed: hresult=0x%08lx resource_id=%u",
++            static_cast<unsigned long>(hresult), pHandle));
++        }
++        // NV-DXVK end
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -1001,12 +1082,17 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DFORMAT, Format);
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+-        LPDIRECT3DSURFACE9 pSurface;
++        LPDIRECT3DSURFACE9 pSurface = nullptr;
+         const auto hresult = pD3DDevice->CreateOffscreenPlainSurface(IN Width, IN Height, IN Format, IN Pool, OUT & pSurface, IN nullptr);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pSurface;
+         }
+-        assert(SUCCEEDED(hresult));
++        // NV-DXVK start: Forward recoverable creation failures to the client.
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateOffscreenPlainSurface failed: hresult=0x%08lx resource_id=%u",
++            static_cast<unsigned long>(hresult), pHandle));
++        }
++        // NV-DXVK end
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -2578,6 +2664,61 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RECT, pRect);
          PULL_D(Flags);
          const auto pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
@@ -1323,7 +2132,7 @@ index 86434ec..c129cc8 100644
          // Now lock the rect so we can copy the data into it
          D3DLOCKED_RECT lockedRect;
          auto hresult = pSurface->LockRect(OUT & lockedRect, IN pRect, IN Flags);
-@@ -2585,8 +2686,6 @@ void ProcessDeviceCommandQueue() {
+@@ -2585,8 +2726,6 @@ void ProcessDeviceCommandQueue() {
          // Copy the data over
          const uint32_t width = pRect->right - pRect->left;
          const uint32_t height = pRect->bottom - pRect->top;
@@ -1332,7 +2141,7 @@ index 86434ec..c129cc8 100644
          const D3DFORMAT format = (D3DFORMAT) dFormat;
          const size_t rowSize = bridge_util::calcRowSize(width, format);
          void* pData = nullptr;
-@@ -3268,7 +3367,16 @@ bool InitializeD3D() {
+@@ -3268,7 +3407,16 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -1350,7 +2159,7 @@ index 86434ec..c129cc8 100644
      if (ghModule) {
        Logger::info("Non-RTX standard d3d9vk_x64.dll loaded");
      } else {
-@@ -3285,6 +3393,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3433,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -1361,7 +2170,7 @@ index 86434ec..c129cc8 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3423,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3463,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -1372,7 +2181,7 @@ index 86434ec..c129cc8 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3488,12 +3604,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3488,12 +3644,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    ExceptionHandler::get().init();
  
    // Identify yourself
@@ -1391,7 +2200,7 @@ index 86434ec..c129cc8 100644
  #endif
  
    BRIDGE_ASSERT_LOG((argCount >= 2), "Command line argument count received to launch server is not as expected");
-@@ -3624,4 +3743,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +3783,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;
@@ -1399,7 +2208,7 @@ index 86434ec..c129cc8 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/server/meson.build b/bridge/src/server/meson.build
-index 908d93f..9047f5f 100644
+index 908d93fb561101df0391cc05c5fbd4f695ec3006..9047f5f459702cd00e2e8221fdbdf294c2a6a25b 100644
 --- a/bridge/src/server/meson.build
 +++ b/bridge/src/server/meson.build
 @@ -1,3 +1,7 @@
@@ -1440,7 +2249,7 @@ index 908d93f..9047f5f 100644
 +endif
 diff --git a/bridge/src/util/ati_texture_layout.h b/bridge/src/util/ati_texture_layout.h
 new file mode 100644
-index 0000000..2a47a97
+index 0000000000000000000000000000000000000000..2a47a97f588cad805bff63e9fe88d2af5b3f18ed
 --- /dev/null
 +++ b/bridge/src/util/ati_texture_layout.h
 @@ -0,0 +1,70 @@
@@ -1515,7 +2324,7 @@ index 0000000..2a47a97
 +}
 +}
 diff --git a/bridge/src/util/config/config.cpp b/bridge/src/util/config/config.cpp
-index 5e1deb0..144f4f8 100644
+index 5e1deb0012782faeec50d23593f0722cc941f943..144f4f8b20b279a6899efff5955e9e7a6ef48f92 100644
 --- a/bridge/src/util/config/config.cpp
 +++ b/bridge/src/util/config/config.cpp
 @@ -26,6 +26,7 @@
@@ -1538,7 +2347,7 @@ index 5e1deb0..144f4f8 100644
  
      Logger::info(std::string("Trying to open config file: ") + userConfPath.string());
 diff --git a/bridge/src/util/meson.build b/bridge/src/util/meson.build
-index fb5d556..54261a1 100644
+index fb5d556b9675dca0c1751822ca346729b1e7a46c..54261a1fbb502af67bfd51b825927984bb21c2b3 100644
 --- a/bridge/src/util/meson.build
 +++ b/bridge/src/util/meson.build
 @@ -38,6 +38,10 @@ util_src = files([
@@ -1554,7 +2363,7 @@ index fb5d556..54261a1 100644
  	'util_bridge_assert.h',
 diff --git a/bridge/src/util/queue_wait_diagnostics.h b/bridge/src/util/queue_wait_diagnostics.h
 new file mode 100644
-index 0000000..ee686c7
+index 0000000000000000000000000000000000000000..ee686c71c55b781c03b40bed30a63a1215f1ae93
 --- /dev/null
 +++ b/bridge/src/util/queue_wait_diagnostics.h
 @@ -0,0 +1,63 @@
@@ -1623,7 +2432,7 @@ index 0000000..ee686c7
 +}
 diff --git a/bridge/src/util/runtime_path.h b/bridge/src/util/runtime_path.h
 new file mode 100644
-index 0000000..419728f
+index 0000000000000000000000000000000000000000..419728f92439d2635ffe578cac17333973292294
 --- /dev/null
 +++ b/bridge/src/util/runtime_path.h
 @@ -0,0 +1,14 @@
@@ -1642,7 +2451,7 @@ index 0000000..419728f
 +}
 +}
 diff --git a/bridge/src/util/util_atomiccircularqueue.h b/bridge/src/util/util_atomiccircularqueue.h
-index 4be48da..18db8f4 100644
+index 4be48dacb9e519919f7fe823e411584b656c52b5..f15df79d81def57fb7ec939fa948965ee6c23e0c 100644
 --- a/bridge/src/util/util_atomiccircularqueue.h
 +++ b/bridge/src/util/util_atomiccircularqueue.h
 @@ -22,16 +22,22 @@
@@ -1796,7 +2605,7 @@ index 4be48da..18db8f4 100644
        return Result::Failure;
      }
  
-@@ -117,7 +182,9 @@ namespace bridge_util {
+@@ -117,26 +182,27 @@ namespace bridge_util {
      // Returns a ref to the first element in the queue
      // Note: Blocks if the queue is empty
      const T& peek(Result& result, const DWORD timeoutMS = 0, std::atomic<bool>* const pbEarlyOutSignal = nullptr) const {
@@ -1807,7 +2616,11 @@ index 4be48da..18db8f4 100644
        do {
          const auto currentWrite = m_write->load(std::memory_order_relaxed);
          if (currentWrite != m_read->load(std::memory_order_acquire)) {
-@@ -127,16 +194,15 @@ namespace bridge_util {
+-          // Issue a membar before reading the data since it is not atomic
+-          std::atomic_thread_fence(std::memory_order_seq_cst);
++          // The acquire load observes the producer's publication of this slot.
++          // Its payload stays owned by the consumer until pull() releases it.
+           result = Result::Success;
            return m_data[currentWrite];
          }
  
@@ -1879,7 +2692,7 @@ index 4be48da..18db8f4 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/util/util_filesys.h b/bridge/src/util/util_filesys.h
-index 15915da..6571ee1 100644
+index 15915dab6a9a6f79f538d26a085758910acb6d14..6571ee196c3d046eee17d6bdc08410c55575be5a 100644
 --- a/bridge/src/util/util_filesys.h
 +++ b/bridge/src/util/util_filesys.h
 @@ -1,3 +1,7 @@

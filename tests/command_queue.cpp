@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <future>
 #include <new>
 #include <stdexcept>
@@ -30,15 +31,47 @@ struct Item {
   Commands::D3D9Command command = Commands::Bridge_Any;
   uint32_t sequence = 0;
   uint32_t checksum = 0;
+  std::array<uint32_t, 13> payload{};
 };
+static_assert(sizeof(Item) == 64, "test payload must match across x86 and x64");
 using Writer = bridge_util::AtomicCircularQueue<Item, bridge_util::Accessor::Writer>;
 using Reader = bridge_util::AtomicCircularQueue<Item, bridge_util::Accessor::Reader>;
-constexpr size_t kMapSize = 4096;
+constexpr size_t kMapSize = 65536;
 constexpr size_t kQueueSize = 8;
 constexpr uint32_t kMessageCount = 100000;
 
 void require(bool condition, const char* message) {
   if (!condition) { throw std::runtime_error(message); }
+}
+Item makeItem(uint32_t sequence) {
+  Item item{Commands::Bridge_Any, sequence, sequence ^ 0xa55a5aa5u};
+  for (size_t index = 0; index < item.payload.size(); ++index) {
+    item.payload[index] = (sequence * 0x9e3779b9u) ^
+      (static_cast<uint32_t>(index) * 0x85ebca6bu);
+  }
+  return item;
+}
+void requireItem(const Item& item, uint32_t sequence) {
+  const auto expected = makeItem(sequence);
+  require(item.command == expected.command && item.sequence == expected.sequence &&
+    item.checksum == expected.checksum && item.payload == expected.payload,
+    "peek/pull payload was torn, stale, or out of order");
+}
+void peekThenPull(Reader& reader, uint32_t sequence) {
+  Result result = Result::Failure;
+  const Item& peeked = reader.peek(result, 5000);
+  require(result == Result::Success, "peek stalled");
+  requireItem(peeked, sequence);
+  // Keep the reference while the producer advances/wraps other slots.
+  if (sequence % 101 == 0) { SwitchToThread(); }
+  requireItem(peeked, sequence);
+  const Item& repeated = reader.peek(result, 5000);
+  require(result == Result::Success && &repeated == &peeked,
+    "repeated peek changed the unconsumed slot");
+  requireItem(repeated, sequence);
+  const Item value = reader.pull(result, 5000);
+  require(result == Result::Success, "pull after peek stalled");
+  requireItem(value, sequence);
 }
 std::string uniqueName() {
   static uint32_t ordinal = 0;
@@ -170,36 +203,32 @@ void testWakeAndWrap() {
   Reader reader(name, memory.data, kMapSize, kQueueSize);
   auto task = std::async(std::launch::async, [&] {
     for (uint32_t i = 0; i < kMessageCount; ++i) {
-      Result result = Result::Failure;
-      const Item value = reader.pull(result, 5000);
-      require(result == Result::Success && value.sequence == i &&
-        value.checksum == (i ^ 0xa55a5aa5u), "wake/wrap sequence was corrupted");
+      peekThenPull(reader, i);
     }
   });
   Sleep(25);
   for (uint32_t i = 0; i < kMessageCount; ++i) {
-    require(writer.push(Item{Commands::Bridge_Any, i, i ^ 0xa55a5aa5u}) == Result::Success,
+    require(writer.push(makeItem(i)) == Result::Success,
       "writer stalled");
     if (i % 101 == 0) { SwitchToThread(); }
   }
   task.get();
   require(reader.isEmpty(), "queue was not drained");
 }
-void runReader(const std::string& name) {
+void runReader(const std::string& name, size_t capacity) {
   Memory memory(name, false);
-  Reader reader(name, memory.data, kMapSize, kQueueSize);
+  Reader reader(name, memory.data, kMapSize, capacity);
   for (uint32_t i = 0; i < kMessageCount; ++i) {
-    Result result = Result::Failure;
-    const auto value = reader.pull(result, 5000);
-    require(result == Result::Success && value.sequence == i &&
-      value.checksum == (i ^ 0xa55a5aa5u), "cross-process sequence was corrupted");
+    peekThenPull(reader, i);
   }
+  require(reader.isEmpty(), "cross-process queue was not drained");
 }
-void testPeer(const std::wstring& executable) {
+void testPeer(const std::wstring& executable, size_t capacity) {
   const auto name = uniqueName();
   Memory memory(name);
-  Writer writer(name, memory.data, kMapSize, kQueueSize);
-  std::wstring command = L"\"" + executable + L"\" --reader " + std::wstring(name.begin(), name.end());
+  Writer writer(name, memory.data, kMapSize, capacity);
+  std::wstring command = L"\"" + executable + L"\" --reader " +
+    std::wstring(name.begin(), name.end()) + L" " + std::to_wstring(capacity);
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
@@ -209,7 +238,7 @@ void testPeer(const std::wstring& executable) {
   try {
     Sleep(25);
     for (uint32_t i = 0; i < kMessageCount; ++i) {
-      require(writer.push(Item{Commands::Bridge_Any, i, i ^ 0xa55a5aa5u}) == Result::Success,
+      require(writer.push(makeItem(i)) == Result::Success,
         "cross-process writer stalled");
       if (i % 8191 == 0) { Sleep(12); }
     }
@@ -223,17 +252,21 @@ void testPeer(const std::wstring& executable) {
     throw;
   }
   CloseHandle(process.hProcess);
+  std::printf("cross-process peek/pull: %u messages, capacity %zu passed\n",
+    kMessageCount, capacity);
 }
 int wmain(int argc, wchar_t** argv) {
   try {
-    if (argc == 3 && std::wstring(argv[1]) == L"--reader") {
+    if (argc == 4 && std::wstring(argv[1]) == L"--reader") {
       const std::wstring wideName = argv[2];
       std::string name;
       for (const wchar_t character : wideName) {
         require(static_cast<uint32_t>(character) < 128, "expected ASCII test mapping name");
         name.push_back(static_cast<char>(character));
       }
-      runReader(name);
+      const auto capacity = static_cast<size_t>(std::stoul(argv[3]));
+      require(capacity >= 2 && capacity <= 63, "invalid queue test capacity");
+      runReader(name, capacity);
     } else {
       require(argc == 2, "expected peer executable path");
       testIdleAndCancel();
@@ -241,7 +274,9 @@ int wmain(int argc, wchar_t** argv) {
       testNotificationCoalescing();
       testCounters();
       testWakeAndWrap();
-      testPeer(argv[1]);
+      for (const size_t capacity : {size_t{2}, size_t{3}, size_t{8}, size_t{63}}) {
+        testPeer(argv[1], capacity);
+      }
       std::puts("Command queue tests passed");
     }
     return 0;

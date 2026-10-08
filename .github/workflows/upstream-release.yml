@@ -25,6 +25,11 @@ on:
         description: 'Optional full upstream commit SHA; empty tracks upstream default-branch HEAD'
         required: false
         type: string
+      validation_only:
+        description: 'Build, test and benchmark without publishing a release'
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
 concurrency:
@@ -76,15 +81,40 @@ jobs:
       - name: Test diagnostics and shadow eviction
         shell: powershell
         run: ./scripts/test_diagnostics.ps1
+      - name: Test resource creation cleanup and buffer lock bounds
+        shell: powershell
+        run: ./scripts/test_resource_lifecycle.ps1
       - name: Test ATI texture transfer bounds (x86 and x64)
         shell: powershell
         run: ./scripts/test_ati_texture_layout.ps1
       - name: Test command queue wakeups and cross-process transport
         shell: powershell
         run: ./scripts/test_command_queue.ps1
+      - name: Benchmark command queue ordering
+        if: ${{ inputs.validation_only }}
+        shell: powershell
+        run: ./scripts/test_command_queue.ps1 -Benchmark
       - name: Test actual volume lock and upload code (x86 and x64)
         shell: powershell
         run: ./scripts/test_volume_texture.ps1
+      - name: Benchmark volume upload copying
+        if: ${{ inputs.validation_only }}
+        shell: powershell
+        run: ./scripts/test_volume_texture.ps1 -Benchmark
+      - name: Save native validation results
+        if: ${{ always() && inputs.validation_only }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-${{ matrix.release_tag }}
+          path: |
+            .deps/queue-test/*.json
+            .deps/queue-test/*.csv
+            .deps/queue-test/*.exe
+            .deps/volume-test/*.json
+            .deps/volume-test/*.csv
+            .deps/volume-test/*.exe
+          include-hidden-files: true
+          if-no-files-found: warn
       - name: Record provenance and archive
         shell: pwsh
         env:
@@ -120,7 +150,7 @@ jobs:
           if-no-files-found: error
   publish:
     needs: [detect, build]
-    if: ${{ needs.detect.outputs.pending == 'true' && needs.build.result == 'success' }}
+    if: ${{ needs.detect.outputs.pending == 'true' && needs.build.result == 'success' && !inputs.validation_only }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

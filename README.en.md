@@ -12,7 +12,8 @@ Based on [NVIDIA dxvk-remix Bridge](https://github.com/NVIDIAGameWorks/dxvk-remi
 - Adds upstream monitoring, automated builds and tests, Nightly releases, and minimal runtime packaging.
 - Fixes volume-texture byte pitches and upload offsets to prevent corrupted color-correction lookup tables. See [fix provenance and validation](docs/VOLUME-TEXTURE-COLOR-FIX.md).
 - Ports texture-creation failure cleanup, ATI1/ATI2 compressed-transfer bounds fixes, and event-based command-queue wakeups from the original project, with native tests. See [update tracking](docs/ORIGINAL-PROJECT-UPDATES.md).
-- Extends creation-failure cleanup to volume and cube textures, releasing client wrappers and clearing outputs. Response timeouts retain ordered server cleanup.
+- Extends creation-failure cleanup to volume/cube textures, vertex/index buffers and standalone surfaces, releasing client wrappers and clearing outputs. Response timeouts retain ordered server cleanup.
+- Hardens buffer-lock bounds and volume temporary ownership, and optimizes contiguous uploads and queue reads. See [validation methodology](docs/RUNTIME-RELIABILITY.md).
 
 `d3d9.dll` is the 32-bit Bridge client; `d3d9vk_x64.dll` is the 64-bit DXVK backend. They serve different purposes.
 
@@ -24,6 +25,7 @@ Under **Actions → Build latest upstream Bridge → Run workflow**:
 
 - Leave `upstream_commit` empty to follow the latest source, or enter a full 40-character SHA to select a commit.
 - Enable `force_rebuild` to create a new independent build without replacing existing assets. This option is disabled by default.
+- Enable `validation_only` to build, test and run A/B benchmarks, saving artifacts and skipping publication.
 
 Deduplication checks both upstream SHA and a fingerprint of build/package/test inputs. Versions use `nightly-YYYYMMDD-upstreamSHA-rRecipeDigest-bRunID.Attempt`. Dates use upstream commit UTC time. Rebuilds and reruns have separate versions, preserving old assets. Release notes and packaged `UPSTREAM.json` record full identities. Patch, compile or test failures prevent publication.
 
