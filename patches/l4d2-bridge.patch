@@ -1,5 +1,54 @@
+diff --git a/bridge/src/client/d3d9_cubetexture.cpp b/bridge/src/client/d3d9_cubetexture.cpp
+index 9de506f..43f2bc2 100644
+--- a/bridge/src/client/d3d9_cubetexture.cpp
++++ b/bridge/src/client/d3d9_cubetexture.cpp
+@@ -65,7 +65,11 @@ ULONG Direct3DCubeTexture9_LSS::Release() {
+ }
+ 
+ void Direct3DCubeTexture9_LSS::onDestroy() {
+-   ClientMessage { Commands::IDirect3DCubeTexture9_Destroy, getId() };
++  // NV-DXVK start: A failed backend creation does not own a server object.
++  if (m_serverCreated) {
++    ClientMessage { Commands::IDirect3DCubeTexture9_Destroy, getId() };
++  }
++  // NV-DXVK end
+ }
+ 
+ HRESULT Direct3DCubeTexture9_LSS::GetLevelDesc(UINT Level, D3DSURFACE_DESC* pDesc) {
+@@ -201,4 +205,4 @@ HRESULT Direct3DCubeTexture9_LSS::AddDirtyRect(D3DCUBEMAP_FACES FaceType, CONST
+     c.send_data(sizeof(RECT), (void*) pDirtyRect);
+   }
+   WAIT_FOR_OPTIONAL_SERVER_RESPONSE("AddDirtyRect()", D3DERR_INVALIDCALL, currentUID);
+-}
+\ No newline at end of file
++}
+diff --git a/bridge/src/client/d3d9_cubetexture.h b/bridge/src/client/d3d9_cubetexture.h
+index 4af8177..6aec65f 100644
+--- a/bridge/src/client/d3d9_cubetexture.h
++++ b/bridge/src/client/d3d9_cubetexture.h
+@@ -29,7 +29,13 @@
+  */
+ class Direct3DCubeTexture9_LSS: public LssBaseTexture2D<IDirect3DCubeTexture9> {
+   void onDestroy() override;
++  // NV-DXVK start: Failed creation has no server resource to destroy.
++  bool m_serverCreated = true;
++  // NV-DXVK end
+ public:
++  // NV-DXVK start: Only an explicit failed server response cancels destruction.
++  void cancelServerCreation() { m_serverCreated = false; }
++  // NV-DXVK end
+   Direct3DCubeTexture9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice, const TEXTURE_DESC& desc)
+     : Direct3DBaseTexture9_LSS(pDevice, desc) {
+     m_children.resize(GetLevelCount() * caps::MaxCubeFaces);
+@@ -52,4 +58,4 @@ public:
+   STDMETHOD(LockRect)(THIS_ D3DCUBEMAP_FACES FaceType, UINT Level, D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags);
+   STDMETHOD(UnlockRect)(THIS_ D3DCUBEMAP_FACES FaceType, UINT Level);
+   STDMETHOD(AddDirtyRect)(THIS_ D3DCUBEMAP_FACES FaceType, CONST RECT* pDirtyRect);
+-};
+\ No newline at end of file
++};
 diff --git a/bridge/src/client/d3d9_device.cpp b/bridge/src/client/d3d9_device.cpp
-index 1abdf20..ad3ed17 100644
+index 1abdf20..85f3f03 100644
 --- a/bridge/src/client/d3d9_device.cpp
 +++ b/bridge/src/client/d3d9_device.cpp
 @@ -44,6 +44,7 @@
@@ -63,6 +112,88 @@ index 1abdf20..ad3ed17 100644
 +      static_cast<unsigned long long>(pLssTexture->getId()), static_cast<unsigned>(serverResponded)));
 +  }
 +  return l4d2_texture::completeCreation(pLssTexture, ppTexture, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
+@@ -598,9 +630,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVolumeTexture(UINT Width, UINT
+   }
+ 
+   UID currentUID = 0;
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DVolumeTexture9_LSS* pLssVolumeTexture = nullptr;
++  // NV-DXVK end
+   {
+     const TEXTURE_DESC desc { Width, Height, Depth, Levels, Usage, Format, Pool };
+-    auto* const pLssVolumeTexture = trackWrapper(new Direct3DVolumeTexture9_LSS(this, desc));
++    pLssVolumeTexture = trackWrapper(new Direct3DVolumeTexture9_LSS(this, desc));
+     (*ppVolumeTexture) = pLssVolumeTexture;
+     {
+       ClientMessage c(Commands::IDirect3DDevice9Ex_CreateVolumeTexture, getId());
+@@ -608,7 +643,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVolumeTexture(UINT Width, UINT
+       c.send_many(Width, Height, Depth, Levels, Usage, Format, Pool, (uint32_t) pLssVolumeTexture->getId());
+     }
+   }
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateVolumeTexture()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateVolumeTexture()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateVolumeTexture failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssVolumeTexture->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssVolumeTexture, ppVolumeTexture, { hresult, serverResponded });
++  // NV-DXVK end
+ }
+ 
+ template<bool EnableSync>
+@@ -626,9 +679,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateCubeTexture(UINT EdgeLength, UI
+   }
+ 
+   UID currentUID = 0;
++  // NV-DXVK start: Retain the wrapper until its creation result is known.
++  Direct3DCubeTexture9_LSS* pLssCubeTexture = nullptr;
++  // NV-DXVK end
+   {
+     const TEXTURE_DESC desc { EdgeLength, EdgeLength, 6, Levels, Usage, Format, Pool };
+-    auto* const pLssCubeTexture = trackWrapper(new Direct3DCubeTexture9_LSS(this, desc));
++    pLssCubeTexture = trackWrapper(new Direct3DCubeTexture9_LSS(this, desc));
+     (*ppCubeTexture) = pLssCubeTexture;
+     {
+       ClientMessage c(Commands::IDirect3DDevice9Ex_CreateCubeTexture, getId());
+@@ -636,7 +692,25 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateCubeTexture(UINT EdgeLength, UI
+       c.send_many(EdgeLength, Levels, Usage, Format, Pool, (uint32_t) pLssCubeTexture->getId());
+     }
+   }
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateCubeTexture()", D3DERR_INVALIDCALL, currentUID);
++  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
++  bool serverResponded = false;
++  const auto hresult = [&]() -> HRESULT {
++    if (GlobalOptions::getSendCreateFunctionServerResponses() || GlobalOptions::getSendAllServerResponses()) {
++      WAIT_FOR_SERVER_RESPONSE("CreateCubeTexture()", D3DERR_INVALIDCALL, currentUID);
++      serverResponded = true;
++      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
++      DeviceBridge::pop_front();
++      return result;
++    }
++    return D3D_OK;
++  }();
++  if (FAILED(hresult)) {
++    Logger::err(format_string("L4D2 CreateCubeTexture failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
++      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
++      static_cast<unsigned long long>(pLssCubeTexture->getId()), static_cast<unsigned>(serverResponded)));
++  }
++  return l4d2_texture::completeCreation(pLssCubeTexture, ppCubeTexture, { hresult, serverResponded });
 +  // NV-DXVK end
  }
  
@@ -554,6 +685,49 @@ index 11704cf..2fc8826 100644
  }
  
  D3DBOX Direct3DVolume9_LSS::resolveLockInfoBox(const D3DBOX* const pBox, const D3DVOLUME_DESC& desc) {
+diff --git a/bridge/src/client/d3d9_volumetexture.cpp b/bridge/src/client/d3d9_volumetexture.cpp
+index 3df797e..69084ad 100644
+--- a/bridge/src/client/d3d9_volumetexture.cpp
++++ b/bridge/src/client/d3d9_volumetexture.cpp
+@@ -61,7 +61,11 @@ ULONG Direct3DVolumeTexture9_LSS::Release() {
+ }
+ 
+ void Direct3DVolumeTexture9_LSS::onDestroy() {
+-  ClientMessage c(Commands::IDirect3DVolumeTexture9_Destroy, getId());
++  // NV-DXVK start: A failed backend creation does not own a server object.
++  if (m_serverCreated) {
++    ClientMessage { Commands::IDirect3DVolumeTexture9_Destroy, getId() };
++  }
++  // NV-DXVK end
+ }
+ 
+ HRESULT Direct3DVolumeTexture9_LSS::GetLevelDesc(UINT Level, D3DVOLUME_DESC* pDesc) {
+diff --git a/bridge/src/client/d3d9_volumetexture.h b/bridge/src/client/d3d9_volumetexture.h
+index 5d82999..f3dc973 100644
+--- a/bridge/src/client/d3d9_volumetexture.h
++++ b/bridge/src/client/d3d9_volumetexture.h
+@@ -26,8 +26,14 @@
+ 
+ class Direct3DVolumeTexture9_LSS: public LssBaseTexture3D {
+   void onDestroy() override;
++  // NV-DXVK start: Failed creation has no server resource to destroy.
++  bool m_serverCreated = true;
++  // NV-DXVK end
+ 
+ public:
++  // NV-DXVK start: Only an explicit failed server response cancels destruction.
++  void cancelServerCreation() { m_serverCreated = false; }
++  // NV-DXVK end
+   Direct3DVolumeTexture9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice, const TEXTURE_DESC& desc)
+     : Direct3DBaseTexture9_LSS(pDevice, desc) {
+     m_children.resize(GetLevelCount());
+@@ -48,4 +54,4 @@ public:
+   STDMETHOD(LockBox)(THIS_ UINT Level, D3DLOCKED_BOX* pLockedVolume, CONST D3DBOX* pBox, DWORD Flags);
+   STDMETHOD(UnlockBox)(THIS_ UINT Level);
+   STDMETHOD(AddDirtyBox)(THIS_ CONST D3DBOX* pDirtyBox);
+-};
+\ No newline at end of file
++};
 diff --git a/bridge/src/client/lockable_buffer.h b/bridge/src/client/lockable_buffer.h
 index fbfc565..2e1218a 100644
 --- a/bridge/src/client/lockable_buffer.h
@@ -951,7 +1125,7 @@ index 0000000..2d99dd4
 +
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..496a6bc 100644
+index 86434ec..c129cc8 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -1047,7 +1221,47 @@ index 86434ec..496a6bc 100644
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -2578,6 +2614,61 @@ void ProcessDeviceCommandQueue() {
+@@ -807,12 +843,17 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DFORMAT, Format);
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+-        LPDIRECT3DVOLUMETEXTURE9 pVolumeTexture;
++        // NV-DXVK start: Forward recoverable creation failures to the client.
++        LPDIRECT3DVOLUMETEXTURE9 pVolumeTexture = nullptr;
+         const auto hresult = pD3DDevice->CreateVolumeTexture(IN Width, IN Height, IN Depth, IN Levels, IN Usage, IN Format, IN Pool, OUT & pVolumeTexture, IN nullptr);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pVolumeTexture;
+         }
+-        assert(SUCCEEDED(hresult));
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateVolumeTexture failed: hresult=0x%08lx resource_id=%u width=%u height=%u depth=%u format=%u",
++            static_cast<unsigned long>(hresult), pHandle, Width, Height, Depth, static_cast<unsigned>(Format)));
++        }
++        // NV-DXVK end
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -825,12 +866,17 @@ void ProcessDeviceCommandQueue() {
+         PULL(D3DFORMAT, Format);
+         PULL(D3DPOOL, Pool);
+         PULL_HND(pHandle);
+-        LPDIRECT3DCUBETEXTURE9 pCubeTexture;
++        // NV-DXVK start: Forward recoverable creation failures to the client.
++        LPDIRECT3DCUBETEXTURE9 pCubeTexture = nullptr;
+         const auto hresult = pD3DDevice->CreateCubeTexture(IN EdgeLength, IN Levels, IN Usage, IN Format, IN Pool, OUT & pCubeTexture, IN nullptr);
+         if (SUCCEEDED(hresult)) {
+           gpD3DResources[pHandle] = pCubeTexture;
+         }
+-        assert(SUCCEEDED(hresult));
++        if (FAILED(hresult)) {
++          Logger::err(format_string("L4D2 CreateCubeTexture failed: hresult=0x%08lx resource_id=%u edge=%u format=%u",
++            static_cast<unsigned long>(hresult), pHandle, EdgeLength, static_cast<unsigned>(Format)));
++        }
++        // NV-DXVK end
+         SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
+         break;
+       }
+@@ -2578,6 +2624,61 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RECT, pRect);
          PULL_D(Flags);
          const auto pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
@@ -1109,7 +1323,7 @@ index 86434ec..496a6bc 100644
          // Now lock the rect so we can copy the data into it
          D3DLOCKED_RECT lockedRect;
          auto hresult = pSurface->LockRect(OUT & lockedRect, IN pRect, IN Flags);
-@@ -2585,8 +2676,6 @@ void ProcessDeviceCommandQueue() {
+@@ -2585,8 +2686,6 @@ void ProcessDeviceCommandQueue() {
          // Copy the data over
          const uint32_t width = pRect->right - pRect->left;
          const uint32_t height = pRect->bottom - pRect->top;
@@ -1118,7 +1332,7 @@ index 86434ec..496a6bc 100644
          const D3DFORMAT format = (D3DFORMAT) dFormat;
          const size_t rowSize = bridge_util::calcRowSize(width, format);
          void* pData = nullptr;
-@@ -3268,7 +3357,16 @@ bool InitializeD3D() {
+@@ -3268,7 +3367,16 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -1136,7 +1350,7 @@ index 86434ec..496a6bc 100644
      if (ghModule) {
        Logger::info("Non-RTX standard d3d9vk_x64.dll loaded");
      } else {
-@@ -3285,6 +3383,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3393,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -1147,7 +1361,7 @@ index 86434ec..496a6bc 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3413,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3423,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -1158,7 +1372,7 @@ index 86434ec..496a6bc 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3488,12 +3594,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3488,12 +3604,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    ExceptionHandler::get().init();
  
    // Identify yourself
@@ -1177,7 +1391,7 @@ index 86434ec..496a6bc 100644
  #endif
  
    BRIDGE_ASSERT_LOG((argCount >= 2), "Command line argument count received to launch server is not as expected");
-@@ -3624,4 +3733,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +3743,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;

@@ -19,4 +19,21 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Texture creation failure test compilation failed' }
   & ./texture-creation-test.exe
   if ($LASTEXITCODE -ne 0) { throw "Texture creation failure test failed: $LASTEXITCODE" }
+  python "$PSScriptRoot/prepare_texture_creation_test.py" $source $testDir
+  if ($LASTEXITCODE -ne 0) { throw 'Texture creation integration extraction failed' }
+  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX "/I$source/bridge/src/client" "/I$testDir" "$repoRoot/tests/texture_creation_integration.cpp" /Fe:texture-creation-integration.exe
+  if ($LASTEXITCODE -ne 0) { throw 'Texture creation integration compilation failed' }
+  & ./texture-creation-integration.exe
+  if ($LASTEXITCODE -ne 0) { throw "Texture creation integration failed: $LASTEXITCODE" }
+  foreach ($kind in @('volume','cube')) {
+    # Each independently restored original failure path must fail the same native test.
+    python "$PSScriptRoot/prepare_texture_creation_test.py" $source $testDir --negative-control $kind
+    if ($LASTEXITCODE -ne 0) { throw "Texture creation negative control extraction failed: $kind" }
+    & cl.exe /nologo /std:c++17 /EHsc /W4 /WX "/I$source/bridge/src/client" "/I$testDir" "$repoRoot/tests/texture_creation_integration.cpp" "/Fe:texture-creation-negative-$kind.exe"
+    if ($LASTEXITCODE -ne 0) { throw "Texture creation negative control compilation failed: $kind" }
+    & (Join-Path $testDir "texture-creation-negative-$kind.exe")
+    if ($LASTEXITCODE -eq 0) { throw "Texture creation regression test missed the original $kind failure path" }
+  }
+  python "$PSScriptRoot/prepare_texture_creation_test.py" $source $testDir
+  if ($LASTEXITCODE -ne 0) { throw 'Failed to restore actual texture creation methods' }
 } finally { Pop-Location }

@@ -3,8 +3,58 @@ import hashlib
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 from urllib.error import HTTPError
 from detect_release import api
+
+
+def file_sha256(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def verify_existing_asset(repo, asset, path):
+    if asset.get("state") != "uploaded" or asset.get("size") != path.stat().st_size:
+        raise RuntimeError(f"Existing draft asset is incomplete or differs: {path.name}")
+    expected = file_sha256(path)
+    digest = asset.get("digest") or ""
+    if digest.startswith("sha256:"):
+        actual = digest.removeprefix("sha256:")
+    else:
+        # Older assets have no digest. Read their actual bytes before reusing them;
+        # a matching filename, size or adjacent checksum file is insufficient.
+        with tempfile.TemporaryFile() as downloaded:
+            subprocess.run(["gh", "api", f"repos/{repo}/releases/assets/{asset['id']}",
+                            "-H", "Accept: application/octet-stream"],
+                           check=True, stdout=downloaded)
+            downloaded.seek(0)
+            actual = hashlib.file_digest(downloaded, "sha256").hexdigest()
+    if actual != expected:
+        raise RuntimeError(f"Existing draft asset content differs: {path.name}")
+
+
+def pending_uploads(repo, release, uploads):
+    remote = {}
+    page = 1
+    while True:
+        assets = api(f"repos/{repo}/releases/{release['id']}/assets?per_page=100&page={page}")
+        for asset in assets:
+            name = asset["name"]
+            if name in remote:
+                raise RuntimeError(f"Duplicate draft asset: {name}")
+            remote[name] = asset
+        if len(assets) < 100:
+            break
+        page += 1
+    missing = []
+    # Verify every existing attachment before changing the draft at all.
+    for filename in uploads:
+        path = Path(filename)
+        if path.name in remote:
+            verify_existing_asset(repo, remote[path.name], path)
+        else:
+            missing.append(filename)
+    return missing
 
 
 def publish():
@@ -18,7 +68,7 @@ def publish():
         checksum = Path(str(path) + ".sha256")
         fields = checksum.read_text(encoding="ascii").split()
         if (len(fields) != 2 or fields[1] != path.name
-                or fields[0] != hashlib.sha256(path.read_bytes()).hexdigest()):
+                or fields[0] != file_sha256(path)):
             raise ValueError(f"Invalid archive checksum: {path}")
         uploads.extend([str(path), str(checksum)])
     try:
@@ -29,6 +79,8 @@ def publish():
         existing = None
     if existing and not existing["draft"]:
         raise RuntimeError("Published release already exists; refusing to replace it")
+    if existing:
+        uploads = pending_uploads(repo, existing, uploads)
     upstream = os.environ["UPSTREAM_COMMIT"]
     recipe = os.environ["RECIPE_COMMIT"]
     notes = (
@@ -50,7 +102,8 @@ def publish():
         subprocess.run(["gh", "release", "create", tag, "--target", recipe,
                         "--title", os.environ.get("RELEASE_TITLE", tag), "--notes-file", "notes.md", "--prerelease", "--draft"], check=True)
     # No --clobber: even draft assets must not be silently replaced.
-    subprocess.run(["gh", "release", "upload", tag, *uploads], check=True)
+    if uploads:
+        subprocess.run(["gh", "release", "upload", tag, *uploads], check=True)
     subprocess.run(["gh", "release", "edit", tag, "--draft=false", "--prerelease",
                     "--title", os.environ.get("RELEASE_TITLE", tag), "--notes-file", "notes.md"], check=True)
 

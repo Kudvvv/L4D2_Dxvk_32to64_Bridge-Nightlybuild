@@ -4,16 +4,52 @@
 
 """Fetch a pinned Bridge checkout and apply the L4D2 bridge patch."""
 import argparse
+import os
 from pathlib import Path
 import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMIT = "9aa74f8dfad2188efbd0f717c64d9f8fa909787e"
 REMOTE = "https://github.com/NVIDIAGameWorks/dxvk-remix.git"
 
 
-def run(*args, cwd=None):
-    subprocess.run(args, cwd=cwd, check=True)
+def run(*args, cwd=None, env=None):
+    subprocess.run(args, cwd=cwd, env=env, check=True)
+
+
+def _check_index(source, base, expected):
+    """Allow staging expected patch files, but never unrelated index contents."""
+    if subprocess.check_output(["git", "ls-files", "--unmerged"], cwd=source):
+        raise RuntimeError("Upstream index contains conflicts; checkout preserved")
+    changed_paths = []
+    for tree in (base, expected):
+        # git add -N records intent, not staged contents. The temporary-index
+        # worktree check still validates every such file against the patch.
+        output = subprocess.check_output([
+            "git", "diff", "--cached", "--name-only", "-z", "--no-renames",
+            "--no-ext-diff", "--no-textconv", "--ignore-submodules=none",
+            "--ita-invisible-in-index", tree, "--"], cwd=source)
+        changed_paths.append(set(output.split(b"\0")) - {b""})
+    if changed_paths[0] & changed_paths[1]:
+        raise RuntimeError("Upstream index contains unexpected changes; checkout preserved")
+
+
+def _matches_tree(source, tree, env):
+    # A fresh temporary index also checks files hidden by skip-worktree or
+    # assume-unchanged flags in the user's index. Expected new files are tracked
+    # here, so only additional untracked files are rejected.
+    run("git", "read-tree", tree, cwd=source, env=env)
+    diff = subprocess.run([
+        "git", "diff", "--exit-code", "--no-ext-diff", "--no-textconv",
+        "--ignore-submodules=none", tree, "--"],
+        cwd=source, env=env, capture_output=True)
+    if diff.returncode not in (0, 1):
+        diff.check_returncode()
+    untracked = subprocess.check_output([
+        "git", "ls-files", "--others", "--exclude-standard", "-z"],
+        cwd=source, env=env)
+    return diff.returncode == 0 and not untracked
 
 
 def prepare(source, commit=COMMIT):
@@ -29,12 +65,17 @@ def prepare(source, commit=COMMIT):
     if head != commit:
         raise RuntimeError(f"Expected upstream {commit}, found {head}; checkout preserved")
     patch = ROOT / "patches" / "l4d2-bridge.patch"
-    already_applied = subprocess.run(
-        ["git", "apply", "--reverse", "--check", str(patch)],
-        cwd=source, capture_output=True).returncode == 0
+    with tempfile.TemporaryDirectory(prefix="l4d2-bridge-index-") as directory:
+        env = dict(os.environ, GIT_INDEX_FILE=str(Path(directory) / "index"))
+        run("git", "read-tree", head, cwd=source, env=env)
+        run("git", "apply", "--cached", str(patch), cwd=source, env=env)
+        expected = subprocess.check_output(
+            ["git", "write-tree"], cwd=source, env=env, text=True).strip()
+        _check_index(source, head, expected)
+        already_applied = _matches_tree(source, expected, env)
+        if not already_applied and not _matches_tree(source, head, env):
+            raise RuntimeError("Upstream checkout contains unexpected changes; checkout preserved")
     if not already_applied:
-        if subprocess.check_output(["git", "status", "--porcelain"], cwd=source):
-            raise RuntimeError("Upstream checkout contains changes; refusing to overwrite")
         run("git", "apply", "--check", str(patch), cwd=source)
         run("git", "apply", str(patch), cwd=source)
     run("git", "submodule", "update", "--init", "--depth=1",
