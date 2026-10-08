@@ -2,6 +2,8 @@
 
 状态：流程和工具已提供，尚无本批更新的游戏实测结果。CI 的 volume 测试执行真实 lock/unlock 源码，但模拟传输与后端，不替代画面对比。偏色定位与原修复 credits：[keyou91 / PR #3](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/pull/3)。
 
+2026-10-08 的候选版本已尝试启动，受到 Source 单实例限制，未进入渲染阶段；原有配对文件已恢复。详情及独立 CPU 微基准见 [资源清理与传输优化验证](RUNTIME-RELIABILITY.md)。该次尝试不计为游戏验收通过。
+
 ## 固定测试条件
 
 备份安装与 Steam 启动参数。记录 UPSTREAM.json 中 release_tag、上游 SHA、recipe_digest，以及后端 DLL SHA-256、显卡、驱动、游戏构建、Mod 清单、配置、分辨率、画质和帧率上限。基线用正常可运行的无桥安装；Bridge 用同一后端版本及相同配置。无桥与 Bridge 位数可能不同，应记录这一差异。
