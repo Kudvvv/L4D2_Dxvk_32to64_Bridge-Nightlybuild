@@ -10,10 +10,24 @@ on:
       - codex/development-1.1.2-dev.1
       - main
   workflow_dispatch:
+    inputs:
+      publish_existing_prerelease:
+        description: 'Attach verified ZIPs to an existing experimental release draft'
+        type: boolean
+        default: false
+      experimental_zip_commit:
+        description: 'Immutable commit of the ZIP-only download branch'
+        type: string
+        default: ''
+      experimental_zip_checksums:
+        description: 'JSON map of the two experimental ZIP filenames to SHA256'
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
   windows-build:
+    if: github.event_name != 'workflow_dispatch' || !inputs.publish_existing_prerelease
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -168,3 +182,21 @@ jobs:
           path: dist/l4d2-pageblock-drop-experiment/
           include-hidden-files: true
           if-no-files-found: error
+  publish-existing-prerelease:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_existing_prerelease
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify prepared ZIPs, native CI and experimental draft before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          L4D2_PUBLISH_REPOSITORY: ${{ github.repository }}
+          L4D2_ZIP_COMMIT: ${{ inputs.experimental_zip_commit }}
+          L4D2_ZIP_CHECKSUMS: ${{ inputs.experimental_zip_checksums }}
+        run: python scripts/publish_experimental.py
