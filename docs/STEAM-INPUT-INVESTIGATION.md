@@ -147,7 +147,15 @@ Source inspection shows two concrete boundaries requiring attribution: client Wi
 
 Use the matched diagnostic client/Host pair, preserving the latest test configuration and backend. Open through Join Server once, try mouse movement/click and Shift+Tab, then preserve both logs. The update is diagnostic, **not a claimed fix**. Disable the three Steam experiment flags and restart to return to normal release input behavior. ReShade's public-interface capture remains separate and unchanged. The next functional change must follow evidence about the actual Steam receiver or hook-chain boundary; repeatedly modifying Host key state is not justified by this failed native-input result.
 
-## Next fix and acceptance gate
+### Latest suppression run: 00:23–00:25; investigation paused
+
+The diagnostic build ran successfully with both capture-relay flags, native input and both diagnostic flags enabled. Client PID 7192 received Steam activation at `00:25:19.541` and forwarded it at `00:25:19.547`. Host PID 22372 acquired presenter focus at `00:25:19.559`; GUI samples independently confirm it. Shift+Tab dispatches at `00:25:23.364` and later report both keys down in queue, asynchronous and keyboard-state observations. Mouse capture nevertheless remains on the game HWND in the sampled active intervals. No Steam deactivation callback is recorded before successful shutdown of both processes.
+
+The new immediate-caller observations identify `left4neko.dll`, `skeeto.dll`, the Bridge client, `tier0.dll`, the game's `bin/libcef.dll` and Windows `textinputframework.dll` at neutralized input APIs. Hook-chain cutoffs identify USER32 as the dispatcher. No observation directly identifies `GameOverlayRenderer.dll` as a neutralized API caller, and no diagnostic saturation event appears. This does **not** rule out Steam behind a wrapper or a stopped downstream hook; the game's libcef cannot be labelled Steam's browser simply from its name. The logs therefore do not establish a Steam-specific bypass or a complete root cause.
+
+At the user's request, investigation is paused rather than expanded into further speculative input changes. Steam Overlay input remains unsupported; these experiments are not a release fix. No further implementation or test build is required for this pause. Preserve the diagnostic evidence and existing ReShade implementation. Disable `client.steamOverlayInput`, `server.steamOverlayInput`, `server.steamNativeInput`, `client.steamInputDiagnostics` and `server.steamInputDiagnostics`, then restart, to deactivate the Steam experiments and logging. This restores the release input policy, not functional Steam Overlay support. Disabling the Steam Overlay for L4D2 in Steam's per-game settings avoids the confirmed visible-but-unusable overlay while support remains unresolved.
+
+## Historical fix proposal and acceptance gate
 
 ### Paired hardware reproduction: 21:29–21:30
 

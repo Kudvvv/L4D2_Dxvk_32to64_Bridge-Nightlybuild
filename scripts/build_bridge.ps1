@@ -9,6 +9,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
+$projectVersion = (Get-Content (Join-Path $repoRoot 'VERSION') -Raw).Trim()
+$patchHash = (Get-FileHash (Join-Path $repoRoot 'patches/l4d2-bridge.patch') -Algorithm SHA256).Hash.ToLower().Substring(0, 16)
+$env:L4D2_BRIDGE_BUILD_ID = "l4d2-$projectVersion+$patchHash"
 $dxvkPath = (Resolve-Path $DxvkDll).Path
 function Invoke-Checked {
   param([string]$Program, [string[]]$Arguments)
@@ -30,6 +33,11 @@ try {
     Invoke-Checked 'powershell.exe' @('-NoProfile', '-Command', $buildCommand)
   }
 } finally { Pop-Location }
-$packageArgs = @("$PSScriptRoot/package_release.py", '--source', $source, '--dxvk', $dxvkPath)
+$packager = if ($projectVersion.Contains('-dev')) { 'package_development.py' } else { 'package_release.py' }
+$packageArgs = @("$PSScriptRoot/$packager", '--source', $source, '--dxvk', $dxvkPath)
 if ($Dxvk32Dll) { $packageArgs += @('--dxvk-x86', (Resolve-Path $Dxvk32Dll).Path) }
+if ($projectVersion.Contains('-dev')) {
+  $plugin = Join-Path $repoRoot '.deps/l4n-plugin/L4D2BridgePlugin.dll'
+  if (Test-Path $plugin) { $packageArgs += @('--plugin', $plugin) }
+}
 Invoke-Checked 'python' $packageArgs

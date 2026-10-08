@@ -6,12 +6,18 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 #include "../plugins/l4n/sdk/l4n_plugin.h"
 #include "pageblock_control.h"
 static l4d2_control::Request last;
+static l4d2_control::Policy policy = l4d2_control::Policy::LearnedAggressive;
+static unsigned int calls = 0;
+static bool failRequest = false;
 extern "C" HRESULT WINAPI L4D2BridgePageBlockControl(const l4d2_control::Request* request, l4d2_control::Response* response) {
-  last = *request;
-  *response = {}; response->policy = l4d2_control::Policy::LearnedAggressive;
+  ++calls; last = *request;
+  if (failRequest) { return E_FAIL; }
+  if (request->operation == l4d2_control::Operation::SetPolicy) { policy = static_cast<l4d2_control::Policy>(request->value); }
+  *response = {}; response->policy = policy;
   response->flags = 2; response->pageBlocks = 10; response->pageBlocksEvicted = 4;
   return S_OK;
 }
@@ -25,22 +31,71 @@ static const char* invoke(const char* menu, const char* item) {
   const auto function = reinterpret_cast<const char* (*)(void*)>(static_cast<uintptr_t>(address));
   return function(reinterpret_cast<void*>(static_cast<uintptr_t>(data)));
 }
+// The SDK defines callback strings as child menus; Back is owned by the HUD.
+struct MenuHost {
+  std::vector<std::string> pages;
+  explicit MenuHost(const char* root) : pages { root } {}
+  const std::string& page() const { return pages.back(); }
+  void select(const char* label) {
+    const auto* child = invoke(page().c_str(), label);
+    if (child) { pages.emplace_back(child); }
+  }
+  void back() { assert(pages.size() > 1); pages.pop_back(); }
+};
 int wmain(int argc, wchar_t** argv) {
   assert(argc == 2);
   const auto module = LoadLibraryW(argv[1]); assert(module);
   const auto get = reinterpret_cast<GetL4NPluginInstanceFunc>(GetProcAddress(module, "GetL4NPluginInstance")); assert(get);
   auto* plugin = get(); assert(plugin && plugin->GetInterfaceVersion() == 2);
   assert(std::string(plugin->RequestHudMenu(true)) == "L4D2 Bridge");
-  auto* menu = plugin->RequestHudMenu(false);
-  const auto stats = invoke(menu, "PageBlock Stats"); assert(strstr(stats, "Blocks: 10") && last.operation == l4d2_control::Operation::Stats);
-  const auto policies = invoke(plugin->RequestHudMenu(false), "Retention Policy");
-  assert(strstr(policies, "drop [experimental]")); invoke(policies, "drop [experimental]");
+  MenuHost host(plugin->RequestHudMenu(false));
+  host.select("PageBlock Stats");
+  assert(host.pages.size() == 2 && host.page().find("Blocks: 10") != std::string::npos && last.operation == l4d2_control::Operation::Stats);
+  auto previousCalls = calls;
+  for (unsigned int i = 0; i < 100; ++i) {
+    host.select("Blocks: 10; locked: 0; transferring: 0");
+    assert(host.pages.size() == 2 && calls == previousCalls);
+  }
+  assert(host.page().find("\"Refresh\"") == std::string::npos && host.page().find("\"Back\"") == std::string::npos);
+  host.back();
+  assert(host.pages.size() == 1 && host.page().find("\"L4D2 Bridge\"") == 0);
+  host.select("Retention Policy");
+  assert(host.pages.size() == 2 && host.page().find("drop [experimental]") != std::string::npos);
+  host.select("drop [experimental]");
   assert(last.operation == l4d2_control::Operation::SetPolicy && last.value == 2);
+  assert(host.pages.size() == 3 && host.page().find("\"Policy Change Result\"") == 0);
+  previousCalls = calls;
+  host.select("Policy selected: drop [experimental]");
+  assert(host.pages.size() == 3 && calls == previousCalls);
+  host.back();
+  assert(host.pages.size() == 2 && host.page().find("\"Retention Policy\"") == 0);
+  host.back();
   for (uint32_t mode = 0; mode < 3; ++mode) {
     const char* labels[] = { "GC Learned", "GC Aggressive", "GC Force" };
-    const auto result = invoke(plugin->RequestHudMenu(false), labels[mode]);
-    assert(last.operation == l4d2_control::Operation::Gc && last.value == mode && strstr(result, "GC evicted 4"));
+    host.select(labels[mode]);
+    assert(last.operation == l4d2_control::Operation::Gc && last.value == mode && host.page().find("GC evicted 4") != std::string::npos);
+    assert(host.pages.size() == 2 && host.page().find("\"Back\"") == std::string::npos);
+    previousCalls = calls;
+    host.select("GC evicted 4; VA freed 0.00 MiB; backing freed 0.00 MiB");
+    assert(host.pages.size() == 2 && calls == previousCalls);
+    host.back();
   }
-  puts("PASS: supplied L4N v2 interface, HUD KeyValues callbacks and forwarding ABI (mock Bridge control export)");
+  // Repeated usage cannot accumulate roots, refresh pages or action-result cycles.
+  for (unsigned int i = 0; i < 100; ++i) {
+    host.select("PageBlock Stats"); assert(host.pages.size() == 2);
+    assert(host.page().find("Policy: drop [experimental]") != std::string::npos);
+    host.back();
+    host.select("Retention Policy"); host.select("drop [experimental]");
+    assert(host.pages.size() == 3); host.back(); host.back();
+    host.select("GC Learned"); assert(host.pages.size() == 2); host.back();
+  }
+  failRequest = true;
+  host.select("GC Force");
+  assert(host.pages.size() == 2 && host.page().find("\"Bridge Request Failed\"") == 0);
+  previousCalls = calls;
+  host.select("Bridge request failed: 0x80004005");
+  assert(host.pages.size() == 2 && calls == previousCalls);
+  host.back(); assert(host.pages.size() == 1);
+  puts("PASS: supplied L4N v2 callbacks, control forwarding, no-op labels and bounded parent navigation (mock Bridge/HUD)");
   return 0;
 }

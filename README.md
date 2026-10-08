@@ -1,6 +1,10 @@
-# L4D2 DXVK Bridge — v1.1.1
+# L4D2 DXVK Bridge
 
 [中文](#chinese) | [English](#english) · [v1.1.1 补丁说明 / Patch notes](docs/RELEASE-V1.1.1.md) · [v1.1 更新 / v1.1 changes](docs/RELEASE-V1.1.md)
+
+**当前源码：1.1.2-dev.1 开发版**，整合崩溃归因、Reset 失败处理和可选 L4N 菜单导航修正。已有安装使用配套三件套补丁，安装与已知问题见 [开发版说明](docs/DEVELOPMENT-V1.1.2.md)。最近正式发布仍为 v1.1.1；下方保留其日常安装说明，开发版尚待 Windows 游戏实机验收。
+
+**Current source: 1.1.2-dev.1**, with exception attribution, Reset failure handling and optional L4N menu navigation fixes. Use the matched three-binary update; see [development setup and limitations](docs/DEVELOPMENT-V1.1.2.md). v1.1.1 remains the last official release. This development build has not yet passed Windows gameplay validation.
 
 <a id="chinese"></a>
 
@@ -8,7 +12,7 @@
 
 在 Windows《Left 4 Dead 2》的 **32 位游戏进程**中接收 D3D9 调用，再通过共享内存和命令队列交给独立 Bridge Host，由 DXVK 转为 Vulkan 渲染。可选 **x64 或 x86 Host**；游戏引擎本身仍是 32 位。x64 模式提供更大的渲染端地址空间，v1.1 的客户端资源保留策略减少不必要的 CPU 副本。
 
-v1.1.1 是当前已实机测试并由作者确认的稳定版本，已测试配置没有已知的发布阻断问题；这不表示所有设备、Mod 或场景都没有问题。项目没有显卡厂商白名单，不要求 NVIDIA/RTX。当前参考 GPU 为 Intel Arc B580，其他 GPU/驱动需按实际兼容性验证。
+v1.1.1 是最近正式发布、由作者实机测试确认的版本。后续已有部分玩家连续过图无响应/崩溃反馈，仍在分别调查；不保证所有设备、Mod 或场景都没有问题。项目没有显卡厂商白名单，不要求 NVIDIA/RTX。当前参考 GPU 为 Intel Arc B580，其他 GPU/驱动需按实际兼容性验证。
 
 v1.1.1 主要修复 ReShade 点击返回游戏的激活路径。已有安装推荐使用补丁包：只更新客户端和两种 Host，保留 DXVK、配置及 retention DB。ReShade 仍按需启用，Steam Overlay 输入仍不支持；加载诊断默认关闭，没有加载提速承诺。
 
@@ -16,7 +20,7 @@ v1.1.1 主要修复 ReShade 点击返回游戏的激活路径。已有安装推�
 
 需要 **64 位 Windows 10/11**、Steam 版 L4D2，以及能运行所选 DXVK 的 Vulkan 显卡/驱动。首次使用窗口模式。
 
-1. 下载 v1.1.1 完整发布包，或 [成功的 Actions 构建](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/workflows/build.yml) 中的 **`l4d2-bridge-v1.1.1`** artifact。核对包内 `VERSION` 为 `1.1.1`。更新已有安装时先备份客户端、整个 `.l4d2bridge` 目录和 Steam 启动选项。
+1. 正式版选择 v1.1.1 完整发布包；开发测试选择 [1.1.2-dev.1 完整包或升级包](docs/DEVELOPMENT-V1.1.2.md)。Actions 完整包名为 **`l4d2-bridge-v<版本号>`**，核对包内 `VERSION` 与所选版本一致。更新已有安装时先备份客户端、整个 `.l4d2bridge` 目录和 Steam 启动选项；开发版必须配对更新三个桥二进制。
 2. 关闭游戏及所有桥进程，将包内 `bin` 合并到游戏根目录。首次安装使用包内 `bridge.conf`；升级时手动合并配置，保留已有 DXVK、ReShade 和 retention DB。完整包带官方后端，直接覆盖会替换你的定制后端。
 3. 本项目使用 `bin/dxvk_d3d9.dll` 加载路径。如果原来在游戏根目录安装了 DXVK `d3d9.dll`，先备份并改名为 `d3d9.dll.before-bridge`，避免加载链混用。不要修改 Windows 系统 DLL。
 4. Steam → L4D2 → 属性 → 启动选项，使用：
@@ -163,6 +167,7 @@ if (mappable)
 ## 已知限制
 
 - Steam Overlay / Shift+Tab 未修复，v1.1 不承诺支持。
+- 部分玩家报告连续安全门过图无响应或崩溃。开发版改善异常归因和 Reset 错误处理，尚未验证能解决该反馈；见 [开发版已知问题](docs/DEVELOPMENT-V1.1.2.md#已知问题与未完成项)。
 - x64 DXVK 可占用明显更多 Host 内存；x86 Host 仍受 32 位地址空间限制。
 - 性能开销随负载变化，不保证每种 Mod、自定义地图或插件兼容。
 - D3D9 极端调用、设备 Reset、不同 DPI/窗口行为、异常第三方叠加层和罕见 Mod 组合未全部穷尽测试。
@@ -176,6 +181,7 @@ if (mappable)
 - [readback recovery 前置验证](docs/READBACK-RECOVERY-EXPERIMENT.md) · [DXVK/mem1 分配实验](docs/DXVK-MEMORY-EXPERIMENT.md)
 - [Host 内存诊断](docs/HOST-MEMORY-DIAGNOSTICS.md) · [GPU 分配诊断](docs/GPU-ALLOCATION-DIAGNOSTICS.md)
 - [地图加载 API / IPC 等待诊断](docs/API-WAIT-DIAGNOSTICS.md)：默认关闭，测量实际 API 调用线程、响应等待和队列背压，不推断 Source loading state 或 GPU 时间。
+- [异常归因与 Client/Host 退出报告](docs/EXCEPTION-DIAGNOSTICS.md)：开发补丁，记录实际故障模块、偏移与上下文；不声称已修复 studiorender。
 - [x86/x64 实现与对照方法](docs/X86-HOST-COMPARISON.md) · [v1.0 首次验收](docs/FIRST-GAME-VALIDATION.md)
 - [v1.1 发布、升级与构建](docs/RELEASE-V1.1.md) · [测量证据](docs/V1.1-VALIDATION.md)
 
@@ -189,7 +195,7 @@ if (mappable)
 
 A Windows L4D2 bridge forwards D3D9 calls from the **32-bit game** to a separate **x64 or x86 Host**, where DXVK renders through Vulkan. x64 provides more renderer address-space headroom; the game engine remains 32-bit. There is no GPU-vendor whitelist or RTX requirement.
 
-**v1.1.1 is the current author-confirmed, hardware-tested stable configuration**, with no known release-blocking issue in the tested configuration. This is not a bug-free or universal compatibility claim. Intel Arc B580 is the reference GPU.
+**v1.1.1 is the last official, author-tested release.** Subsequent player reports of hangs/crashes across repeated map transitions remain under investigation. This is not a bug-free or universal compatibility claim. Intel Arc B580 is the reference GPU.
 
 v1.1.1 fixes click-to-reactivate when returning to an open ReShade overlay. Existing installations should use the three-binary patch to preserve their backend, configuration and retention DB. Optional input and diagnostics remain off by default; Steam Overlay input is still unsupported.
 
@@ -197,7 +203,7 @@ v1.1.1 fixes click-to-reactivate when returning to an open ReShade overlay. Exis
 
 Requires 64-bit Windows 10/11, Steam L4D2 and a Vulkan-capable GPU/driver compatible with your chosen DXVK. Start windowed.
 
-1. Obtain the complete v1.1.1 release package or **`l4d2-bridge-v1.1.1`** from a [successful build](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/workflows/build.yml); verify `VERSION` is `1.1.1`. Back up the client, `bin/.l4d2bridge/` and Steam launch options.
+1. Choose the official v1.1.1 release, or the [1.1.2-dev.1 development full/update package](docs/DEVELOPMENT-V1.1.2.md). Complete Actions artifacts use **`l4d2-bridge-v<version>`**; verify `VERSION` matches the selected build. Back up the client, `bin/.l4d2bridge/` and Steam launch options. Development updates require all three matched Bridge binaries.
 2. Exit the game and hosts, then merge the supplied `bin` into the game directory, using the layout above. For an upgrade, preserve custom DXVK/ReShade settings and the retention DB, and merge configuration manually. The full package includes official backends and can overwrite a custom backend.
 3. If using root-directory DXVK `d3d9.dll`, back it up and rename it to `d3d9.dll.before-bridge`. This project uses `bin/dxvk_d3d9.dll`, which must remain the **Bridge x86 client**, not an ordinary DXVK DLL. Never alter Windows system DLLs.
 4. Set Steam launch options to `-vulkan -insecure -windowed`. Add `-console -condebug` only if console logs are needed. This selects the game's DXVK-named D3D9 loader and non-VAC-secure mode; restore the original installation for VAC-secure play.
@@ -271,7 +277,9 @@ Normal gameplay works in this environment. An **approximately 20 FPS performance
 
 Steam Overlay/Shift+Tab is not supported/fixed. x64 can use substantially more Host memory; x86 has address-space limits. Performance varies, and every mod/map/plugin is not guaranteed compatible. Extreme D3D9 calls, resets, unusual overlays, DPI/window behavior and uncommon mod combinations have not been exhaustively tested. Retention is selective; recovery can wait on the backend or fail with conservative handling.
 
-Advanced documentation: [PageBlock](docs/PAGEBLOCK-DIAGNOSTICS.md), [learned retention](docs/LEARNED-RETENTION-EXPERIMENT.md), [readback recovery](docs/READBACK-RECOVERY-EXPERIMENT.md), [DXVK/mem1](docs/DXVK-MEMORY-EXPERIMENT.md), [Host memory](docs/HOST-MEMORY-DIAGNOSTICS.md), [GPU allocations](docs/GPU-ALLOCATION-DIAGNOSTICS.md), [API/IPC loading waits](docs/API-WAIT-DIAGNOSTICS.md), [x86/x64](docs/X86-HOST-COMPARISON.md), [v1.0 validation](docs/FIRST-GAME-VALIDATION.md) and [v1.1 release/build instructions](docs/RELEASE-V1.1.md). Diagnostic tests remain available but are not ordinary setup steps.
+Some players have reported hangs/crashes across repeated safe-room transitions. The development build adds exception attribution and Reset error handling; it has not been validated as a fix for those reports. See [development limitations](docs/DEVELOPMENT-V1.1.2.md).
+
+Advanced documentation: [PageBlock](docs/PAGEBLOCK-DIAGNOSTICS.md), [learned retention](docs/LEARNED-RETENTION-EXPERIMENT.md), [readback recovery](docs/READBACK-RECOVERY-EXPERIMENT.md), [DXVK/mem1](docs/DXVK-MEMORY-EXPERIMENT.md), [Host memory](docs/HOST-MEMORY-DIAGNOSTICS.md), [GPU allocations](docs/GPU-ALLOCATION-DIAGNOSTICS.md), [API/IPC loading waits](docs/API-WAIT-DIAGNOSTICS.md), [exception attribution (development patch)](docs/EXCEPTION-DIAGNOSTICS.md), [x86/x64](docs/X86-HOST-COMPARISON.md), [v1.0 validation](docs/FIRST-GAME-VALIDATION.md) and [v1.1 release/build instructions](docs/RELEASE-V1.1.md). Diagnostic tests remain available but are not ordinary setup steps.
 
 Builds use a pinned upstream Bridge plus the [fork patch](patches/l4d2-bridge.patch), MSVC 14.29, Python 3.11, Meson 1.3.2 and Ninja 1.11.1.1. [CI](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/main/.github/workflows/build.yml) builds the client and both Hosts and runs native protocol/layout/memory/recovery tests; it does not run L4D2 on a real GPU.
 

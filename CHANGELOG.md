@@ -5,6 +5,17 @@
 
 # 更新记录 / Changelog
 
+## 1.1.2-dev.1（独立开发分支 / Development branch）
+
+- 崩溃报告包含实际模块+偏移、异常/AV 参数、Client/Host、寄存器、故障线程命令上下文与短历史；原始日志和独立文本在终止前刷新。通用 SEH 模态断言改为记录后退出，对端异常退出与本地故障分开标注。
+- Reset/ResetEx 总是回传实际 HRESULT，Client 成功后才提交参数/重建对象；重复失败清理允许空对象。回复超时不继续读取/弹出队列，停用本会话；回复等待上限不等于队列提交等待已修复。
+- 可选只读 GetSwapChain 校验释放临时引用；残留外部隐式对象引用只记录，不强行释放。
+- 整合 L4N v2 HUD 父菜单导航修正。既有 drop/手动 GC 保持实验、主动启用；正常 PageBlock policy、DXVK 选择和 ReShade 实现不变。
+- 新构建标识由开发版本与 patch hash 组成；只分发匹配 Client + x64/x86 Host 三件套。保留配置、后端和 DB 的升级方式见 [开发版说明](docs/DEVELOPMENT-V1.1.2.md)。
+- 连续过图挂起、Steam Overlay 输入、实际 studiorender 根因仍未解决/确认，不新增 RAM/FPS 基准或游戏稳定性承诺。尚待 Windows 游戏实机验收，通过独立分支/Actions 分发，未合并 `main` 或发布为正式版本。
+
+Development only: reliable exception attribution and flushed reports, mandatory backend Reset results, safe repeated-failure handling and bounded response waits, matched build identities, and optional L4N HUD navigation fixes. Existing opt-in drop/GC work is retained; normal retention/backend/ReShade selection is unchanged. Transition queue hangs and Steam Overlay input remain unresolved; no studiorender fix or new benchmark is claimed. See the development guide for matched installation and validation limits.
+
 ## 1.1.1
 
 - 修复打开 ReShade 后切到其他程序、再点击游戏画面不能重新激活的问题：用户点击启用的 presenter 时请求激活游戏主窗口，不让 Host 子窗口取得键盘焦点，不定时抢焦点。作者已完成实机测试并确认正常运行。

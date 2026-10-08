@@ -2,6 +2,8 @@
 
 此功能属于开发实验，**不是已发布的 v1.1.1 补丁内容**。正常推荐配置保持 `learned-aggressive`；省略配置键时的兼容回退仍为 `keep`。不修改 Present、Host 位数选择、DXVK 或正式发布版本号。
 
+当前 [1.1.2-dev.1 开发版](DEVELOPMENT-V1.1.2.md) 保留此功能为可选实验，并整合 HUD 父菜单导航修正。插件在普通开发包的 `optional/L4N/` 中，不自动安装或启用；原 `5951831` CI 结果不冒充此次新二进制的原生 Windows 验收。
+
 ## 安装和使用
 
 1. 退出游戏与桥，备份客户端和两种 Host。
@@ -63,6 +65,10 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 
 插件枚举当前已加载模块，查找命名导出，不主动 LoadLibrary 一个 D3D9 runtime。HUD menu 的 callback/user_data 指针按 SDK KeyValues 格式生成。失败显示 HRESULT；GC 返回统计子菜单。插件不持有 D3D9 资源引用，不操作资源内存。未来其他 UI 可复用同一控制 ABI。
 
+菜单返回由 L4N HUD 自身管理，不再生成插件自己的 `Back` 项。SDK 的非空 callback 返回值代表进入子菜单，不能用“再次返回根菜单”模拟退回上一级。`experimental-2` 中说明/统计文字回调返回 nullptr，点击不会新增层级或执行 Bridge 操作；统计在重新进入 PageBlock Stats 时重新查询，不再用递归 Refresh。策略结果页返回 Retention Policy，统计和 GC 结果页返回 L4D2 Bridge。策略菜单不显示会因旧页面缓存而过期的 Current 标签，当前值可在 PageBlock Stats 中查询。
+
+导航修正尚未包含在下文 `5951831` 的已下载 Windows 产物中。新增回归检查使用 SDK callback 语义构建菜单栈模型；本地以 Win32 API 桩运行实际插件源码和回归测试，修正后通过，旧源码在统计文字点击检查中失败。该检查验证生成逻辑和调用次数，不能替代 Windows DLL 构建和真实 L4N HUD 的实现验证。
+
 ## 诊断
 
 输出在客户端 DLL 同目录的 `l4d2-pageblock-gc.log`。显式 GC 总会输出一行 `PB_GC`，至少包含：
@@ -72,6 +78,8 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 `bytesUnmapped` 和 mapped before/after 统计实际 view 的 VirtualQuery region 大小，**不等于 RAM 工作集或 section backing 字节数**。只有 view 映射着才能释放 mapped VA；已由预算 trim 解除 view 的 backing 被关闭时，backingBytesReleased 可以非零而 bytesUnmapped 为零。既有 `surfaceViewBudgetBytes` 的 64 KiB 对齐预算收费仍保留。
 
 `PB_DROP_SUMMARY`：`dropEvictionCount`、`dropEvictedBytes`、`remapCountAfterDrop`、`remapBytesAfterDrop`、`reconstructionFailures`。累计释放可重复计算同一资源的多轮 eviction，不能当作同时省下的内存。
+
+菜单 “Cumulative released” 是 `dropEvictedBytes`，不含原 learned 自动释放、一般资源销毁或手动 GC 的独立统计。未启用 drop 时为零符合实现；learned 的释放/恢复计数看 `PB_POLICY_SUMMARY`。`reconstructionFailures` 也不是全部 learned recovery 的失败总数。
 
 开启 `client.pageBlockDiagnostics` 后，新专用日志才逐资源记录 `PB_RESIDENCY event=lock/host-result/evicted/remapped`，包含 ID/type/format/pool/usage/size/mip/face、flags/rect、old_contents_required、previously_evicted 和 reconstruction_required。它们不逐资源刷普通 Info 日志；明确的恢复错误才进入普通 error log。
 
@@ -106,6 +114,8 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 [Windows CI 37598250948](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/runs/37598250948) 在代码提交 `5951831` 全部通过：x86 Client、x64/x86 Host、x86 L4N plugin 编译；x86/x64 residency/GC 原生测试；SDK v2 HUD callback + mock 控制导出测试；既有 Phase 1、真实删除/hash恢复/DB promotion 回归；ATI、adapter、window/input、queue、API-wait 等现有原生检查。Linux 上逻辑布局测试和 6 项 Python 分析测试也通过。
 
 下载的实验产物已校验四个二进制 SHA256、PE 架构和命名导出；不包含替换用 backend 或活动 bridge.conf。没有在云环境执行 L4D2、真实 L4N HUD 或 GPU gameplay，仍待实机验证。
+
+后续作者提供了 [x86 learned-aggressive 的 c2m2→c2m5 实机跨图观察](PAGEBLOCK-CROSS-MAP-OBSERVATION.md)：旧实验构建、没有启用 drop/手动 GC。四个样本映射约 57–59 MiB、backing 约 60 MiB，后三张图 AV 为 2445/2442/2456 MB，没有明显累积。它不属于 1.1.2-dev.1 新修正的实机验收，也不验证独立 drop/手动 GC。
 
 ## 仓库文件变更清单
 

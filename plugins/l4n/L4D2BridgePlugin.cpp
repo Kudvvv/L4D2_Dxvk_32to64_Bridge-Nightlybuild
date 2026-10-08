@@ -43,6 +43,10 @@ class BridgePlugin final : public IL4NPlugin {
     return text;
   }
   static std::string info(const std::string& title) { return item(title.c_str(), 0); }
+  const char* statusMenu(const char* title) {
+    m_menu = std::string("\"") + title + "\" {\n" + info(m_status) + "}\n";
+    return m_menu.c_str();
+  }
   const char* menu() {
     m_menu = "\"L4D2 Bridge\" {\n";
     if (!m_status.empty()) { m_menu += info(m_status); }
@@ -53,26 +57,31 @@ class BridgePlugin final : public IL4NPlugin {
 public:
   unsigned int GetInterfaceVersion() override { return 2; }
   const char* GetName() override { return "L4D2 Bridge Controls"; }
-  const char* GetVersion() override { return "experimental-1"; }
+  const char* GetVersion() override { return "experimental-2"; }
   const char* RequestHudMenu(bool requestTitle) override { return requestTitle ? "L4D2 Bridge" : menu(); }
   const char* action(uintptr_t action) {
-    if (!action) { return menu(); }
+    // SDK non-null callback results open children; navigation belongs to L4N.
+    if (!action) { return nullptr; }
     const auto invoke = findControl();
-    if (!invoke) { m_status = "Bridge control API unavailable: install matching experimental client"; return menu(); }
+    if (!invoke) {
+      m_status = "Bridge control API unavailable: install matching experimental client";
+      return statusMenu("Bridge Request Failed");
+    }
     l4d2_control::Request request;
     if (action >= 10 && action <= 12) { request.operation = l4d2_control::Operation::SetPolicy; request.value = static_cast<uint32_t>(action - 10); }
     else if (action >= 20 && action <= 22) { request.operation = l4d2_control::Operation::Gc; request.value = static_cast<uint32_t>(action - 20); }
-    else if (action != 1 && action != 2) { m_status = "Invalid control action"; return menu(); }
+    else if (action != 1 && action != 2) {
+      m_status = "Invalid control action"; return statusMenu("Bridge Request Failed");
+    }
     l4d2_control::Response response;
     const HRESULT hr = invoke(&request, &response);
     if (FAILED(hr)) {
       char text[160] {}; sprintf_s(text, "Bridge request failed: 0x%08lx", static_cast<unsigned long>(hr));
-      m_status = text; return menu();
+      m_status = text; return statusMenu("Bridge Request Failed");
     }
     if (action == 2) {
-      m_menu = "\"Retention Policy\" {\n" + info(std::string("Current: ") + policyName(response.policy))
-        + info("Session only; bridge.conf is unchanged") + item("keep", 10) + item("learned-aggressive", 11)
-        + item("drop [experimental]", 12) + item("Back", 0) + "}\n";
+      m_menu = "\"Retention Policy\" {\n" + info("Session only; bridge.conf is unchanged")
+        + item("keep", 10) + item("learned-aggressive", 11) + item("drop [experimental]", 12) + "}\n";
       return m_menu.c_str();
     }
     if (action == 1) {
@@ -84,7 +93,7 @@ public:
       sprintf_s(text, "Remaps after drop: %llu; reconstruction failures: %llu", response.remapCountAfterDrop, response.reconstructionFailures); m_menu += info(text);
       if (response.flags & 1) { m_menu += info("Reference readback test active: eviction controls disabled"); }
       if (!(response.flags & 2)) { m_menu += info("Unsupported shared heap/backend: eviction controls disabled"); }
-      m_menu += item("Refresh", 1) + item("Back", 0) + "}\n"; return m_menu.c_str();
+      m_menu += "}\n"; return m_menu.c_str();
     }
     if (request.operation == l4d2_control::Operation::Gc) {
       char text[220] {};
@@ -94,10 +103,10 @@ public:
       sprintf_s(text, "Skipped locked: %llu; transfers: %llu; policy: %llu", response.pageBlocksSkippedLocked, response.pageBlocksSkippedTransferring, response.pageBlocksSkippedPolicy); m_menu += info(text);
       sprintf_s(text, "Unsynchronized: %llu; failures: %llu", response.pageBlocksSkippedUnsynchronized, response.failures); m_menu += info(text);
       sprintf_s(text, "Drained: %llu; waits: %llu; wait time: %.3f ms", response.transfersDrained, response.drainWaitCount, response.drainWaitTimeMs); m_menu += info(text);
-      m_menu += item("Back", 0) + "}\n"; return m_menu.c_str();
+      m_menu += "}\n"; return m_menu.c_str();
     }
     m_status = std::string("Policy selected: ") + policyName(response.policy);
-    return menu();
+    return statusMenu("Policy Change Result");
   }
 };
 BridgePlugin& instance() { static BridgePlugin plugin; return plugin; }
