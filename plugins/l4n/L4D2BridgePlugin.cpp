@@ -6,12 +6,13 @@
 #include <cstdio>
 #include <string>
 #include "sdk/l4n_plugin.h"
-#include "pageblock_control.h"
+#include "bridge_control.h"
 
 namespace {
+namespace general = l4d2_bridge_control;
 class BridgePlugin final : public IL4NPlugin {
-  std::string m_menu;
-  std::string m_status;
+  std::string m_menu, m_status;
+  struct Controls { general::Invoke settings = nullptr; l4d2_control::Invoke pageBlocks = nullptr; };
   static const char* callback(void* userData);
   static const char* policyName(l4d2_control::Policy policy) {
     switch (policy) {
@@ -21,112 +22,207 @@ class BridgePlugin final : public IL4NPlugin {
     }
     return "unknown";
   }
-  static l4d2_control::Invoke findControl() {
+  static const char* hostName(general::Host host) {
+    return host == general::Host::X86 ? "x86" : host == general::Host::X64 ? "x64" : "unavailable";
+  }
+  static Controls findControls() {
     // Use already loaded modules. Never load another D3D9 runtime into the game.
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
-    if (snapshot == INVALID_HANDLE_VALUE) { return nullptr; }
+    if (snapshot == INVALID_HANDLE_VALUE) { return {}; }
     MODULEENTRY32W module {}; module.dwSize = sizeof(module);
-    l4d2_control::Invoke invoke = nullptr;
+    Controls result;
     if (Module32FirstW(snapshot, &module)) {
       do {
-        invoke = reinterpret_cast<l4d2_control::Invoke>(GetProcAddress(module.hModule, l4d2_control::kExport));
-        if (invoke) { break; }
+        auto pageBlocks = reinterpret_cast<l4d2_control::Invoke>(GetProcAddress(module.hModule, l4d2_control::kExport));
+        if (!pageBlocks) { continue; }
+        result.pageBlocks = pageBlocks;
+        result.settings = reinterpret_cast<general::Invoke>(GetProcAddress(module.hModule, general::kExport));
+        break;
       } while (Module32NextW(snapshot, &module));
     }
     CloseHandle(snapshot);
-    return invoke;
+    return result;
   }
-  static std::string item(const char* title, uintptr_t action) {
-    char text[320] {};
-    sprintf_s(text, "\"%s\" { \"callback\" \"0x%llx\" \"user_data\" \"0x%llx\" }\n", title,
+  static std::string escape(const std::string& title) {
+    std::string result;
+    for (char c : title) {
+      if (c == '"' || c == '\\') { result += '\\'; }
+      result += c == '\n' || c == '\r' ? ' ' : c;
+    }
+    return result;
+  }
+  static std::string item(const std::string& title, uintptr_t action) {
+    char text[160] {};
+    sprintf_s(text, " { \"callback\" \"0x%llx\" \"user_data\" \"0x%llx\" }\n",
       static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(&callback)), static_cast<unsigned long long>(action));
-    return text;
+    return "\"" + escape(title) + "\"" + text;
   }
-  static std::string info(const std::string& title) { return item(title.c_str(), 0); }
-  const char* statusMenu(const char* title) {
-    m_menu = std::string("\"") + title + "\" {\n" + info(m_status) + "}\n";
+  static std::string info(const std::string& title) { return item(title, 0); }
+  static std::string error(HRESULT hr) {
+    char code[40] {}, description[256] {};
+    sprintf_s(code, "0x%08lx", static_cast<unsigned long>(hr));
+    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
+      static_cast<DWORD>(hr), MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), description, sizeof(description), nullptr);
+    return std::string(code) + (description[0] ? std::string(" ") + description : "");
+  }
+  const char* page(const char* title, const std::string& rows) {
+    m_menu = std::string("\"") + title + "\" {\n" + rows + "}\n";
     return m_menu.c_str();
   }
-  const char* menu() {
-    m_menu = "\"L4D2 Bridge\" {\n";
-    if (!m_status.empty()) { m_menu += info("Last action result: " + m_status); }
-    m_menu += item("PageBlock Stats", 1) + item("Retention Policy", 2)
-      + item("GC Learned", 20) + item("GC Aggressive", 21) + item("GC Force", 22);
-    m_menu += "}\n"; return m_menu.c_str();
+  const char* failed(const std::string& message) {
+    m_status = message; return page("Bridge Request Failed", info(message));
+  }
+  static HRESULT query(general::Invoke invoke, general::Operation operation, uint32_t value, general::Response& response) {
+    if (!invoke) { return E_NOINTERFACE; }
+    general::Request request; request.operation = operation; request.value = value;
+    const auto hr = invoke(&request, &response);
+    return SUCCEEDED(hr) && !general::compatible(request, response) ? E_UNEXPECTED : hr;
+  }
+  static HRESULT pageBlocks(l4d2_control::Invoke invoke, l4d2_control::Operation operation, uint32_t value,
+      l4d2_control::DetailedResponse& extended, bool& detailed) {
+    if (!invoke) { return E_NOINTERFACE; }
+    l4d2_control::Request request; request.operation = operation; request.value = value; request.version = l4d2_control::kDetailedVersion;
+    auto& response = extended.base;
+    auto hr = invoke(&request, &response);
+    if (hr == E_INVALIDARG) {
+      request.version = l4d2_control::kVersion; response = l4d2_control::Response {};
+      hr = invoke(&request, &response);
+    }
+    if (SUCCEEDED(hr) && !l4d2_control::compatible(request, response)) { return E_UNEXPECTED; }
+    detailed = SUCCEEDED(hr) && response.version == l4d2_control::kDetailedVersion;
+    return hr;
+  }
+  const char* status(const Controls& controls) {
+    std::string rows;
+    general::Response settings;
+    const auto settingsResult = query(controls.settings, general::Operation::GetStatus, 0, settings);
+    if (SUCCEEDED(settingsResult)) {
+      rows += info(std::string("Runtime Host: ") + hostName(settings.runtimeHost));
+      if (SUCCEEDED(settings.queryResult)) {
+        rows += info(std::string("Configured Host: ") + hostName(settings.configuredHost));
+        rows += info(std::string("Configured Memory Policy: ") + policyName(settings.configuredPolicy));
+        rows += info(std::string("ReShade Presenter: ") + (settings.presenterConfigured ? "Enabled" : "Disabled"));
+        rows += info(std::string("Restart Required: ") + (settings.restartRequired ? "Yes" : "No"));
+        if (settings.restartRequired) { rows += info("Saved settings apply on next full L4D2 restart"); }
+      } else {
+        rows += info("Configured Host / ReShade Presenter / Restart Required: unavailable");
+        rows += info("Failed to read configuration: " + error(settings.queryResult));
+      }
+    } else {
+      rows += info("Runtime Host / Configured Host / ReShade Presenter / Restart Required: unavailable");
+      rows += info(controls.settings ? "Settings status failed: " + error(settingsResult) : "Older Bridge: persistent settings unavailable");
+    }
+    l4d2_control::DetailedResponse extended; bool detailed = false;
+    const auto hr = pageBlocks(controls.pageBlocks, l4d2_control::Operation::Stats, 0, extended, detailed);
+    if (FAILED(hr)) { return page("Status", rows + info("PageBlock status failed: " + error(hr))); }
+    const auto& response = extended.base;
+    rows += info(std::string("Memory Policy: ") + policyName(response.policy));
+    char text[220] {};
+    sprintf_s(text, "Blocks: %llu; locked: %llu; transferring: %llu", response.pageBlocks, response.locked, response.transferring); rows += info(text);
+    sprintf_s(text, "Client mapped VA: %.2f MiB; backing: %.2f MiB", response.mappedBytes / 1048576.0, response.backingBytes / 1048576.0); rows += info(text);
+    sprintf_s(text, "Drop evictions: %llu; cumulative released: %.2f MiB", response.dropEvictionCount, response.dropEvictedBytes / 1048576.0); rows += info(text);
+    sprintf_s(text, "Remaps after drop: %llu; reconstruction failures: %llu", response.remapCountAfterDrop, response.reconstructionFailures); rows += info(text);
+    if (detailed) {
+      const auto& c = extended.coverage;
+      sprintf_s(text, "Tracked: %llu; capable: %llu; non-reclaimable: %llu", c.tracked, c.capable, c.nonReclaimable); rows += info(text);
+      sprintf_s(text, "Safe now: %llu; KEEP: %llu; evictable: %llu", c.safeNow, c.learnedKeep, c.learnedEvictable); rows += info(text);
+      sprintf_s(text, "Unsupported: %llu; recovery gap: %llu; unclassified: %llu", c.unsupportedCapability, c.recoveryUnavailable, c.learnedUnclassified); rows += info(text);
+    }
+    if (!(response.flags & 2)) { rows += info("Unsupported backing/backend: GC unavailable"); }
+    return page("Status", rows);
+  }
+  const char* gc(const Controls& controls, uint32_t mode) {
+    l4d2_control::DetailedResponse extended; bool detailed = false;
+    const auto hr = pageBlocks(controls.pageBlocks, l4d2_control::Operation::Gc, mode, extended, detailed);
+    if (FAILED(hr)) { return failed("Bridge request failed: " + error(hr)); }
+    const auto& response = extended.base;
+    char text[220] {};
+    sprintf_s(text, "GC evicted %llu; VA freed %.2f MiB; backing freed %.2f MiB", response.pageBlocksEvicted, response.bytesUnmapped / 1048576.0, response.backingBytesReleased / 1048576.0);
+    m_status = text;
+    std::string rows = info(m_status);
+    sprintf_s(text, "Skipped locked: %llu; transfers: %llu; policy: %llu", response.pageBlocksSkippedLocked, response.pageBlocksSkippedTransferring, response.pageBlocksSkippedPolicy); rows += info(text);
+    sprintf_s(text, "Unsynchronized: %llu; failures: %llu", response.pageBlocksSkippedUnsynchronized, response.failures); rows += info(text);
+    if (detailed) {
+      sprintf_s(text, "Unsupported: %llu; recovery gap: %llu; unclassified: %llu", extended.skippedUnsupportedCapability, extended.skippedRecoveryUnavailable, extended.skippedUnclassified); rows += info(text);
+      sprintf_s(text, "No backing: %llu", extended.skippedNoBacking); rows += info(text);
+      sprintf_s(text, "Host ACK waits: %llu; time: %.3f ms", extended.hostAckWaitCount, extended.hostAckWaitTimeMs); rows += info(text);
+    }
+    sprintf_s(text, "Drained: %llu; waits: %llu; wait time: %.3f ms", response.transfersDrained, response.drainWaitCount, response.drainWaitTimeMs); rows += info(text);
+    return page("PageBlock GC Result", rows);
+  }
+  const char* setPolicy(const Controls& controls, uint32_t value) {
+    if (!controls.settings) {
+      l4d2_control::DetailedResponse response; bool detailed = false;
+      const auto hr = pageBlocks(controls.pageBlocks, l4d2_control::Operation::SetPolicy, value, response, detailed);
+      if (FAILED(hr)) { return failed("Runtime policy failed: " + error(hr)); }
+      m_status = std::string("Runtime policy changed to ") + policyName(response.base.policy) + "; older Bridge: config not saved";
+      return page("Memory Policy Result", info(m_status) + info("Session only; persistence unavailable on this Bridge"));
+    }
+    general::Response response;
+    const auto hr = query(controls.settings, general::Operation::SetMemoryPolicy, value, response);
+    if (FAILED(hr)) { return failed("Memory policy request failed: " + error(hr)); }
+    const auto runtime = SUCCEEDED(response.runtimeResult) ? std::string("Runtime policy changed to ") + policyName(response.runtimePolicy)
+      : "Runtime policy failed: " + error(response.runtimeResult);
+    const auto saved = response.configWriteSucceeded ? std::string("Config saved successfully") : "Warning: failed to persist configuration: " + error(response.configResult);
+    m_status = runtime + "; " + saved;
+    return page("Memory Policy Result", info(runtime) + info(saved));
+  }
+  const char* setPersistent(const Controls& controls, general::Operation operation, uint32_t value) {
+    if (!controls.settings) { return failed("Persistent Host / ReShade settings unavailable on this Bridge"); }
+    general::Response response;
+    const auto hr = query(controls.settings, operation, value, response);
+    if (FAILED(hr)) { return failed("Settings request failed: " + error(hr)); }
+    if (!response.configWriteSucceeded) { return failed("Failed to persist configuration: " + error(response.configResult)); }
+    const auto title = operation == general::Operation::SetHostMode ? "Host Result" : "ReShade Presenter Result";
+    m_status = operation == general::Operation::SetHostMode
+      ? std::string("Host set to ") + hostName(static_cast<general::Host>(value)) + "."
+      : std::string("ReShade Presenter ") + (value ? "enabled." : "disabled.");
+    m_status += " Restart L4D2 to apply.";
+    std::string rows = info(m_status);
+    if (operation == general::Operation::SetReShadePresenter && value && response.configuredHost == general::Host::X86) {
+      rows += info("Note: validated ReShade combination is x64 Host + Vulkan ReShade 6.0.1.");
+    }
+    if (FAILED(response.queryResult)) { rows += info("Saved; status read failed: " + error(response.queryResult)); }
+    return page(title, rows);
   }
 public:
   unsigned int GetInterfaceVersion() override { return 2; }
   const char* GetName() override { return "L4D2 Bridge Controls"; }
-  const char* GetVersion() override { return "experimental-3"; }
-  const char* RequestHudMenu(bool requestTitle) override { return requestTitle ? "L4D2 Bridge" : menu(); }
+  const char* GetVersion() override { return "common-settings-1"; }
+  const char* RequestHudMenu(bool requestTitle) override {
+    if (requestTitle) { return "L4D2 Bridge"; }
+    auto rows = item("Status", 1) + item("GC", 2) + item("Memory Policy", 3) + item("ReShade Presenter", 4) + item("Host", 5);
+    if (!m_status.empty()) { rows += info("Last action result: " + m_status); }
+    return page("L4D2 Bridge", rows);
+  }
   const char* action(uintptr_t action) {
     // SDK non-null callback results open children; navigation belongs to L4N.
     if (!action) { return nullptr; }
-    const auto invoke = findControl();
-    if (!invoke) {
-      m_status = "Bridge control API unavailable: install matching experimental client";
-      return statusMenu("Bridge Request Failed");
+    const auto controls = findControls();
+    if (action == 1) { return status(controls); }
+    if (action == 2) { return page("GC", item("Learned", 20) + item("Aggressive", 21) + item("Force", 22)); }
+    if (action == 3) {
+      const auto note = controls.settings ? "Changes runtime policy and saves configuration" : "Older Bridge: session only; configuration is not saved";
+      return page("Memory Policy", info(note) + item("keep", 10) + item("learned-aggressive", 11) + item("drop [experimental]", 12));
     }
-    l4d2_control::Request request;
-    if (action >= 10 && action <= 12) { request.operation = l4d2_control::Operation::SetPolicy; request.value = static_cast<uint32_t>(action - 10); }
-    else if (action >= 20 && action <= 22) { request.operation = l4d2_control::Operation::Gc; request.value = static_cast<uint32_t>(action - 20); }
-    else if (action != 1 && action != 2) {
-      m_status = "Invalid control action"; return statusMenu("Bridge Request Failed");
-    }
-    l4d2_control::DetailedResponse extended;
-    auto& response = extended.base;
-    request.version = l4d2_control::kDetailedVersion;
-    HRESULT hr = invoke(&request, &response);
-    if (hr == E_INVALIDARG) {
-      // Older Bridge clients reject v2 before executing the operation.
-      request.version = l4d2_control::kVersion; response = l4d2_control::Response {};
-      hr = invoke(&request, &response);
-    }
-    const bool detailed = SUCCEEDED(hr) && response.version == l4d2_control::kDetailedVersion
-      && response.bytes == sizeof(extended);
-    if (FAILED(hr)) {
-      char text[160] {}; sprintf_s(text, "Bridge request failed: 0x%08lx", static_cast<unsigned long>(hr));
-      m_status = text; return statusMenu("Bridge Request Failed");
-    }
-    if (action == 2) {
-      m_menu = "\"Retention Policy\" {\n" + info("Session only; bridge.conf is unchanged")
-        + item("keep", 10) + item("learned-aggressive", 11) + item("drop [experimental]", 12) + "}\n";
-      return m_menu.c_str();
-    }
-    if (action == 1) {
-      m_menu = "\"PageBlock Stats\" {\n" + info(std::string("Policy: ") + policyName(response.policy));
-      char text[200] {};
-      sprintf_s(text, "Blocks: %llu; locked: %llu; transferring: %llu", response.pageBlocks, response.locked, response.transferring); m_menu += info(text);
-      sprintf_s(text, "Client mapped VA: %.2f MiB; backing: %.2f MiB", response.mappedBytes / 1048576.0, response.backingBytes / 1048576.0); m_menu += info(text);
-      sprintf_s(text, "Drop evictions: %llu; cumulative released: %.2f MiB", response.dropEvictionCount, response.dropEvictedBytes / 1048576.0); m_menu += info(text);
-      sprintf_s(text, "Remaps after drop: %llu; reconstruction failures: %llu", response.remapCountAfterDrop, response.reconstructionFailures); m_menu += info(text);
-      if (detailed) {
-        const auto& c = extended.coverage;
-        sprintf_s(text, "Tracked: %llu; capable: %llu; non-reclaimable: %llu", c.tracked, c.capable, c.nonReclaimable); m_menu += info(text);
-        sprintf_s(text, "Safe now: %llu; KEEP: %llu; evictable: %llu", c.safeNow, c.learnedKeep, c.learnedEvictable); m_menu += info(text);
-        sprintf_s(text, "Unsupported: %llu; recovery gap: %llu; unclassified: %llu", c.unsupportedCapability, c.recoveryUnavailable, c.learnedUnclassified); m_menu += info(text);
+    if (action == 4 || action == 5) {
+      if (!controls.settings) { return page(action == 4 ? "ReShade Presenter" : "Host", info("Unavailable: this Bridge has no persistent settings API")); }
+      general::Response response;
+      const auto hr = query(controls.settings, action == 4 ? general::Operation::GetReShadePresenter : general::Operation::GetHostMode, 0, response);
+      std::string rows = info("Save configuration; restart L4D2 to apply");
+      if (FAILED(hr) || FAILED(response.queryResult)) { rows += info("Current configuration unavailable: " + error(FAILED(hr) ? hr : response.queryResult)); }
+      else {
+        rows += info(action == 4 ? std::string("Configured: ") + (response.presenterConfigured ? "Enabled" : "Disabled")
+          : std::string("Runtime Host: ") + hostName(response.runtimeHost) + "; configured: " + hostName(response.configuredHost));
       }
-      if (response.flags & 1) { m_menu += info("Reference readback test active: eviction controls disabled"); }
-      if (!(response.flags & 2)) { m_menu += info("Unsupported shared heap/backend: eviction controls disabled"); }
-      m_menu += "}\n"; return m_menu.c_str();
+      if (action == 4) { return page("ReShade Presenter", rows + info("Controls Bridge Presenter/input support; does not install ReShade") + item("Enable", 30) + item("Disable", 31)); }
+      return page("Host", rows + item("x86 Host", 40) + item("x64 Host", 41));
     }
-    if (request.operation == l4d2_control::Operation::Gc) {
-      char text[220] {};
-      sprintf_s(text, "GC evicted %llu; VA freed %.2f MiB; backing freed %.2f MiB", response.pageBlocksEvicted, response.bytesUnmapped / 1048576.0, response.backingBytesReleased / 1048576.0);
-      m_status = text;
-      m_menu = "\"PageBlock GC Result\" {\n" + info(m_status);
-      sprintf_s(text, "Skipped locked: %llu; transfers: %llu; policy: %llu", response.pageBlocksSkippedLocked, response.pageBlocksSkippedTransferring, response.pageBlocksSkippedPolicy); m_menu += info(text);
-      sprintf_s(text, "Unsynchronized: %llu; failures: %llu", response.pageBlocksSkippedUnsynchronized, response.failures); m_menu += info(text);
-      if (detailed) {
-        sprintf_s(text, "Unsupported: %llu; recovery gap: %llu; unclassified: %llu", extended.skippedUnsupportedCapability, extended.skippedRecoveryUnavailable, extended.skippedUnclassified); m_menu += info(text);
-        sprintf_s(text, "No backing: %llu; reference test: %llu", extended.skippedNoBacking, extended.skippedReferenceTest); m_menu += info(text);
-        sprintf_s(text, "Host ACK waits: %llu; time: %.3f ms", extended.hostAckWaitCount, extended.hostAckWaitTimeMs); m_menu += info(text);
-      }
-      sprintf_s(text, "Drained: %llu; waits: %llu; wait time: %.3f ms", response.transfersDrained, response.drainWaitCount, response.drainWaitTimeMs); m_menu += info(text);
-      m_menu += "}\n"; return m_menu.c_str();
-    }
-    m_status = std::string("Policy selected: ") + policyName(response.policy);
-    return statusMenu("Policy Change Result");
+    if (action >= 10 && action <= 12) { return setPolicy(controls, static_cast<uint32_t>(action - 10)); }
+    if (action >= 20 && action <= 22) { return gc(controls, static_cast<uint32_t>(action - 20)); }
+    if (action == 30 || action == 31) { return setPersistent(controls, general::Operation::SetReShadePresenter, action == 30 ? 1u : 0u); }
+    if (action == 40 || action == 41) { return setPersistent(controls, general::Operation::SetHostMode, static_cast<uint32_t>(action == 40 ? general::Host::X86 : general::Host::X64)); }
+    return failed("Invalid control action");
   }
 };
 BridgePlugin& instance() { static BridgePlugin plugin; return plugin; }

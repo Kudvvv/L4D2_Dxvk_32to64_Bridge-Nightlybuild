@@ -9,28 +9,62 @@
 #include <vector>
 #include "../plugins/l4n/sdk/l4n_plugin.h"
 #include "pageblock_control.h"
+#include "bridge_settings.h"
+namespace general = l4d2_bridge_control;
 static l4d2_control::Request last;
 static l4d2_control::Policy policy = l4d2_control::Policy::LearnedAggressive;
-static unsigned int calls = 0;
-static bool failRequest = false, legacyOnly = false;
+static unsigned int calls = 0, settingsCalls = 0, runtimeSets = 0;
+static uint64_t blocks = 10;
+static bool failRequest = false, legacyOnly = false, runtimeFailure = false;
+static HRESULT configError = S_OK;
+static l4d2_settings::Target configured;
 extern "C" HRESULT WINAPI L4D2BridgePageBlockControl(const l4d2_control::Request* request, l4d2_control::Response* response) {
   ++calls; last = *request;
   if (failRequest) { return E_FAIL; }
   if (legacyOnly && request->version != l4d2_control::kVersion) { return E_INVALIDARG; }
   const bool detailed = request->version == l4d2_control::kDetailedVersion;
-  assert(response->version == request->version && response->bytes == (detailed ? sizeof(l4d2_control::DetailedResponse) : sizeof(*response)));
-  if (request->operation == l4d2_control::Operation::SetPolicy) { policy = static_cast<l4d2_control::Policy>(request->value); }
-  if (detailed) {
-    l4d2_control::DetailedResponse result;
-    result.coverage.tracked = 10; result.coverage.capable = 6; result.coverage.nonReclaimable = 4;
-    result.coverage.learnedKeep = 2; result.coverage.learnedUnclassified = 8;
-    result.skippedUnsupportedCapability = 3; result.skippedRecoveryUnavailable = 1;
-    std::memcpy(response, &result, sizeof(result));
-  } else { *response = {}; }
-  response->policy = policy;
-  response->flags = 2; response->pageBlocks = 10; response->pageBlocksEvicted = 4;
+  assert(l4d2_control::compatible(*request, *response));
+  if (request->operation == l4d2_control::Operation::SetPolicy) {
+    ++runtimeSets;
+    if (runtimeFailure) { return E_ACCESSDENIED; }
+    policy = static_cast<l4d2_control::Policy>(request->value);
+  }
+  l4d2_control::DetailedResponse result;
+  result.coverage.tracked = 10; result.coverage.capable = 6; result.coverage.nonReclaimable = 4;
+  result.coverage.learnedKeep = 2; result.coverage.learnedUnclassified = 8;
+  result.skippedUnsupportedCapability = 3; result.skippedRecoveryUnavailable = 1;
+  result.hostAckWaitCount = 4; result.hostAckWaitTimeMs = 0.5;
+  result.base.policy = policy; result.base.flags = 2;
+  result.base.pageBlocks = blocks; result.base.pageBlocksEvicted = 4;
+  l4d2_control::writeResponse(response, result, detailed);
   return S_OK;
 }
+#ifdef L4D2_TEST_GENERAL
+static l4d2_settings::Controls& settings() {
+  static l4d2_settings::Controls instance;
+  return instance;
+}
+extern "C" HRESULT WINAPI L4D2BridgeControl(const general::Request* request, general::Response* response) {
+  ++settingsCalls; return settings().invoke(request,response);
+}
+static void initializeSettings() {
+  configured.host = general::Host::X86; configured.policy = policy;
+  settings().read = [](l4d2_settings::Target& target) { target = configured; return S_OK; };
+  settings().write = [](const l4d2_settings::Updates& updates) {
+    if (FAILED(configError)) { return configError; }
+    for (const auto& entry : updates) {
+      if (entry.first == "client.testX86Server") { configured.host = entry.second == "True" ? general::Host::X86 : general::Host::X64; }
+      if (entry.first == "client.pageBlockRetentionPolicy") { configured.policy = entry.second == "keep" ? l4d2_control::Policy::Keep : entry.second == "drop" ? l4d2_control::Policy::Drop : l4d2_control::Policy::LearnedAggressive; }
+      for (size_t i = 0; i < 9; ++i) {
+        if (entry.first == l4d2_settings::kPresenterKeys[i]) { configured.presenter[i] = entry.second == "True" ? 1u : entry.second == "False" ? 0u : static_cast<uint32_t>(std::stoul(entry.second)); }
+      }
+    }
+    return S_OK;
+  };
+  settings().runtime = [](const l4d2_control::Request& request, l4d2_control::Response& response) { return L4D2BridgePageBlockControl(&request,&response); };
+  settings().initialize(configured); settings().recordHost(general::Host::X86);
+}
+#endif
 static const char* invoke(const char* menu, const char* item) {
   const auto position = std::string(menu).find(std::string("\"") + item + "\""); assert(position != std::string::npos);
   const char* callback = strstr(menu + position, "\"callback\"");
@@ -52,69 +86,104 @@ struct MenuHost {
   }
   void back() { assert(pages.size() > 1); pages.pop_back(); }
 };
+static void rootOrder(const std::string& menu) {
+  const char* labels[] = { "Status", "GC", "Memory Policy", "ReShade Presenter", "Host" };
+  size_t previous = 0;
+  for (const auto* label : labels) {
+    const auto position = menu.find(std::string("\"") + label + "\"");
+    assert(position != std::string::npos && position > previous); previous = position;
+  }
+  for (const auto* forbidden : { "PageBlock Stats", "Retention Policy", "GC Learned", "GC Aggressive", "GC Force", "diagnostics", "readback test", "color", "API wait", "Steam", "exception" }) {
+    assert(menu.find(forbidden) == std::string::npos);
+  }
+  assert(menu.find("\"Back\"") == std::string::npos);
+}
 int wmain(int argc, wchar_t** argv) {
   assert(argc == 2);
+#ifdef L4D2_TEST_GENERAL
+  initializeSettings();
+#endif
   const auto module = LoadLibraryW(argv[1]); assert(module);
   const auto get = reinterpret_cast<GetL4NPluginInstanceFunc>(GetProcAddress(module, "GetL4NPluginInstance")); assert(get);
   auto* plugin = get(); assert(plugin && plugin->GetInterfaceVersion() == 2);
   assert(std::string(plugin->RequestHudMenu(true)) == "L4D2 Bridge");
-  MenuHost host(plugin->RequestHudMenu(false));
-  host.select("PageBlock Stats");
-  assert(host.pages.size() == 2 && host.page().find("Blocks: 10") != std::string::npos && last.operation == l4d2_control::Operation::Stats);
+  MenuHost host(plugin->RequestHudMenu(false)); rootOrder(host.page());
+  host.select("Status"); assert(host.pages.size() == 2);
+#ifdef L4D2_TEST_NO_API
+  assert(host.page().find("unavailable") != std::string::npos);
+  host.back(); host.select("Host"); assert(host.page().find("Unavailable") != std::string::npos); host.back();
+  host.select("ReShade Presenter"); assert(host.page().find("Unavailable") != std::string::npos); host.back();
+  host.select("Memory Policy"); host.select("keep"); assert(host.page().find("failed") != std::string::npos);
+  host.back(); host.back(); host.select("GC"); host.select("Force"); assert(host.page().find("failed") != std::string::npos);
+  puts("PASS: absent Bridge exports safely degrade without loading a runtime"); return 0;
+#else
+  assert(host.page().find("Blocks: 10") != std::string::npos && last.operation == l4d2_control::Operation::Stats);
   assert(host.page().find("Tracked: 10; capable: 6; non-reclaimable: 4") != std::string::npos);
-  auto previousCalls = calls;
+  auto previousCalls = calls, previousSettings = settingsCalls;
   for (unsigned int i = 0; i < 100; ++i) {
     host.select("Blocks: 10; locked: 0; transferring: 0");
-    assert(host.pages.size() == 2 && calls == previousCalls);
+    assert(host.pages.size() == 2 && calls == previousCalls && settingsCalls == previousSettings);
   }
   assert(host.page().find("\"Refresh\"") == std::string::npos && host.page().find("\"Back\"") == std::string::npos);
-  host.back();
-  assert(host.pages.size() == 1 && host.page().find("\"L4D2 Bridge\"") == 0);
-  host.select("Retention Policy");
-  assert(host.pages.size() == 2 && host.page().find("drop [experimental]") != std::string::npos);
-  host.select("drop [experimental]");
-  assert(last.operation == l4d2_control::Operation::SetPolicy && last.value == 2);
-  assert(host.pages.size() == 3 && host.page().find("\"Policy Change Result\"") == 0);
-  previousCalls = calls;
-  host.select("Policy selected: drop [experimental]");
-  assert(host.pages.size() == 3 && calls == previousCalls);
-  host.back();
-  assert(host.pages.size() == 2 && host.page().find("\"Retention Policy\"") == 0);
-  host.back();
-  for (uint32_t mode = 0; mode < 3; ++mode) {
-    const char* labels[] = { "GC Learned", "GC Aggressive", "GC Force" };
-    host.select(labels[mode]);
-    assert(last.operation == l4d2_control::Operation::Gc && last.value == mode && host.page().find("GC evicted 4") != std::string::npos);
-    assert(host.pages.size() == 2 && host.page().find("\"Back\"") == std::string::npos);
-    previousCalls = calls;
-    host.select("GC evicted 4; VA freed 0.00 MiB; backing freed 0.00 MiB");
-    assert(host.pages.size() == 2 && calls == previousCalls);
-    host.back();
+  host.back(); blocks = 11; host.select("Status"); assert(host.page().find("Blocks: 11") != std::string::npos); host.back(); blocks = 10;
+  const char* policies[] = { "keep", "learned-aggressive", "drop [experimental]" };
+  for (uint32_t i = 0; i < 3; ++i) {
+    host.select("Memory Policy"); assert(host.pages.size() == 2); host.select(policies[i]);
+    assert(host.pages.size() == 3 && policy == static_cast<l4d2_control::Policy>(i));
+#ifdef L4D2_TEST_GENERAL
+    assert(configured.policy == policy && host.page().find("Config saved successfully") != std::string::npos);
+#else
+    assert(last.operation == l4d2_control::Operation::SetPolicy && last.value == i && host.page().find("config not saved") != std::string::npos);
+#endif
+    host.back(); host.back();
   }
-  // Repeated usage cannot accumulate roots, refresh pages or action-result cycles.
+  for (uint32_t mode = 0; mode < 3; ++mode) {
+    const char* labels[] = { "Learned", "Aggressive", "Force" };
+    host.select("GC"); assert(host.pages.size() == 2); host.select(labels[mode]);
+    assert(last.operation == l4d2_control::Operation::Gc && last.value == mode && host.page().find("GC evicted 4") != std::string::npos);
+    assert(host.pages.size() == 3 && host.page().find("\"Back\"") == std::string::npos);
+    assert(host.page().find("Host ACK waits: 4") != std::string::npos);
+    previousCalls = calls; previousSettings = settingsCalls;
+    host.select("GC evicted 4; VA freed 0.00 MiB; backing freed 0.00 MiB");
+    assert(host.pages.size() == 3 && calls == previousCalls && settingsCalls == previousSettings);
+    host.back(); host.back();
+  }
+#ifdef L4D2_TEST_GENERAL
+  const auto setsBeforeHost = runtimeSets;
+  host.select("Host"); host.select("x64 Host");
+  assert(host.page().find("Host set to x64. Restart L4D2 to apply.") != std::string::npos); host.back(); host.back();
+  host.select("Status"); assert(host.page().find("Runtime Host: x86") != std::string::npos && host.page().find("Configured Host: x64") != std::string::npos && host.page().find("Restart Required: Yes") != std::string::npos); host.back();
+  host.select("Host"); host.select("x86 Host"); host.back(); host.back();
+  host.select("Status"); assert(host.page().find("Restart Required: No") != std::string::npos); host.back();
+  assert(runtimeSets == setsBeforeHost);
+  host.select("ReShade Presenter"); host.select("Enable");
+  assert(host.page().find("ReShade Presenter enabled. Restart L4D2 to apply.") != std::string::npos && host.page().find("x64 Host + Vulkan ReShade 6.0.1") != std::string::npos); host.back(); host.back();
+  host.select("Status"); assert(host.page().find("ReShade Presenter: Enabled") != std::string::npos && host.page().find("Restart Required: Yes") != std::string::npos); host.back();
+  host.select("ReShade Presenter"); host.select("Disable"); host.back(); host.back();
+  assert(configured.host == general::Host::X86 && runtimeSets == setsBeforeHost);
+  configError = E_ACCESSDENIED;
+  host.select("Memory Policy"); host.select("keep");
+  assert(host.page().find("Runtime policy changed to keep") != std::string::npos && host.page().find("Warning: failed to persist") != std::string::npos); host.back(); host.back();
+  host.select("Host"); host.select("x64 Host"); assert(host.page().find("Failed to persist") != std::string::npos && configured.host == general::Host::X86); host.back(); host.back();
+  configError = S_OK; runtimeFailure = true;
+  host.select("Memory Policy"); host.select("drop [experimental]");
+  assert(host.page().find("Runtime policy failed:") != std::string::npos && host.page().find("Config saved successfully") != std::string::npos);
+  assert(policy == l4d2_control::Policy::Keep && configured.policy == l4d2_control::Policy::Drop); host.back(); host.back(); runtimeFailure = false;
+#else
+  host.select("Host"); assert(host.page().find("Unavailable") != std::string::npos); host.back();
+  host.select("ReShade Presenter"); assert(host.page().find("Unavailable") != std::string::npos); host.back();
+#endif
   for (unsigned int i = 0; i < 100; ++i) {
-    host.select("PageBlock Stats"); assert(host.pages.size() == 2);
-    assert(host.page().find("Policy: drop [experimental]") != std::string::npos);
-    host.back();
-    host.select("Retention Policy"); host.select("drop [experimental]");
-    assert(host.pages.size() == 3); host.back(); host.back();
-    host.select("GC Learned"); assert(host.pages.size() == 2); host.back();
+    host.select("Status"); assert(host.pages.size() == 2); host.back();
+    host.select("Memory Policy"); host.select("drop [experimental]"); assert(host.pages.size() == 3); host.back(); host.back();
+    host.select("GC"); host.select("Learned"); assert(host.pages.size() == 3); host.back(); host.back();
   }
   legacyOnly = true;
-  const auto beforeLegacy = calls;
-  host.select("PageBlock Stats");
-  assert(host.pages.size() == 2 && host.page().find("Blocks: 10") != std::string::npos
-    && host.page().find("Tracked:") == std::string::npos && calls == beforeLegacy + 2);
-  host.back();
-  host.select("GC Aggressive"); assert(last.version == l4d2_control::kVersion && last.value == 1);
-  host.back(); legacyOnly = false;
-  failRequest = true;
-  host.select("GC Force");
-  assert(host.pages.size() == 2 && host.page().find("\"Bridge Request Failed\"") == 0);
-  previousCalls = calls;
-  host.select("Bridge request failed: 0x80004005");
-  assert(host.pages.size() == 2 && calls == previousCalls);
-  host.back(); assert(host.pages.size() == 1);
-  puts("PASS: supplied L4N v2 callbacks, control forwarding, no-op labels and bounded parent navigation (mock Bridge/HUD)");
+  host.select("Status"); assert(host.page().find("Blocks: 10") != std::string::npos && host.page().find("Tracked:") == std::string::npos); host.back();
+  host.select("GC"); host.select("Aggressive"); assert(last.version == l4d2_control::kVersion && last.value == 1); host.back(); host.back(); legacyOnly = false;
+  failRequest = true; host.select("GC"); host.select("Force"); assert(host.pages.size() == 3 && host.page().find("Bridge Request Failed") != std::string::npos); host.back(); host.back();
+  rootOrder(plugin->RequestHudMenu(false));
+  puts("PASS: exact common menu order, GC mapping, fresh status, policy results, restart-only settings, v1/v2 fallback and bounded SDK v2 navigation");
   return 0;
+#endif
 }

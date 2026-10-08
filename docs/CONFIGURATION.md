@@ -8,6 +8,14 @@
 
 运行配置位于游戏的 **`bin/.l4d2bridge/bridge.conf`**。`client.*` 作用于游戏内的 Bridge Client；`server.*` 作用于渲染 Host，不指联机游戏服务器。更改后退出游戏及 Host，再重启；同一个键只保留一份。可选片段需要合并到该文件，不会因为放在旁边就自动生效。`dxvk.conf` 是后端配置，不能与 `bridge.conf` 混用。
 
+## L4N 常用设置（当前分支新增）
+
+可选 x86 L4N SDK v2 插件可通过 [常用设置菜单](L4N-BRIDGE-CONTROLS.md) 减少手工编辑。Bridge 本体不依赖插件；插件只查询状态和发送控制请求，由游戏内 `dxvk_d3d9.dll` 复用实际 Config 路径安全保存。
+
+Memory Policy 立即调用运行时 SetPolicy 并保存 `client.pageBlockRetentionPolicy`，分别报告两步结果。Host 与 ReShade Presenter 只保存目标配置，下次完整启动生效；不能运行时切换 Host，Presenter 菜单不负责安装 ReShade。Status 区分运行 Host 和已保存 Host。当前验证的 ReShade 组合仍是 x64 Host + Vulkan ReShade 6.0.1，启用 Presenter 不自动修改 Host。菜单没有测试/诊断选项；旧 Bridge 下新增持久化菜单不可用，原 Stats/GC/会话策略仍可用。
+
+本功能尚不在既有 `v1.2.0-dev.1` 发布附件中；请使用当前提交的配套构建。普通手工修改配置仍按上文完整重启，只有新控制接口的 Memory Policy 同时执行即时修改。
+
 ## 后端、进程与呈现
 
 | 配置 | 当前随包值 | 作用及注意事项 | 相比 1.1 |

@@ -24,10 +24,29 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "PageBlock GC $arch compilation failed" }
   & ".\pageblock-$arch.exe"
   if ($LASTEXITCODE -ne 0) { throw "PageBlock GC $arch tests failed: $LASTEXITCODE" }
+  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /utf-8 "/I$source/bridge/src/client" "/I$source/bridge/src/util" "$repoRoot/tests/bridge_settings.cpp" "/Fe:bridge-settings-$arch.exe"
+  if ($LASTEXITCODE -ne 0) { throw "Common Bridge settings $arch compilation failed" }
+  & ".\bridge-settings-$arch.exe"
+  if ($LASTEXITCODE -ne 0) { throw "Common Bridge settings $arch tests failed: $LASTEXITCODE" }
+  # Existing upstream Config/util headers retain these unrelated warnings. New settings/editor tests stay /W4 /WX.
+  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /utf-8 /DNOMINMAX /wd4100 /wd4505 /wd4189 /wd4996 /wd4459 /wd4267 "/I$source/bridge/src/util" "/I$source/public/include" "$repoRoot/tests/bridge_config.cpp" "$source/bridge/src/util/config/config.cpp" "/Fe:bridge-config-$arch.exe" /link psapi.lib shlwapi.lib
+  if ($LASTEXITCODE -ne 0) { throw "Actual Config $arch compilation failed" }
+  foreach ($mode in @('', '--server')) {
+    if ($mode) { & ".\bridge-config-$arch.exe" $mode } else { & ".\bridge-config-$arch.exe" }
+    if ($LASTEXITCODE -ne 0) { throw "Actual Config $arch $mode tests failed: $LASTEXITCODE" }
+  }
   if ($arch -eq 'x86') {
-    & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /wd4100 "/I$source/bridge/src/util" "$repoRoot/tests/l4n_plugin.cpp" /Fe:l4n-plugin-test.exe /link '/EXPORT:L4D2BridgePageBlockControl=_L4D2BridgePageBlockControl@8'
-    if ($LASTEXITCODE -ne 0) { throw 'L4N v2 test compilation failed' }
-    & ./l4n-plugin-test.exe (Join-Path $repoRoot '.deps/l4n-plugin/L4D2BridgePlugin.dll')
-    if ($LASTEXITCODE -ne 0) { throw "L4N v2 callback tests failed: $LASTEXITCODE" }
+    foreach ($mode in @('modern', 'legacy', 'missing')) {
+      $compileArgs = @('/nologo', '/std:c++17', '/EHsc', '/W4', '/WX', '/wd4100', "/I$source/bridge/src/util", "/I$source/bridge/src/client", "$repoRoot/tests/l4n_plugin.cpp", "/Fe:l4n-plugin-$mode.exe")
+      if ($mode -eq 'modern') { $compileArgs += '/DL4D2_TEST_GENERAL' }
+      if ($mode -eq 'missing') { $compileArgs += '/DL4D2_TEST_NO_API' }
+      $compileArgs += '/link'
+      if ($mode -ne 'missing') { $compileArgs += '/EXPORT:L4D2BridgePageBlockControl=_L4D2BridgePageBlockControl@8' }
+      if ($mode -eq 'modern') { $compileArgs += '/EXPORT:L4D2BridgeControl=_L4D2BridgeControl@8' }
+      & cl.exe @compileArgs
+      if ($LASTEXITCODE -ne 0) { throw "L4N $mode test compilation failed" }
+      & ".\l4n-plugin-$mode.exe" (Join-Path $repoRoot '.deps/l4n-plugin/L4D2BridgePlugin.dll')
+      if ($LASTEXITCODE -ne 0) { throw "L4N $mode callback tests failed: $LASTEXITCODE" }
+    }
   }
 } finally { Pop-Location }

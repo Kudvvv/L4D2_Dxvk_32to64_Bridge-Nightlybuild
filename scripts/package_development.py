@@ -90,7 +90,7 @@ def package(args):
             release_guide = "DEVELOPMENT-V1.1.2.md"
         (output / "PATCH-INSTRUCTIONS.md").write_text(
             f"# {version}\n\nRead [experimental release instructions](docs/{release_guide}), "
-            "[configuration reference](docs/CONFIGURATION.md) and [residency experiment instructions](docs/PAGEBLOCK-RESIDENCY-EXPERIMENT.md). "
+            "[configuration reference](docs/CONFIGURATION.md), [optional L4N settings](docs/L4N-BRIDGE-CONTROLS.md) and [residency experiment instructions](docs/PAGEBLOCK-RESIDENCY-EXPERIMENT.md). "
             "Replace all three matched Bridge binaries. The patch preserves runtime configuration/backends. "
             "The full package includes default configuration and DXVK. L4N plugin is optional. "
             "Do not run Install-ColorDiagnostics.ps1 for a normal update: it actively enables colour diagnostics.\n",

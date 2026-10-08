@@ -6,6 +6,8 @@
 
 **Current experimental version: 1.2.0-dev.1.** Integrates PageBlock management/recovery, the second fullscreen/windowed Reset fix, crash/API/memory diagnostics and opt-in network colour diagnostics. See [experimental download and setup](docs/RELEASE-V1.2.0-dev.1.md) and [cumulative changes since 1.1](docs/CHANGES-SINCE-V1.1.md). Source remains on `codex/development-1.1.2-dev.1`; tag `v1.2.0-dev.1` is a GitHub prerelease. Network colour and game-module crash reports remain unresolved. v1.1.1 remains the last official release.
 
+**当前分支新增（尚未重新发布）：**可选 [L4N 常用设置菜单](docs/L4N-BRIDGE-CONTROLS.md)：Status → GC → Memory Policy → ReShade Presenter → Host。Memory Policy 即时生效并保存；Host/Presenter 保存后完整重启生效，插件不直接编辑配置。使用本次提交的配套构建；上面的 `v1.2.0-dev.1` 已发布附件不包含本轮功能。
+
 <a id="chinese"></a>
 
 ## 项目目的与当前状态

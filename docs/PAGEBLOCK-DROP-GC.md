@@ -2,14 +2,14 @@
 
 此功能属于开发实验，**不是已发布的 v1.1.1 补丁内容**。正常推荐配置保持 `learned-aggressive`；省略配置键时的兼容回退仍为 `keep`。不修改 Present、Host 位数选择、DXVK 或正式发布版本号。
 
-当前 **[1.1.2-dev.3 residency 实验](PAGEBLOCK-RESIDENCY-EXPERIMENT.md)** 保留统一 Entry reclaim 与 capability/safety/learned 分类，补齐 Q8W8V8U8、ATI1/ATI2 当前内容恢复。实验 ZIP 沿用原 ZIP 专用下载分支，开发源码未推送。插件在普通开发包的 `optional/L4N/` 中；实验 ZIP 直接放在实际安装路径。下文原 `5951831` CI 是历史记录。
+当前分支的可选 L4N 插件已扩展为 [常用设置菜单](L4N-BRIDGE-CONTROLS.md)，保持 PageBlock reclaim、capability/safety/learned 分类和三种 GC 语义。此前 [1.1.2-dev.3 residency 实验](PAGEBLOCK-RESIDENCY-EXPERIMENT.md) 和已发布 `v1.2.0-dev.1` 是历史产物，不含本轮常用菜单；下文 `5951831` CI 也属于历史记录。插件在开发包 `optional/L4N/` 中，Bridge 本体不依赖插件。
 
 ## 安装和使用
 
 1. 退出游戏与桥，备份客户端和两种 Host。
 2. 使用 `l4d2-bridge-pageblock-drop-experiment` 构建产物，将 `bin` 合并进游戏目录。三个桥文件必须配套更新；保留现有 DXVK/mem1、ReShade 和 `bridge.conf`。
 3. 可选菜单插件为 x86 `bin/neko/plugins/L4D2BridgePlugin.dll`。在支持此 SDK v2 的 L4N HUD 插件菜单内选择 **L4D2 Bridge**。插件只使用提供的 `IL4NPlugin`、`GetInterfaceVersion()=2`、`GetL4NPluginInstance` 和 `RequestHudMenu(bool)`；没有 Source 控制台命令、L4N 内部 hook 或自实现 GC。
-4. 菜单提供 PageBlock Stats、Retention Policy（keep / learned-aggressive / drop [experimental]）及 GC Learned / Aggressive / Force。策略切换仅影响当前会话，不写入 bridge.conf；进入 drop 不自动清理已有 backing，需要另选 GC Aggressive/Force。
+4. 根菜单固定为 Status、GC、Memory Policy、ReShade Presenter、Host。GC 子菜单提供 Learned / Aggressive / Force。新通用 API 下 Memory Policy 即时调用原 SetPolicy 并由 Client 保存配置，分别报告运行/保存的结果；旧 Bridge 回退仍只影响当前会话。Host 和 Presenter 只保存，下次完整启动生效。进入 drop 不自动清理已有 backing，需要另选 GC Aggressive/Force。
 5. 若需启动即启用 drop，手动合并 `PAGEBLOCK-DROP.conf`：
 
 ```ini
@@ -61,11 +61,11 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 
 ## 控制 ABI 与插件
 
-客户端新增命名导出 `L4D2BridgePageBlockControl`（WINAPI/stdcall），见 `pageblock_control.h`：ABI v1 的 Request=16/Response=208 和 Stats/SetPolicy/Gc 枚举 0/1/2 保持不变。新增详细 v2 Response=656，按版本/大小选择写入；旧插件 buffer 不会被扩大。`experimental-3` 插件优先 v2，旧 Bridge 拒绝后回退 v1。L4N **插件接口 version 2** 与 Bridge **控制 ABI version 2** 是独立协议。
+客户端新增命名导出 `L4D2BridgePageBlockControl`（WINAPI/stdcall），见 `pageblock_control.h`：ABI v1 的 Request=16/Response=208 和 Stats/SetPolicy/Gc 枚举 0/1/2 保持不变。新增详细 v2 Response=656，按版本/大小选择写入；旧插件 buffer 不会被扩大。插件的 Stats/GC 优先 v2，旧 Bridge 拒绝后回退 v1；新增通用 `L4D2BridgeControl` 不改变这个导出及 session-only SetPolicy。L4N **插件接口 version 2** 与 Bridge **控制 ABI version 2** 是独立协议。
 
 插件枚举当前已加载模块，查找命名导出，不主动 LoadLibrary 一个 D3D9 runtime。HUD menu 的 callback/user_data 指针按 SDK KeyValues 格式生成。失败显示 HRESULT；GC 返回统计子菜单。插件不持有 D3D9 资源引用，不操作资源内存。未来其他 UI 可复用同一控制 ABI。
 
-菜单返回由 L4N HUD 自身管理，不再生成插件自己的 `Back` 项。SDK 的非空 callback 返回值代表进入子菜单，不能用“再次返回根菜单”模拟退回上一级。`experimental-2` 及后续版本中说明/统计文字回调返回 nullptr，点击不会新增层级或执行 Bridge 操作；统计在重新进入 PageBlock Stats 时重新查询，不再用递归 Refresh。策略结果页返回 Retention Policy，统计和 GC 结果页返回 L4D2 Bridge。策略菜单不显示会因旧页面缓存而过期的 Current 标签，当前值可在 PageBlock Stats 中查询。
+菜单返回由 L4N HUD 自身管理，不再生成插件自己的 `Back` 项。SDK 的非空 callback 返回值代表进入子菜单，不能用“再次返回根菜单”模拟退回上一级。`experimental-2` 及后续版本中说明/统计文字回调返回 nullptr，点击不会新增层级或执行 Bridge 操作；统计在重新进入 Status 时重新查询，不再用递归 Refresh。策略结果页返回 Memory Policy，GC 结果页返回 GC，Status 返回 L4D2 Bridge。策略菜单不显示会因旧页面缓存而过期的 Current 标签，当前值可在 Status 中查询。
 
 导航修正不属于下文历史 `5951831` 产物。本轮实际 Windows DLL 的 x64 Wine mock 回归包括 100 轮父菜单导航与 v1/v2 fallback；x86 编译通过但本地未执行。该检查不能替代真实 L4N HUD 验证。根菜单明确显示 `Last action result`，是上次 GC/动作的静态结果，不是实时残余；Stats 需重新进入获取新快照。
 
