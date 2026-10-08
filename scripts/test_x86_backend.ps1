@@ -24,7 +24,8 @@ public static class BackendLoader {
 }
 '@
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$dll = (Resolve-Path (Join-Path $repoRoot 'dist/l4d2-x86-host-comparison/bin/.l4d2bridge/d3d9vk_x86.dll')).Path
+# Test the DLL users receive in the full package, including development builds.
+$dll = (Resolve-Path (Join-Path $repoRoot 'dist/l4d2-bridge/bin/.l4d2bridge/d3d9vk_x86.dll')).Path
 $module = [BackendLoader]::LoadLibraryExW($dll, [IntPtr]::Zero, 0x1100)
 if ($module -eq [IntPtr]::Zero) { throw "DXVK LoadLibrary failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
 try {
