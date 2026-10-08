@@ -163,7 +163,7 @@ int wmain(int argc, wchar_t** argv) {
   assert(configured.host == general::Host::X86 && runtimeSets == setsBeforeHost);
   configError = E_ACCESSDENIED;
   host.select("Memory Policy"); host.select("keep");
-  assert(host.page().find("Runtime policy changed to keep") != std::string::npos && host.page().find("Warning: failed to persist") != std::string::npos); host.back(); host.back();
+  assert(host.page().find("Runtime policy changed to keep") != std::string::npos && host.page().find("Warning: failed to persist") != std::string::npos && host.page().find("denied") != std::string::npos); host.back(); host.back();
   host.select("Host"); host.select("x64 Host"); assert(host.page().find("Failed to persist") != std::string::npos && configured.host == general::Host::X86); host.back(); host.back();
   configError = S_OK; runtimeFailure = true;
   host.select("Memory Policy"); host.select("drop [experimental]");

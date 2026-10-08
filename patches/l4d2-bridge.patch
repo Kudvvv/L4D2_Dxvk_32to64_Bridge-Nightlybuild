@@ -124,7 +124,7 @@ index 0000000..f1566a2
 +}
 diff --git a/bridge/src/client/bridge_settings.h b/bridge/src/client/bridge_settings.h
 new file mode 100644
-index 0000000..0308728
+index 0000000..ba680c7
 --- /dev/null
 +++ b/bridge/src/client/bridge_settings.h
 @@ -0,0 +1,110 @@
@@ -186,6 +186,7 @@ index 0000000..0308728
 +    Response result;
 +    Updates updates;
 +    if (operation == Operation::SetMemoryPolicy) {
++      updates.emplace_back("client.pageBlockRetentionPolicy", policyName(static_cast<l4d2_control::Policy>(request->value)));
 +      result.flags |= RuntimeAttempted;
 +      l4d2_control::Request runtimeRequest;
 +      runtimeRequest.operation = l4d2_control::Operation::SetPolicy; runtimeRequest.value = request->value;
@@ -195,7 +196,6 @@ index 0000000..0308728
 +        if (SUCCEEDED(result.runtimeResult)) { result.runtimePolicy = runtimeResponse.policy; }
 +      }
 +      catch (...) { result.runtimeResult = E_FAIL; }
-+      updates.emplace_back("client.pageBlockRetentionPolicy", policyName(static_cast<l4d2_control::Policy>(request->value)));
 +    } else if (operation == Operation::SetHostMode) {
 +      updates = { { "forceX64Server", "True" }, { "client.testX86Server", request->value == static_cast<uint32_t>(Host::X86) ? "True" : "False" } };
 +    } else if (operation == Operation::SetReShadePresenter) {
@@ -8355,7 +8355,7 @@ index 0000000..91ee577
 +            const Digest& digest, HRESULT lockResult, HRESULT unlockResult, bool valid, bool shared = false);
 +}
 diff --git a/bridge/src/util/config/config.cpp b/bridge/src/util/config/config.cpp
-index 5e1deb0..4f2eba2 100644
+index 5e1deb0..48aaaae 100644
 --- a/bridge/src/util/config/config.cpp
 +++ b/bridge/src/util/config/config.cpp
 @@ -39,6 +39,7 @@
@@ -8445,7 +8445,7 @@ index 5e1deb0..4f2eba2 100644
    static std::filesystem::path getUserSettingsFilePath() {
      const char* localAppData = std::getenv("LOCALAPPDATA");
      if (localAppData == nullptr || localAppData[0] == '\0' || !dxvk::util::RtxFileSys::isInitialized()) {
-@@ -244,17 +188,18 @@ namespace bridge_util {
+@@ -244,28 +188,53 @@ namespace bridge_util {
    Config Config::getUserConfig(const App app, void* hModuleConfigOwner) {
      Config config;
  
@@ -8470,9 +8470,15 @@ index 5e1deb0..4f2eba2 100644
 +    s_userConfigPath = userConfPath;
 +    s_clientConfig = app == App::Client;
  
-     Logger::info(std::string("Trying to open config file: ") + userConfPath.string());
+-    Logger::info(std::string("Trying to open config file: ") + userConfPath.string());
++    Logger::info(std::string("Trying to open config file: ") + userConfPath.u8string());
      if (!std::filesystem::exists(userConfPath)) {
-@@ -266,6 +211,30 @@ namespace bridge_util {
+       return config;
+     }
+ 
+-    Logger::info(std::string("Found user config file: ") + userConfPath.string());
++    Logger::info(std::string("Found user config file: ") + userConfPath.u8string());
+     return loadFromFile(userConfPath);
    }
  
  

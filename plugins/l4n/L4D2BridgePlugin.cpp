@@ -61,8 +61,9 @@ class BridgePlugin final : public IL4NPlugin {
   static std::string error(HRESULT hr) {
     char code[40] {}, description[256] {};
     sprintf_s(code, "0x%08lx", static_cast<unsigned long>(hr));
+    const DWORD message = HRESULT_FACILITY(hr) == FACILITY_WIN32 ? HRESULT_CODE(hr) : static_cast<DWORD>(hr);
     FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr,
-      static_cast<DWORD>(hr), MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), description, sizeof(description), nullptr);
+      message, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), description, sizeof(description), nullptr);
     return std::string(code) + (description[0] ? std::string(" ") + description : "");
   }
   const char* page(const char* title, const std::string& rows) {

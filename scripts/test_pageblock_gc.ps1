@@ -35,6 +35,12 @@ try {
     if ($mode) { & ".\bridge-config-$arch.exe" $mode } else { & ".\bridge-config-$arch.exe" }
     if ($LASTEXITCODE -ne 0) { throw "Actual Config $arch $mode tests failed: $LASTEXITCODE" }
   }
+  $unicodeDirectory = Join-Path $output ('config-' + [char]0x914d + [char]0x7f6e)
+  New-Item -ItemType Directory -Force $unicodeDirectory | Out-Null
+  $unicodeExecutable = Join-Path $unicodeDirectory "bridge-config-$arch.exe"
+  Copy-Item ".\bridge-config-$arch.exe" $unicodeExecutable -Force
+  & $unicodeExecutable
+  if ($LASTEXITCODE -ne 0) { throw "Unicode Config path $arch tests failed: $LASTEXITCODE" }
   if ($arch -eq 'x86') {
     foreach ($mode in @('modern', 'legacy', 'missing')) {
       $compileArgs = @('/nologo', '/std:c++17', '/EHsc', '/W4', '/WX', '/wd4100', "/I$source/bridge/src/util", "/I$source/bridge/src/client", "$repoRoot/tests/l4n_plugin.cpp", "/Fe:l4n-plugin-$mode.exe")
