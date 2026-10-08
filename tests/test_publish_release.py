@@ -30,6 +30,7 @@ class Publishing(unittest.TestCase):
             "RECIPE_DIGEST": "c" * 64, "GITHUB_RUN_ID": "123",
         }))
         self.existing = None
+        self.other_releases = []
         self.assets = []
         self.contents = {}
         self.api = self.enterContext(patch.object(publish_release, "api", side_effect=self.read_api))
@@ -37,9 +38,15 @@ class Publishing(unittest.TestCase):
 
     def read_api(self, path):
         if path == "repos/owner/repo/releases/tags/tag":
-            if self.existing is None:
+            # GitHub's tag endpoint does not expose an unpublished draft tag.
+            if self.existing is None or self.existing["draft"]:
                 raise HTTPError(path, 404, "missing", {}, None)
             return self.existing
+        if path.startswith("repos/owner/repo/releases?per_page=100&page="):
+            page = int(path.rsplit("=", 1)[1])
+            releases = self.other_releases + (
+                [] if self.existing is None else [dict(self.existing, tag_name="tag")])
+            return releases[(page - 1) * 100:page * 100]
         if path.startswith("repos/owner/repo/releases/42/assets?per_page=100&page="):
             page = int(path.rsplit("=", 1)[1])
             return self.assets[(page - 1) * 100:page * 100]
@@ -88,6 +95,70 @@ class Publishing(unittest.TestCase):
     def test_published_collision_refused(self):
         self.existing = {"id": 42, "draft": False}
         with self.assertRaises(RuntimeError):
+            publish_release.publish()
+        self.run.assert_not_called()
+
+    def test_draft_without_published_tag_resumes(self):
+        self.existing = {"id": 42, "draft": True}
+        self.add_asset("full.zip")
+        with self.assertRaises(HTTPError) as missing_tag:
+            self.read_api("repos/owner/repo/releases/tags/tag")
+        self.assertEqual(missing_tag.exception.code, 404)
+        publish_release.publish()
+        commands = self.release_commands()
+        self.assertEqual([command[2] for command in commands], ["upload", "edit"])
+        self.assertNotIn("full.zip", [Path(name).name for name in commands[0][4:]])
+
+    def test_release_list_pagination_finds_draft(self):
+        self.other_releases = [
+            {"id": 100 + index, "tag_name": f"other-{index}", "draft": False}
+            for index in range(100)
+        ]
+        self.existing = {"id": 42, "draft": True}
+        publish_release.publish()
+        self.assertEqual([command[2] for command in self.release_commands()], ["upload", "edit"])
+        self.api.assert_any_call("repos/owner/repo/releases?per_page=100&page=2")
+
+    def test_duplicate_tags_across_release_pages_stop_before_writes(self):
+        self.other_releases = [
+            {"id": 100 + index, "tag_name": f"other-{index}", "draft": False}
+            for index in range(100)
+        ]
+        self.other_releases[0] = {"id": 99, "tag_name": "tag", "draft": True}
+        self.existing = {"id": 42, "draft": True}
+        with self.assertRaisesRegex(RuntimeError, "Multiple releases"):
+            publish_release.publish()
+        self.run.assert_not_called()
+        self.api.assert_any_call("repos/owner/repo/releases?per_page=100&page=2")
+
+    def test_release_listing_failure_is_not_treated_as_absent(self):
+        for status in (404, 503):
+            with self.subTest(status=status):
+                def fail_listing(path):
+                    if "/releases?" in path:
+                        raise HTTPError(path, status, "unavailable", {}, None)
+                    return self.read_api(path)
+
+                self.api.side_effect = fail_listing
+                with self.assertRaises(HTTPError) as failure:
+                    publish_release.publish()
+                self.assertEqual(failure.exception.code, status)
+                self.run.assert_not_called()
+
+    def test_later_release_page_failure_does_not_use_partial_match(self):
+        self.other_releases = [
+            {"id": 100 + index, "tag_name": f"other-{index}", "draft": False}
+            for index in range(100)
+        ]
+        self.other_releases[0] = {"id": 42, "tag_name": "tag", "draft": True}
+
+        def fail_later_page(path):
+            if path == "repos/owner/repo/releases?per_page=100&page=2":
+                raise HTTPError(path, 503, "unavailable", {}, None)
+            return self.read_api(path)
+
+        self.api.side_effect = fail_later_page
+        with self.assertRaises(HTTPError):
             publish_release.publish()
         self.run.assert_not_called()
 

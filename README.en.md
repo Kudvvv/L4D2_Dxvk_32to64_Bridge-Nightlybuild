@@ -29,7 +29,7 @@ Under **Actions → Build latest upstream Bridge → Run workflow**:
 
 Deduplication checks both upstream SHA and a fingerprint of build/package/test inputs. Versions use `nightly-YYYYMMDD-upstreamSHA-rRecipeDigest-bRunID.Attempt`. Dates use upstream commit UTC time. Rebuilds and reruns have separate versions, preserving old assets. Release notes and packaged `UPSTREAM.json` record full identities. Patch, compile or test failures prevent publication.
 
-When reusing a local source checkout, the build script verifies the complete patch and index, rejecting additional source changes while preserving the checkout. Rerunning a failed publish job verifies the contents of existing draft assets and uploads only missing files. Conflicting assets stop publication; existing files are never overwritten.
+When reusing a local source checkout, the build script verifies the complete patch and index, rejecting additional source changes while preserving the checkout. Rerunning a failed publish job searches paginated release listings for the unpublished draft, verifies existing assets and uploads only missing files. Conflicting assets stop publication; existing files are never overwritten.
 
 ## Download and installation
 

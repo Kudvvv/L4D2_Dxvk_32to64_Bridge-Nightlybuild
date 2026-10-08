@@ -4,13 +4,27 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
-from urllib.error import HTTPError
 from detect_release import api
 
 
 def file_sha256(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def find_release(repo, tag):
+    match = None
+    page = 1
+    while True:
+        releases = api(f"repos/{repo}/releases?per_page=100&page={page}")
+        for release in releases:
+            if release["tag_name"] == tag:
+                if match is not None:
+                    raise RuntimeError(f"Multiple releases use tag: {tag}")
+                match = release
+        if len(releases) < 100:
+            return match
+        page += 1
 
 
 def verify_existing_asset(repo, asset, path):
@@ -71,12 +85,7 @@ def publish():
                 or fields[0] != file_sha256(path)):
             raise ValueError(f"Invalid archive checksum: {path}")
         uploads.extend([str(path), str(checksum)])
-    try:
-        existing = api(f"repos/{repo}/releases/tags/{tag}")
-    except HTTPError as error:
-        if error.code != 404:
-            raise
-        existing = None
+    existing = find_release(repo, tag)
     if existing and not existing["draft"]:
         raise RuntimeError("Published release already exists; refusing to replace it")
     if existing:
