@@ -12,12 +12,22 @@
 static l4d2_control::Request last;
 static l4d2_control::Policy policy = l4d2_control::Policy::LearnedAggressive;
 static unsigned int calls = 0;
-static bool failRequest = false;
+static bool failRequest = false, legacyOnly = false;
 extern "C" HRESULT WINAPI L4D2BridgePageBlockControl(const l4d2_control::Request* request, l4d2_control::Response* response) {
   ++calls; last = *request;
   if (failRequest) { return E_FAIL; }
+  if (legacyOnly && request->version != l4d2_control::kVersion) { return E_INVALIDARG; }
+  const bool detailed = request->version == l4d2_control::kDetailedVersion;
+  assert(response->version == request->version && response->bytes == (detailed ? sizeof(l4d2_control::DetailedResponse) : sizeof(*response)));
   if (request->operation == l4d2_control::Operation::SetPolicy) { policy = static_cast<l4d2_control::Policy>(request->value); }
-  *response = {}; response->policy = policy;
+  if (detailed) {
+    l4d2_control::DetailedResponse result;
+    result.coverage.tracked = 10; result.coverage.capable = 6; result.coverage.nonReclaimable = 4;
+    result.coverage.learnedKeep = 2; result.coverage.learnedUnclassified = 8;
+    result.skippedUnsupportedCapability = 3; result.skippedRecoveryUnavailable = 1;
+    std::memcpy(response, &result, sizeof(result));
+  } else { *response = {}; }
+  response->policy = policy;
   response->flags = 2; response->pageBlocks = 10; response->pageBlocksEvicted = 4;
   return S_OK;
 }
@@ -51,6 +61,7 @@ int wmain(int argc, wchar_t** argv) {
   MenuHost host(plugin->RequestHudMenu(false));
   host.select("PageBlock Stats");
   assert(host.pages.size() == 2 && host.page().find("Blocks: 10") != std::string::npos && last.operation == l4d2_control::Operation::Stats);
+  assert(host.page().find("Tracked: 10; capable: 6; non-reclaimable: 4") != std::string::npos);
   auto previousCalls = calls;
   for (unsigned int i = 0; i < 100; ++i) {
     host.select("Blocks: 10; locked: 0; transferring: 0");
@@ -89,6 +100,14 @@ int wmain(int argc, wchar_t** argv) {
     assert(host.pages.size() == 3); host.back(); host.back();
     host.select("GC Learned"); assert(host.pages.size() == 2); host.back();
   }
+  legacyOnly = true;
+  const auto beforeLegacy = calls;
+  host.select("PageBlock Stats");
+  assert(host.pages.size() == 2 && host.page().find("Blocks: 10") != std::string::npos
+    && host.page().find("Tracked:") == std::string::npos && calls == beforeLegacy + 2);
+  host.back();
+  host.select("GC Aggressive"); assert(last.version == l4d2_control::kVersion && last.value == 1);
+  host.back(); legacyOnly = false;
   failRequest = true;
   host.select("GC Force");
   assert(host.pages.size() == 2 && host.page().find("\"Bridge Request Failed\"") == 0);

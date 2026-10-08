@@ -4,8 +4,132 @@
 #include <cassert>
 #include <cstdio>
 #include "device_reset.h"
+#include "swapchain_references.h"
+
+struct BackendObject : IUnknown {
+  unsigned references = 0, releases = 0;
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++references; }
+  ULONG STDMETHODCALLTYPE Release() override {
+    assert(references && "releasing a reference the Bridge does not own");
+    ++releases;
+    return --references;
+  }
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** output) override {
+    if (!output) { return E_POINTER; }
+    *output = nullptr;
+    if (iid == __uuidof(IUnknown)) {
+      *output = this; AddRef(); return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+};
+
+struct InterfaceAlias : IUnknown {
+  BackendObject& identity;
+  explicit InterfaceAlias(BackendObject& object) : identity(object) {}
+  ULONG STDMETHODCALLTYPE AddRef() override { return identity.AddRef(); }
+  ULONG STDMETHODCALLTYPE Release() override { return identity.Release(); }
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** output) override {
+    return identity.QueryInterface(iid, output);
+  }
+};
+
+// DXVK checks remaining public backbuffer references after clearing its internal ones.
+static HRESULT resetBackend(const BackendObject& first, const BackendObject& second) {
+  return first.references || second.references ? D3DERR_INVALIDCALL : D3D_OK;
+}
+
+static void testReferences() {
+  // Negative control: the old force-release of RT0 hides its alias, while BB1 leaks.
+  BackendObject oldFirst, oldSecond;
+  oldFirst.AddRef(); oldFirst.AddRef(); oldSecond.AddRef();
+  while (oldFirst.Release()) {}
+  assert(resetBackend(oldFirst, oldSecond) == D3DERR_INVALIDCALL);
+  oldSecond.Release();
+
+  // The first candidate balanced links but leaked every query's Get reference.
+  BackendObject oldQueryTarget;
+  l4d2_reset::SwapchainReferences oldRefs;
+  oldQueryTarget.AddRef(); oldRefs.adopt(100, &oldQueryTarget);
+  oldQueryTarget.AddRef(); // GetRenderTarget; map update supplies no Release.
+  assert(oldRefs.release(100) && oldQueryTarget.references == 1);
+  assert(resetBackend(oldQueryTarget, oldSecond) == D3DERR_INVALIDCALL);
+  oldQueryTarget.Release();
+
+  l4d2_reset::SwapchainReferences refs;
+  l4d2_reset::SurfaceQueries queries;
+  BackendObject swapchain, first, second, depth;
+  BackendObject explicitTarget;
+  explicitTarget.AddRef();
+  for (unsigned count : { 1u, 2u, 1u, 2u, 1u }) {
+    swapchain.AddRef(); refs.adopt(10, &swapchain);
+    first.AddRef(); refs.adopt(11, &first, 10);
+    if (count == 2) { second.AddRef(); refs.adopt(12, &second, 10); }
+    first.AddRef(); refs.adopt(13, &first);
+    depth.AddRef(); refs.adopt(14, &depth);
+    for (unsigned query = 0; query < 10000; ++query) {
+      // A game query AddRef is local; each Host query owns only its temporary Get.
+      first.AddRef();
+      assert(queries.finish(D3D_OK, &first, &first) == D3D_OK);
+      depth.AddRef();
+      assert(queries.finish(D3D_OK, &depth, &depth) == D3D_OK);
+      explicitTarget.AddRef();
+      assert(queries.finish(D3D_OK, &explicitTarget, &explicitTarget) == D3D_OK);
+      assert(first.references == 2 && depth.references == 1 && explicitTarget.references == 1);
+    }
+    assert(refs.release(13) && first.references == 1);
+    assert(refs.release(14) && !depth.references);
+    unsigned erased = 0;
+    assert(refs.releaseChildren(10, [&](uint32_t handle) {
+      assert(handle == 11 || handle == 12); ++erased;
+    }) == count);
+    assert(erased == count);
+    assert(refs.release(10) && !swapchain.references);
+    assert(resetBackend(first, second) == D3D_OK);
+    // Queued child unlink follows container destruction and must not release twice.
+    assert(!refs.release(11) && !refs.release(12) && !refs.release(10));
+  }
+  assert(queries.count() == 150000 && !queries.mismatches());
+  explicitTarget.AddRef();
+  assert(queries.finish(D3D_OK, &explicitTarget, &depth) == D3DERR_INVALIDCALL);
+  assert(explicitTarget.references == 1 && queries.mismatches() == 1);
+  assert(queries.finish(D3D_OK, nullptr, &depth) == D3DERR_INVALIDCALL);
+  assert(queries.finish(D3DERR_NOTFOUND, nullptr, &depth) == D3DERR_NOTFOUND);
+  explicitTarget.AddRef();
+  assert(queries.finish(E_FAIL, &explicitTarget, &depth) == E_FAIL);
+  assert(explicitTarget.references == 1 && queries.mismatches() == 2);
+  InterfaceAlias alias(explicitTarget);
+  alias.AddRef();
+  assert(queries.finish(D3D_OK, &alias, &explicitTarget) == D3D_OK);
+  assert(explicitTarget.references == 1 && queries.mismatches() == 2);
+  explicitTarget.Release();
+
+  // Another owner and a backend overlay reference survive Bridge cleanup.
+  BackendObject retained, other;
+  retained.AddRef(); retained.AddRef(); refs.adopt(21, &retained, 20);
+  other.AddRef(); refs.adopt(31, &other, 30);
+  assert(refs.releaseChildren(20, [](uint32_t) {}) == 1);
+  assert(retained.references == 1 && other.references == 1);
+  assert(resetBackend(retained, second) == D3DERR_INVALIDCALL);
+  retained.Release();
+  assert(resetBackend(retained, second) == D3D_OK);
+  assert(refs.release(31) && !other.references);
+  assert(refs.releaseChildren(0, [](uint32_t) {}) == 0);
+
+  // Replacement adopts a fresh Get reference; standalone and child unlink are balanced.
+  first.AddRef(); refs.adopt(40, &first);
+  first.AddRef(); refs.adopt(40, &first);
+  assert(first.references == 1);
+  assert(refs.release(40) && !first.references);
+  second.AddRef(); refs.adopt(41, &second, 42);
+  assert(refs.release(41) && !second.references);
+  assert(refs.releaseChildren(42, [](uint32_t) {}) == 0);
+  refs.adopt(50, nullptr);
+  assert(!refs.release(50));
+}
 
 int main() {
+  testReferences();
   assert(bridge_reset::waitSlice(100, 300000, 100, 1000) == 1000);
   assert(bridge_reset::waitSlice(100, 300000, 300099, 1000) == 1);
   assert(bridge_reset::waitSlice(100, 300000, 300100, 1000) == 0);
@@ -43,4 +167,6 @@ int main() {
   assert(state.cooperative(D3D_OK) == D3DERR_DEVICELOST);
   assert(rebuilds == 1);
   puts("PASS: failed reset, repeated failure, success retry, preserved cache, timeout without read/pop, late success rejected");
+  puts("PASS: backbuffers 1->2->1, aliased RT0, depth, ordered teardown, repeated unlink, retained external reference");
+  puts("PASS: first-candidate query leak negative control, 150000 query references balanced, RT/depth/explicit targets, COM identity aliases, null/mismatch/failure results");
 }

@@ -17,14 +17,18 @@ def package():
     target = output / 'bin/neko/plugins/L4D2BridgePlugin.dll'
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(ROOT / '.deps/l4n-plugin/L4D2BridgePlugin.dll', target)
-    shutil.copy2(ROOT / 'docs/PAGEBLOCK-DROP-GC.md', output / 'PAGEBLOCK-DROP-GC.md')
+    (output / 'PAGEBLOCK-DROP-GC.md').write_text('# PageBlock experiment\n\nRead [setup, coverage and validation](docs/PAGEBLOCK-RESIDENCY-EXPERIMENT.md) and [Drop/GC controls](docs/PAGEBLOCK-DROP-GC.md).\n')
     shutil.copy2(ROOT / 'config/PAGEBLOCK-DROP.conf', output / 'PAGEBLOCK-DROP.conf')
     # These binaries are experimental; avoid presenting the stable patch guide as their entry point.
     (output / 'PATCH-INSTRUCTIONS.md').unlink()
-    (output / 'EXPERIMENTAL.txt').write_text('PageBlock drop + manual GC experiment; not the official v1.1.1 release. Read PAGEBLOCK-DROP-GC.md.\n')
+    version = (ROOT / 'VERSION').read_text().strip()
+    (output / 'EXPERIMENTAL.txt').write_text(f'{version}: unified PageBlock residency/reclaim experiment; not an official release. Read docs/PAGEBLOCK-RESIDENCY-EXPERIMENT.md.\n')
     hashes = json.loads((output / 'SHA256.json').read_text())
     hashes['bin/neko/plugins/L4D2BridgePlugin.dll'] = hashlib.sha256(target.read_bytes()).hexdigest()
     (output / 'SHA256.json').write_text(json.dumps(hashes, indent=2) + '\n')
+    receipt = json.loads((output / 'BUILD-INFO.json').read_text())
+    receipt.update(kind='pageblock-residency-experiment', optional_plugin=False, files=hashes)
+    (output / 'BUILD-INFO.json').write_text(json.dumps(receipt, indent=2) + '\n')
     print(output)
 
 if __name__ == '__main__':

@@ -54,6 +54,12 @@ jobs:
       - name: Test mandatory device reset results and failure state
         shell: powershell
         run: ./scripts/test_device_reset.ps1
+      - name: Test bounded color diagnostics, texture wire and temporary query references
+        shell: powershell
+        run: |
+          ./scripts/test_color_diagnostics.ps1
+          python -m unittest discover -s tests -p test_color_analysis.py
+          if ($LASTEXITCODE -ne 0) { throw 'Color log analysis tests failed' }
       - name: Package experimental PageBlock controls
         run: python scripts/package_pageblock_experiment.py
       - name: Test x86 diagnostics and shadow eviction

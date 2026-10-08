@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 if (!$Platform) {
   foreach ($arch in @('x86', 'x64')) {
     & powershell.exe -NoProfile -File $PSCommandPath -Platform $arch
-    if ($LASTEXITCODE -ne 0) { throw "Reset contract test failed for $arch" }
+    if ($LASTEXITCODE -ne 0) { throw "Color diagnostics test failed for $arch" }
   }
   exit 0
 }
@@ -14,12 +14,14 @@ $repoRoot = Split-Path $PSScriptRoot -Parent
 $source = Join-Path $repoRoot '.deps/dxvk-remix'
 . (Join-Path $source 'bridge/build_common.ps1')
 SetupVS -Platform $Platform -VcVarsVer '14.29'
-$output = Join-Path $repoRoot ".deps/reset-test-$Platform"
+$output = Join-Path $repoRoot ".deps/color-test-$Platform"
 New-Item -ItemType Directory -Force $output | Out-Null
 Push-Location $output
 try {
-  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /DNOMINMAX "/I$source/bridge/src/util" "/I$source/bridge/src/server" "$repoRoot/tests/device_reset.cpp" /Fe:reset-test.exe
-  if ($LASTEXITCODE -ne 0) { throw 'Reset test compilation failed' }
-  & .\reset-test.exe
-  if ($LASTEXITCODE -ne 0) { throw 'Reset test failed' }
+  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /DNOMINMAX "/I$source/bridge/src/util" "/I$source/bridge/src/server" "$repoRoot/tests/color_diagnostics_test.cpp" "$source/bridge/src/util/color_diagnostics.cpp" /Fe:color-test.exe
+  if ($LASTEXITCODE -ne 0) { throw 'Color test compilation failed' }
+  & .\color-test.exe
+  if ($LASTEXITCODE -ne 0) { throw 'Color test failed' }
+  & .\color-test.exe --cap
+  if ($LASTEXITCODE -ne 0) { throw 'Color file cap test failed' }
 } finally { Pop-Location }

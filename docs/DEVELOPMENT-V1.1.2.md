@@ -4,7 +4,9 @@
 
 # 1.1.2-dev.1：崩溃归因与设备重置加固
 
-这是开发测试版本，最近正式发布仍为 v1.1.1。新增处理尚未通过 Windows 实机 L4D2 验收；不能据此宣称连续过图卡死或 studiorender 崩溃已经修复。
+本页记录 dev.1 的历史实现与当时验证，最近正式发布仍为 v1.1.1。当前累计状态见 [相比 1.1 的更新](CHANGES-SINCE-V1.1.md)：后续已完成作者 x86 GC 与第二版切屏实机测试，偏色与 studiorender 仍在排查；不能据此宣称连续过图卡死或加载崩溃已经修复。
+
+**后续实验：**累计整合版本现定为 **1.2.0-dev.1**，包含 [residency 与格式恢复](PAGEBLOCK-RESIDENCY-EXPERIMENT.md)、[切屏第二版](FULLSCREEN-WINDOW-RESET.md) 和 [偏色诊断](NETWORK-COLOR-DIAGNOSTICS.md)。当前分支名保留不变，以 GitHub prerelease 分发，安装见 [新实验发布说明](RELEASE-V1.2.0-dev.1.md)；下文 dev.1 下载地址、构建结果和历史验证不代表最新包。
 
 ## GitHub 下载
 
@@ -84,7 +86,7 @@ bin/.l4d2bridge/L4D2Bridge32.exe
 ## 已知问题与未完成项
 
 - 连续章节切换发白、Host 低 CPU 挂起：已有 [命令队列修复规划](MAP-TRANSITION-QUEUE-FIX-PLAN.md)，本版没有实现其中的队列超时/丢失唤醒修正，也没有玩家实机通过证据。
-- studiorender.dll：仓库无匹配源代码/已确认故障 RVA；本版提升归因，不修改游戏 DLL 或引擎逻辑。
+- studiorender.dll 崩溃反馈：实际根因仍未确认，保留异常归因与桥自身接口/资源/传输排查；Source 内部对象与游戏逻辑不属于桥的实现或修复计划。
 - Steam Overlay：游戏内 Join Server 可唤出但输入/Shift+Tab 仍未解决，不承诺支持。
 - ReShade 沿用当前输入实现；6.0.1 x64 是已测试参考，不保证其他版本与所有焦点/Reset 场景。此开发版不新增输入方案。
 - x86 Host 地址空间仍受限制；x64 DXVK 数 GiB CPU/mapped backing 不自动等于泄漏。原实机 A/B 数值仍是历史负载观察，本版没有新的内存/FPS 基准。

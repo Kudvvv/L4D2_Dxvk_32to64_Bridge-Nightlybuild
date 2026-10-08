@@ -75,15 +75,25 @@ def package(args):
             shutil.copy2(ROOT / filename, output / filename)
         for directory in ("docs", "config", "patches"):
             shutil.copytree(ROOT / directory, output / directory)
+        scripts = output / "scripts"
+        scripts.mkdir()
+        for filename in ("analyze_api_wait.py", "analyze_color_diagnostics.py"):
+            shutil.copy2(ROOT / "scripts" / filename, scripts / filename)
+        shutil.copy2(ROOT / "scripts/install_color_diagnostics.ps1", output / "Install-ColorDiagnostics.ps1")
         licenses = output / "licenses"
         licenses.mkdir()
         shutil.copy2(source / "bridge/LICENSE-MIT", licenses / "Bridge-MIT.txt")
         shutil.copy2(source / "bridge/ThirdPartyLicenses.txt", licenses / "Bridge-third-party.txt")
         shutil.copy2(ROOT / "licenses/DXVK-LICENSE.txt", licenses / "DXVK-LICENSE.txt")
+        release_guide = f"RELEASE-V{version}.md"
+        if not (ROOT / "docs" / release_guide).exists():
+            release_guide = "DEVELOPMENT-V1.1.2.md"
         (output / "PATCH-INSTRUCTIONS.md").write_text(
-            f"# {version}\n\nRead [development instructions](docs/DEVELOPMENT-V1.1.2.md). "
+            f"# {version}\n\nRead [experimental release instructions](docs/{release_guide}), "
+            "[configuration reference](docs/CONFIGURATION.md) and [residency experiment instructions](docs/PAGEBLOCK-RESIDENCY-EXPERIMENT.md). "
             "Replace all three matched Bridge binaries. The patch preserves runtime configuration/backends. "
-            "The full package includes default configuration and DXVK. L4N plugin is optional.\n",
+            "The full package includes default configuration and DXVK. L4N plugin is optional. "
+            "Do not run Install-ColorDiagnostics.ps1 for a normal update: it actively enables colour diagnostics.\n",
             encoding="utf-8",
         )
         receipt = {"version": version, "build_id": build_id, "patch_sha256": patch_hash,

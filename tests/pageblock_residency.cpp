@@ -19,14 +19,15 @@ struct Backend {
   D3DSURFACE_DESC desc {};
   std::vector<uint8_t> pixels;
   uint32_t pitch;
-  bool failed = false, locked = false;
+  uint32_t reportedPitch = 0;
+  bool failed = false, unlockFailed = false, locked = false;
   HRESULT descriptor(D3DSURFACE_DESC& result) { result = desc; return S_OK; }
   HRESULT synchronize(Response& response) { response.flushRequested = response.eventWait = 1; return S_OK; }
   HRESULT lock(D3DLOCKED_RECT& result) {
     if (failed) { return D3DERR_INVALIDCALL; }
-    locked = true; result = { static_cast<INT>(pitch), pixels.data() }; return S_OK;
+    locked = true; result = { static_cast<INT>(reportedPitch ? reportedPitch : pitch), pixels.data() }; return S_OK;
   }
-  HRESULT unlock() { assert(locked); locked = false; return S_OK; }
+  HRESULT unlock() { assert(locked); locked = false; return unlockFailed ? E_FAIL : S_OK; }
 };
 D3DSURFACE_DESC descriptor(uint32_t format = kDxt5, uint32_t width = 256, uint32_t height = 256) {
   D3DSURFACE_DESC desc {}; desc.Width = width; desc.Height = height;
@@ -61,7 +62,212 @@ bool unmapped(const void* pointer) {
   MEMORY_BASIC_INFORMATION region {};
   return VirtualQuery(pointer, &region, sizeof(region)) && region.State == MEM_FREE;
 }
+
+void formatRecoveryTests(std::string& log) {
+  uint32_t checked = 0;
+  for (const auto format : { kQ8W8V8U8, l4d2_ati::kAti1, l4d2_ati::kAti2 }) {
+    assert(!learnedIdentitySupported(32, 32, 1, format, 0, D3DPOOL_MANAGED));
+    for (const auto size : { 1u, 2u, 4u, 32u, 256u, 2048u }) {
+      for (const bool compatibilityPitch : { false, true }) {
+        const auto desc = descriptor(format, size, size);
+        Layout logical; uint32_t clientPitch = 0; uint64_t allocation = 0;
+        assert(residencyBackingLayout(size, size, format, logical, clientPitch, allocation));
+        const auto bytes = static_cast<uint32_t>(allocation);
+        Context c; auto backend = makeBackend(desc);
+        if (compatibilityPitch) {
+          backend.pitch = logical.rowBytes;
+          backend.reportedPitch = l4d2_ati::isFormat(format) ? (size + 3u) & ~3u : backend.pitch;
+          backend.pixels.resize(logical.bytes);
+          for (uint32_t i = 0; i < logical.bytes; ++i) { backend.pixels[i] = static_cast<uint8_t>(i * 37u + 19u); }
+        }
+        configure(c, backend, log);
+        PagefileShadow backing; Entry entry(c, backing, 80 + checked, desc);
+        entry.type = format == kQ8W8V8U8 ? l4d2_shadow::Type::CubeFaceLevel : l4d2_shadow::Type::Texture2DLevel;
+        entry.face = checked % 6; entry.mip = checked % 3;
+        const auto old = upload(entry, backing, bytes);
+        assert(entry.queryCapability() == Reason::Reclaimable);
+        assert(recoveryCapability(desc, entry.type, bytes + 1u, true) == Reason::RecoveryUnavailable);
+        const auto gc = RunPageBlockGc(c, compatibilityPitch ? PageBlockGcMode::Force : PageBlockGcMode::Aggressive);
+        assert(gc.pageBlocksEvicted == 1 && gc.backingBytesReleased == bytes && gc.hostAckWaitCount == 1);
+        assert(backing.recoveryMissing() && unmapped(old));
+        const RECT full { 0, 0, static_cast<LONG>(size), static_cast<LONG>(size) };
+        const RECT partial { 0, 0, static_cast<LONG>((std::min)(size, 4u)), static_cast<LONG>((std::min)(size, 4u)) };
+        c.policy = Policy::Drop;
+        for (uint32_t repeat = 0; repeat < 3; ++repeat) {
+          // Current Host data changes after eviction; an old Client upload cannot satisfy this check.
+          backend.pixels[0] = static_cast<uint8_t>(0x31u + repeat);
+          assert(entry.beforeLock(repeat == 1 ? 0u : D3DLOCK_READONLY, repeat == 1 ? partial : full));
+          auto* recovered = backing.acquire(bytes, SIZE_MAX); assert(recovered);
+          for (uint32_t row = 0; row < logical.rows; ++row) {
+            assert(!std::memcmp(recovered + static_cast<size_t>(row) * clientPitch,
+              backend.pixels.data() + static_cast<size_t>(row) * backend.pitch, logical.rowBytes));
+          }
+          // ATI1 exposes trailing API padding; it is not compressed image content.
+          for (uint32_t i = logical.bytes; i < bytes; ++i) { assert(recovered[i] == 0); }
+          entry.lockedSuccessfully(); entry.becameIdle(); assert(backing.get() == recovered);
+          if (repeat == 1) {
+            recovered[1] ^= 0x55;
+            backend.pixels[1] = recovered[1]; // Existing partial upload updates the independent Host.
+          }
+          backing.release(SIZE_MAX); entry.uploaded(bytes, false); entry.becameIdle();
+          assert(backing.recoveryMissing() && unmapped(recovered));
+        }
+        assert(c.remapCountAfterDrop == 2 && c.reconstructionFailures == 0);
+        const auto savedPitch = backend.reportedPitch;
+        backend.reportedPitch = UINT32_MAX;
+        assert(!entry.beforeLock(D3DLOCK_READONLY, full) && backing.recoveryMissing() && !backing.get());
+        backend.reportedPitch = savedPitch; backend.unlockFailed = true;
+        assert(!entry.beforeLock(0, partial) && backing.recoveryMissing() && !backing.get());
+        backend.unlockFailed = false; backend.failed = true;
+        assert(!entry.beforeLock(D3DLOCK_DISCARD, RECT { 0, 0, 0, 0 }) && backing.recoveryMissing());
+        assert(c.reconstructionFailures == 3 && !backing.acquire(bytes, SIZE_MAX));
+        assert(entry.beforeLock(D3DLOCK_DISCARD, full));
+        assert(backing.acquire(bytes, SIZE_MAX, true)); entry.lockedSuccessfully();
+        backing.release(SIZE_MAX); entry.uploaded(bytes); entry.becameIdle();
+        assert(backing.recoveryMissing());
+        ++checked;
+      }
+    }
+  }
+  printf("PASS: %u Q8W8V8U8/ATI1/ATI2 real unload/recovery cases; raw current Host bytes, compatibility/padded pitches, partial writes, repeated Drop, failure rejection and full discard (mock backend)\n", checked);
+}
+
+void unifiedTests(const D3DSURFACE_DESC& desc, uint32_t bytes, std::string& log) {
+  {
+    const auto ordinary = offscreenDescriptor(32, 64, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM);
+    const auto extended = offscreenDescriptor(32, 64, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, D3DUSAGE_RENDERTARGET);
+    assert(ordinary.Usage == 0 && ordinary.Type == D3DRTYPE_SURFACE && ordinary.Pool == D3DPOOL_SYSTEMMEM);
+    assert(extended.Usage == D3DUSAGE_RENDERTARGET && extended.MultiSampleType == D3DMULTISAMPLE_NONE);
+    Context context; PagefileShadow backing; Entry entry(context, backing, 100, extended);
+    entry.categoryOverride = l4d2_control::Category::Offscreen;
+    assert(entry.category() == l4d2_control::Category::RenderTarget);
+  }
+  {
+    Context c; auto backend = makeBackend(desc); configure(c, backend, log);
+    PagefileShadow incremental, sweep;
+    Entry a(c, incremental, 20, desc), b(c, sweep, 21, desc);
+    bool keep = true;
+    for (auto* entry : { &a, &b }) {
+      entry->learnedDecision = [&] { return keep ? LearnedDecision::Keep : LearnedDecision::Evictable; };
+      entry->learnedRecovery = [](uint32_t, const RECT&) { return true; };
+    }
+    const auto pointer = upload(a, incremental, bytes); upload(b, sweep, bytes);
+    c.policy = Policy::LearnedAggressive; a.becameIdle();
+    assert(incremental.get() == pointer && RunPageBlockGc(c, PageBlockGcMode::Learned).pageBlocksSkippedPolicy == 2);
+    keep = false; a.becameIdle(); assert(incremental.recoveryMissing() && unmapped(pointer));
+    const auto gc = RunPageBlockGc(c, PageBlockGcMode::Learned);
+    assert(gc.pageBlocksEvicted == 1 && gc.pageBlocksSkippedNoBacking == 1 && sweep.recoveryMissing());
+  }
+  {
+    Context c; auto backend = makeBackend(desc); configure(c, backend, log);
+    PagefileShadow automatic, manual;
+    Entry a(c, automatic, 22, desc), b(c, manual, 23, desc);
+    a.learnedDecision = b.learnedDecision = [] { return LearnedDecision::Keep; };
+    upload(a, automatic, bytes); upload(b, manual, bytes);
+    c.policy = Policy::Drop; a.becameIdle(); assert(automatic.recoveryMissing());
+    const auto gc = RunPageBlockGc(c, PageBlockGcMode::Aggressive);
+    assert(gc.pageBlocksEvicted == 1 && !gc.pageBlocksSkippedPolicy && manual.recoveryMissing());
+  }
+  {
+    Context c; auto backend = makeBackend(desc); configure(c, backend, log);
+    PagefileShadow initialPartial, failedAck, unclassified;
+    Entry a(c, initialPartial, 24, desc), b(c, failedAck, 25, desc), u(c, unclassified, 26, desc);
+    const auto pointer = upload(a, initialPartial, bytes); a.uploadFailed();
+    // A fresh partial upload is not a complete initialized subresource.
+    PagefileShadow partial; Entry p(c, partial, 27, desc);
+    assert(partial.acquire(bytes, SIZE_MAX)); partial.release(SIZE_MAX); p.uploaded(bytes, false);
+    upload(b, failedAck, bytes); upload(u, unclassified, bytes);
+    const auto learned = RunPageBlockGc(c, PageBlockGcMode::Learned);
+    assert(learned.pageBlocksSkippedUnsynchronized == 2 && learned.pageBlocksSkippedUnclassified == 2
+      && !learned.pageBlocksSkippedPolicy && initialPartial.get() == pointer);
+    const auto exchange = c.exchange;
+    c.exchange = [exchange](const Request& request, Temporary& temporary, Response& response, uint64_t& elapsed) {
+      if (request.operation == 3) { return E_FAIL; }
+      return exchange(request, temporary, response, elapsed);
+    };
+    const auto aggressive = RunPageBlockGc(c, PageBlockGcMode::Aggressive);
+    assert(aggressive.pageBlocksSkippedUnsynchronized == 4 && !aggressive.pageBlocksEvicted);
+    assert(failedAck.backingBytes() == bytes && !failedAck.recoveryMissing());
+  }
+  {
+    Context c; auto backend = makeBackend(desc); configure(c, backend, log);
+    PagefileShadow backing; Entry e(c, backing, 28, desc); upload(e, backing, bytes); backing.beginTransfer();
+    e.drain = [] { return false; };
+    const auto force = RunPageBlockGc(c, PageBlockGcMode::Force);
+    assert(force.pageBlocksSkippedTransferring == 1 && force.drainWaitCount == 1 && !force.transfersDrained && backing.backingBytes() == bytes);
+    backing.endTransfer();
+  }
+  {
+    Context c; auto backend = makeBackend(desc); configure(c, backend, log);
+    std::vector<Backend> resources;
+    c.exchange = [&resources](const Request& request, Temporary& temporary, Response& response, uint64_t& elapsed) {
+      const auto hr = temporary.create(request);
+      if (FAILED(hr)) { return hr; }
+      if (request.resourceId < 40 || request.resourceId - 40 >= resources.size()) { return E_INVALIDARG; }
+      if (!runShared(resources[request.resourceId - 40], request, true, true) || temporary.wait(1000) != WAIT_OBJECT_0) { return E_FAIL; }
+      response = temporary.response(); elapsed = 1; return static_cast<HRESULT>(response.hresult);
+    };
+    std::vector<std::unique_ptr<PagefileShadow>> backings;
+    std::vector<std::unique_ptr<Entry>> entries;
+    for (uint32_t i = 0; i < l4d2_control::kCategoryCount; ++i) {
+      auto d = desc;
+      auto type = l4d2_shadow::Type::Surface;
+      switch (static_cast<l4d2_control::Category>(i)) {
+      case l4d2_control::Category::Texture2D: type = l4d2_shadow::Type::Texture2DLevel; break;
+      case l4d2_control::Category::CubeFace: type = l4d2_shadow::Type::CubeFaceLevel; break;
+      case l4d2_control::Category::BackBuffer: type = l4d2_shadow::Type::BackBuffer; break;
+      case l4d2_control::Category::RenderTarget: d.Usage = D3DUSAGE_RENDERTARGET; break;
+      case l4d2_control::Category::DepthStencil: d.Usage = D3DUSAGE_DEPTHSTENCIL; break;
+      case l4d2_control::Category::Offscreen: d.Pool = D3DPOOL_SYSTEMMEM; break;
+      case l4d2_control::Category::SpecialCompressed: d.Format = static_cast<D3DFORMAT>(0x31495441u); break;
+      default: break;
+      }
+      resources.push_back(makeBackend(d));
+      backings.emplace_back(new PagefileShadow());
+      entries.emplace_back(new Entry(c, *backings.back(), 40 + i, d));
+      auto& entry = *entries.back(); entry.type = type;
+      assert(static_cast<uint32_t>(entry.category()) == i);
+      upload(entry, *backings.back(), bytes);
+    }
+    entries[0]->learnedDecision = [] { return LearnedDecision::Keep; };
+    entries[1]->learnedDecision = [] { return LearnedDecision::Evictable; };
+    entries[1]->learnedRecovery = [](uint32_t, const RECT&) { return true; };
+    const auto before = queryCoverage(c);
+    assert(before.tracked == 8 && before.capable == 5 && before.nonReclaimable == 3 && !before.safeNow);
+    assert(before.unsupportedCapability == 3 && before.recoveryUnavailable == 0);
+    assert(before.learnedKeep == 1 && before.learnedEvictable == 1 && before.learnedUnclassified == 6);
+    for (const auto& category : before.categories) { assert(category.tracked == 1 && category.backingBytes == bytes); }
+    const auto gc = RunPageBlockGc(c, PageBlockGcMode::Aggressive);
+    assert(gc.pageBlocksEvicted == 5 && gc.pageBlocksSkippedUnsupportedCapability == 3 && gc.pageBlocksSkippedRecoveryUnavailable == 0);
+    assert(!gc.pageBlocksSkippedPolicy && !gc.pageBlocksSkippedUnclassified);
+    entries.clear(); assert(c.entries.empty()); backings.clear();
+    assert(!queryCoverage(c).tracked);
+  }
+  {
+    Context c; auto backend = makeBackend(desc); configure(c, backend, log);
+    PagefileShadow backing; Entry e(c, backing, 60, desc); upload(e, backing, bytes);
+    assert(e.synchronize()); assert(queryCoverage(c).safeNow == 1);
+    c.supported = false;
+    assert(RunPageBlockGc(c, PageBlockGcMode::Force).pageBlocksSkippedUnsupportedCapability == 1 && backing.backingBytes() == bytes);
+  }
+}
+
 int main() {
+  {
+    using namespace l4d2_control;
+    l4d2_control::Request request;
+    struct Guarded { l4d2_control::Response response; uint64_t guard = 0x123456789abcdef0ull; } old;
+    DetailedResponse extended; extended.base.pageBlocks = 7; extended.coverage.tracked = 7;
+    assert(compatible(request, old.response));
+    writeResponse(&old.response, extended, false);
+    assert(old.response.pageBlocks == 7 && old.guard == 0x123456789abcdef0ull && old.response.bytes == 208 && old.response.version == 1);
+    request.version = kDetailedVersion; DetailedResponse output;
+    assert(compatible(request, output.base) && !compatible(request, old.response));
+    writeResponse(&output.base, extended, true);
+    assert(output.coverage.tracked == 7 && output.base.version == 2 && output.base.bytes == 656);
+    output.base.bytes = 208; assert(!compatible(request, output.base));
+    request.version = 99; assert(!compatible(request, output.base));
+  }
   const uint64_t baseline = l4d2_memory::surfaceBackingBytes.load();
   Policy policy;
   assert(parsePolicy("keep", policy) && policy == Policy::Keep);
@@ -75,7 +281,8 @@ int main() {
     Context c; auto backend = makeBackend(desc); configure(c, backend, log);
     PagefileShadow kept, eligible, exposed, transferring;
     Entry k(c, kept, 1, desc), e(c, eligible, 2, desc), l(c, exposed, 3, desc), t(c, transferring, 4, desc);
-    k.learnedEligible = [] { return false; }; e.learnedEligible = [] { return true; };
+    k.learnedDecision = [] { return LearnedDecision::Keep; }; e.learnedDecision = [] { return LearnedDecision::Evictable; };
+    e.learnedRecovery = [](uint32_t, const RECT&) { return true; };
     const auto keptPointer = upload(k, kept, layout.bytes);
     const auto eligiblePointer = upload(e, eligible, layout.bytes);
     upload(l, exposed, layout.bytes); assert(exposed.acquire(layout.bytes, SIZE_MAX));
@@ -144,21 +351,26 @@ int main() {
     PagefileShadow backing; Entry entry(c, backing, 10, desc);
     const auto pointer = upload(entry, backing, layout.bytes);
     c.referenceTest = true;
-    assert(RunPageBlockGc(c, PageBlockGcMode::Force).pageBlocksSkippedPolicy == 1 && backing.get() == pointer);
+    assert(RunPageBlockGc(c, PageBlockGcMode::Force).pageBlocksSkippedReferenceTest == 1 && backing.get() == pointer);
     c.policy = Policy::Drop; entry.becameIdle(); assert(backing.get() == pointer);
     c.referenceTest = false; entry.uploadFailed();
     const auto result = RunPageBlockGc(c, PageBlockGcMode::Aggressive);
     assert(result.pageBlocksSkippedUnsynchronized == 1 && backing.get() == pointer);
   }
   {
-    // No guessed layout or zero-fill when an acknowledged resource format is unsupported.
-    Context c; auto unsupported = desc; unsupported.Format = static_cast<D3DFORMAT>(0x31495441u);
+    // Recovery gaps must be discovered before releasing backing.
+    Context c; auto unsupported = desc; unsupported.Format = static_cast<D3DFORMAT>(0x58585858u);
     auto backend = makeBackend(desc); backend.desc = unsupported; configure(c, backend, log); c.policy = Policy::Drop;
     PagefileShadow backing; Entry entry(c, backing, 11, unsupported);
-    upload(entry, backing, 4096); entry.becameIdle(); assert(backing.recoveryMissing());
-    assert(!entry.beforeLock(D3DLOCK_READONLY, full) && backing.recoveryMissing() && c.reconstructionFailures == 1);
+    const auto pointer = upload(entry, backing, 4096); entry.becameIdle();
+    assert(!backing.recoveryMissing() && backing.get() == pointer);
+    const auto gc = RunPageBlockGc(c, PageBlockGcMode::Aggressive);
+    assert(gc.pageBlocksSkippedRecoveryUnavailable == 1 && !gc.pageBlocksEvicted && !gc.pageBlocksSkippedPolicy);
+    assert(entry.beforeLock(D3DLOCK_READONLY, full) && !c.reconstructionFailures);
     assert(c.policy == Policy::Drop); // A miss never promotes drop into KEEP.
   }
+  unifiedTests(desc, layout.bytes, log);
+  formatRecoveryTests(log);
   assert(l4d2_memory::surfaceBackingBytes == baseline);
   assert(log.find("PB_GC mode=force") != std::string::npos && log.find("stage=reconstruction") != std::string::npos);
   puts("PASS: learned/aggressive/force GC; KEEP and transfer/Lock pins; real VA release; current Host readback, padded rows, repeated drop, discard and explicit recovery gaps (mock backend)");

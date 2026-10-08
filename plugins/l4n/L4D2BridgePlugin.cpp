@@ -49,7 +49,7 @@ class BridgePlugin final : public IL4NPlugin {
   }
   const char* menu() {
     m_menu = "\"L4D2 Bridge\" {\n";
-    if (!m_status.empty()) { m_menu += info(m_status); }
+    if (!m_status.empty()) { m_menu += info("Last action result: " + m_status); }
     m_menu += item("PageBlock Stats", 1) + item("Retention Policy", 2)
       + item("GC Learned", 20) + item("GC Aggressive", 21) + item("GC Force", 22);
     m_menu += "}\n"; return m_menu.c_str();
@@ -57,7 +57,7 @@ class BridgePlugin final : public IL4NPlugin {
 public:
   unsigned int GetInterfaceVersion() override { return 2; }
   const char* GetName() override { return "L4D2 Bridge Controls"; }
-  const char* GetVersion() override { return "experimental-2"; }
+  const char* GetVersion() override { return "experimental-3"; }
   const char* RequestHudMenu(bool requestTitle) override { return requestTitle ? "L4D2 Bridge" : menu(); }
   const char* action(uintptr_t action) {
     // SDK non-null callback results open children; navigation belongs to L4N.
@@ -73,8 +73,17 @@ public:
     else if (action != 1 && action != 2) {
       m_status = "Invalid control action"; return statusMenu("Bridge Request Failed");
     }
-    l4d2_control::Response response;
-    const HRESULT hr = invoke(&request, &response);
+    l4d2_control::DetailedResponse extended;
+    auto& response = extended.base;
+    request.version = l4d2_control::kDetailedVersion;
+    HRESULT hr = invoke(&request, &response);
+    if (hr == E_INVALIDARG) {
+      // Older Bridge clients reject v2 before executing the operation.
+      request.version = l4d2_control::kVersion; response = l4d2_control::Response {};
+      hr = invoke(&request, &response);
+    }
+    const bool detailed = SUCCEEDED(hr) && response.version == l4d2_control::kDetailedVersion
+      && response.bytes == sizeof(extended);
     if (FAILED(hr)) {
       char text[160] {}; sprintf_s(text, "Bridge request failed: 0x%08lx", static_cast<unsigned long>(hr));
       m_status = text; return statusMenu("Bridge Request Failed");
@@ -91,6 +100,12 @@ public:
       sprintf_s(text, "Client mapped VA: %.2f MiB; backing: %.2f MiB", response.mappedBytes / 1048576.0, response.backingBytes / 1048576.0); m_menu += info(text);
       sprintf_s(text, "Drop evictions: %llu; cumulative released: %.2f MiB", response.dropEvictionCount, response.dropEvictedBytes / 1048576.0); m_menu += info(text);
       sprintf_s(text, "Remaps after drop: %llu; reconstruction failures: %llu", response.remapCountAfterDrop, response.reconstructionFailures); m_menu += info(text);
+      if (detailed) {
+        const auto& c = extended.coverage;
+        sprintf_s(text, "Tracked: %llu; capable: %llu; non-reclaimable: %llu", c.tracked, c.capable, c.nonReclaimable); m_menu += info(text);
+        sprintf_s(text, "Safe now: %llu; KEEP: %llu; evictable: %llu", c.safeNow, c.learnedKeep, c.learnedEvictable); m_menu += info(text);
+        sprintf_s(text, "Unsupported: %llu; recovery gap: %llu; unclassified: %llu", c.unsupportedCapability, c.recoveryUnavailable, c.learnedUnclassified); m_menu += info(text);
+      }
       if (response.flags & 1) { m_menu += info("Reference readback test active: eviction controls disabled"); }
       if (!(response.flags & 2)) { m_menu += info("Unsupported shared heap/backend: eviction controls disabled"); }
       m_menu += "}\n"; return m_menu.c_str();
@@ -102,6 +117,11 @@ public:
       m_menu = "\"PageBlock GC Result\" {\n" + info(m_status);
       sprintf_s(text, "Skipped locked: %llu; transfers: %llu; policy: %llu", response.pageBlocksSkippedLocked, response.pageBlocksSkippedTransferring, response.pageBlocksSkippedPolicy); m_menu += info(text);
       sprintf_s(text, "Unsynchronized: %llu; failures: %llu", response.pageBlocksSkippedUnsynchronized, response.failures); m_menu += info(text);
+      if (detailed) {
+        sprintf_s(text, "Unsupported: %llu; recovery gap: %llu; unclassified: %llu", extended.skippedUnsupportedCapability, extended.skippedRecoveryUnavailable, extended.skippedUnclassified); m_menu += info(text);
+        sprintf_s(text, "No backing: %llu; reference test: %llu", extended.skippedNoBacking, extended.skippedReferenceTest); m_menu += info(text);
+        sprintf_s(text, "Host ACK waits: %llu; time: %.3f ms", extended.hostAckWaitCount, extended.hostAckWaitTimeMs); m_menu += info(text);
+      }
       sprintf_s(text, "Drained: %llu; waits: %llu; wait time: %.3f ms", response.transfersDrained, response.drainWaitCount, response.drainWaitTimeMs); m_menu += info(text);
       m_menu += "}\n"; return m_menu.c_str();
     }

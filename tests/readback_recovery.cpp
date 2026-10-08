@@ -5,6 +5,7 @@
 #include "readback_backend.h"
 #include "pagefile_shadow.h"
 #include "retention_policy.h"
+#include "pageblock_residency.h"
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -22,8 +23,9 @@ struct FakeBackend {
   std::vector<uint8_t> source;
   uint32_t pitch = 0, mode = 0, state = 0;
   explicit FakeBackend(const Request& r, uint32_t failure = 0) : request(r), mode(failure) {
-    layout(r.width, r.height, r.format, l);
-    pitch = l.rowBytes + 32;
+    if (r.operation == 2 || r.operation == 3) { residencyLayout(r.width, r.height, r.format, l); }
+    else { layout(r.width, r.height, r.format, l); }
+    pitch = l4d2_ati::isFormat(r.format) ? l.rowBytes : l.rowBytes + 32;
     source.assign(static_cast<size_t>(pitch) * l.rows, 0xee);
     for (uint32_t row = 0; row < l.rows; ++row) {
       for (uint32_t x = 0; x < l.rowBytes; ++x) {
@@ -49,7 +51,7 @@ struct FakeBackend {
     if (state != 2) { return E_UNEXPECTED; }
     state = 3;
     if (mode == 2) { return E_FAIL; }
-    locked.Pitch = static_cast<INT>(mode == 3 ? l.rowBytes - 1 : pitch);
+    locked.Pitch = mode == 3 ? -1 : static_cast<INT>(l4d2_ati::isFormat(request.format) ? (request.width + 3u) & ~3u : pitch);
     locked.pBits = source.data(); return S_OK;
   }
   HRESULT unlock() {
@@ -58,11 +60,15 @@ struct FakeBackend {
   }
 };
 
-static Request makeRequest(uint32_t format, uint32_t width, uint32_t height) {
+static Request makeRequest(uint32_t format, uint32_t width, uint32_t height, bool residency = false) {
   Request request;
   request.resourceId = 7; request.parentId = 6;
   request.width = width; request.height = height; request.format = format;
-  Layout l; layout(width, height, format, l); request.bytes = l.bytes;
+  request.operation = residency ? 2u : 0u;
+  Layout l;
+  if (residency) { residencyLayout(width, height, format, l); }
+  else { layout(width, height, format, l); }
+  request.bytes = l.bytes;
   LARGE_INTEGER nonce {}; QueryPerformanceCounter(&nonce);
   swprintf_s(request.name, L"Local\\L4D2Recovery-%lu-%llu", GetCurrentProcessId(), static_cast<unsigned long long>(nonce.QuadPart));
   return request;
@@ -76,27 +82,111 @@ static bool launch(const wchar_t* executable, const Request& request, uint32_t m
   return CreateProcessW(nullptr, arguments, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process) != FALSE;
 }
 
+static HRESULT exchangeChild(const wchar_t* executable, uint32_t mode, const Request& request,
+    Temporary& temporary, Response& response, uint64_t& elapsed) {
+  HRESULT hr = temporary.create(request);
+  if (FAILED(hr)) { return hr; }
+  PROCESS_INFORMATION process {};
+  LARGE_INTEGER begin {}, end {}; QueryPerformanceCounter(&begin);
+  if (!launch(executable, request, mode, process)) { return HRESULT_FROM_WIN32(GetLastError()); }
+  const auto wait = temporary.wait(10000);
+  const auto exitWait = WaitForSingleObject(process.hProcess, 10000);
+  DWORD exit = 1; GetExitCodeProcess(process.hProcess, &exit);
+  CloseHandle(process.hProcess); CloseHandle(process.hThread);
+  QueryPerformanceCounter(&end); elapsed = microseconds(begin, end);
+  if (wait != WAIT_OBJECT_0 || exitWait != WAIT_OBJECT_0 || exit) { return E_FAIL; }
+  response = temporary.response(); return response.hresult;
+}
+
 static bool setupPolicy(l4d2_retention::Context& c, const wchar_t* executable, const std::filesystem::path& path, uint32_t& mode, std::string& log) {
   c.enabled = true;
   c.log = [&log](const char* line) { log += line; log += '\n'; };
   c.exchange = [executable, &mode](const Request& request, Temporary& temporary, Response& response, uint64_t& elapsed) -> HRESULT {
-    HRESULT hr = temporary.create(request);
-    if (FAILED(hr)) { return hr; }
-    PROCESS_INFORMATION process {};
-    LARGE_INTEGER begin {}, end {}; QueryPerformanceCounter(&begin);
-    if (!launch(executable, request, mode, process)) { return HRESULT_FROM_WIN32(GetLastError()); }
-    const auto wait = temporary.wait(10000);
-    const auto exitWait = WaitForSingleObject(process.hProcess, 10000);
-    DWORD exit = 1; GetExitCodeProcess(process.hProcess, &exit);
-    CloseHandle(process.hProcess); CloseHandle(process.hThread);
-    QueryPerformanceCounter(&end); elapsed = microseconds(begin, end);
-    if (wait != WAIT_OBJECT_0 || exitWait != WAIT_OBJECT_0 || exit) { return E_FAIL; }
-    response = temporary.response(); return response.hresult;
+    return exchangeChild(executable, mode, request, temporary, response, elapsed);
   };
   return c.db.open(path.wstring());
 }
 
-static bool upload(l4d2_retention::Parent& parent, PagefileShadow& backing, uint32_t mip, uint32_t format, uint32_t size, bool overwrite = false) {
+static int residencyTests(const wchar_t* executable) {
+  uint32_t checked = 0;
+  for (const auto format : { kQ8W8V8U8, l4d2_ati::kAti1, l4d2_ati::kAti2 }) {
+    for (const auto size : { 1u, 2u, 4u, 32u, 256u, 2048u }) {
+      l4d2_residency::Context context; uint32_t mode = 0;
+      context.exchange = [executable, &mode](const Request& request, Temporary& temporary, Response& response, uint64_t& elapsed) {
+        return exchangeChild(executable, mode, request, temporary, response, elapsed);
+      };
+      Layout logical; uint32_t pitch = 0; uint64_t bytes = 0;
+      if (!residencyBackingLayout(size, size, format, logical, pitch, bytes)) { return 90; }
+      const D3DSURFACE_DESC desc { static_cast<D3DFORMAT>(format), D3DRTYPE_SURFACE, 0, D3DPOOL_MANAGED,
+        D3DMULTISAMPLE_NONE, 0, size, size };
+      PagefileShadow backing; l4d2_residency::Entry entry(context, backing, 7, desc);
+      entry.type = format == kQ8W8V8U8 ? l4d2_shadow::Type::CubeFaceLevel : l4d2_shadow::Type::Texture2DLevel;
+      auto* original = backing.acquire(static_cast<size_t>(bytes), SIZE_MAX);
+      if (!original) { return 91; }
+      std::memset(original, 0xff, static_cast<size_t>(bytes)); // Deliberately differs from the child source.
+      entry.uploaded(static_cast<size_t>(bytes)); backing.release(SIZE_MAX);
+      const auto gc = l4d2_residency::RunPageBlockGc(context, l4d2_residency::PageBlockGcMode::Force);
+      MEMORY_BASIC_INFORMATION region {};
+      if (gc.pageBlocksEvicted != 1 || gc.hostAckWaitCount != 1 || !backing.recoveryMissing()
+        || !VirtualQuery(original, &region, sizeof(region)) || region.State != MEM_FREE) { return 92; }
+      const RECT full { 0, 0, static_cast<LONG>(size), static_cast<LONG>(size) };
+      if (!entry.beforeLock(D3DLOCK_READONLY, full)) { return 93; }
+      auto* recovered = backing.acquire(static_cast<size_t>(bytes), SIZE_MAX);
+      if (!recovered) { return 94; }
+      for (uint32_t row = 0; row < logical.rows; ++row) {
+        for (uint32_t x = 0; x < logical.rowBytes; ++x) {
+          if (recovered[static_cast<size_t>(row) * pitch + x] != pixel(static_cast<size_t>(row) * logical.rowBytes + x)) { return 95; }
+        }
+      }
+      entry.lockedSuccessfully(); backing.release(SIZE_MAX);
+      ++checked;
+    }
+    for (const auto failure : { 2u, 3u, 4u }) {
+      const auto request = makeRequest(format, 32, 32, true);
+      Temporary temporary; Response response; uint64_t elapsed = 0;
+      const auto hr = exchangeChild(executable, failure, request, temporary, response, elapsed);
+      const auto expected = failure == 2 ? Stage::Lock : failure == 3 ? Stage::Pitch : Stage::Unlock;
+      if (SUCCEEDED(hr) || response.stage != expected || response.bytes) { return 96; }
+    }
+  }
+  printf("PASS: %u separate-process Q8W8V8U8/ATI1/ATI2 unload/reconstruction cases and explicit read/pitch/unlock failures; child has no original Client backing\n", checked);
+  return 0;
+}
+
+// Bind the real policy to the same registry primitive used by production surfaces.
+class TestParent : public l4d2_retention::Parent {
+  l4d2_residency::Context m_residency;
+  uint32_t m_width, m_height, m_format, m_pool, m_usage;
+  std::vector<std::unique_ptr<l4d2_residency::Entry>> m_entries;
+public:
+  TestParent(l4d2_retention::Context& context, uint32_t id, uint32_t width, uint32_t height,
+      uint32_t levels, uint32_t format, uint32_t usage, uint32_t pool, std::string site)
+    : l4d2_retention::Parent(context, id, width, height, levels, format, usage, pool, std::move(site),
+        l4d2_residency::learnedIdentitySupported(width, height, levels, format, usage, pool)),
+      m_width(width), m_height(height), m_format(format), m_pool(pool), m_usage(usage), m_entries(levels) {
+    m_residency.policy = l4d2_residency::Policy::LearnedAggressive;
+    m_residency.exchange = context.exchange; m_residency.log = context.log;
+  }
+  void attach(uint32_t mip, uint32_t id, PagefileShadow& backing) {
+    D3DSURFACE_DESC desc { static_cast<D3DFORMAT>(m_format), D3DRTYPE_SURFACE, m_usage, static_cast<D3DPOOL>(m_pool),
+      D3DMULTISAMPLE_NONE, 0, (std::max)(1u, m_width >> mip), (std::max)(1u, m_height >> mip) };
+    auto entry = std::make_unique<l4d2_residency::Entry>(m_residency, backing, id, desc);
+    entry->type = l4d2_shadow::Type::Texture2DLevel;
+    entry->learnedDecision = [this, mip] { return decision(mip); };
+    entry->learnedRecovery = [this, mip](uint32_t flags, const RECT& rect) { return beforeLock(mip, flags, rect); };
+    entry->learnedEvicted = [this, mip](uint64_t bytes) { noteEvicted(mip, bytes); };
+    entry->learnedFailure = [this](const char* reason) { reclaimFailure(reason); };
+    m_entries[mip] = std::move(entry);
+    l4d2_retention::Parent::attach(mip, id, backing, [this, mip] { m_entries[mip]->becameIdle(); });
+  }
+  void uploaded(uint32_t mip, bool full, const Digest& hash, HRESULT hr) {
+    Layout l; layout((std::max)(1u, m_width >> mip), (std::max)(1u, m_height >> mip), m_format, l);
+    m_entries[mip]->uploaded(l.bytes, full);
+    l4d2_retention::Parent::uploaded(mip, full, hash, hr);
+  }
+};
+
+static bool upload(TestParent& parent, PagefileShadow& backing, uint32_t mip, uint32_t format, uint32_t size, bool overwrite = false) {
   Layout l;
   if (!layout(size, size, format, l)) { return false; }
   auto* bytes = backing.acquire(l.bytes, 0, overwrite);
@@ -129,7 +219,7 @@ static int policyTests(const wchar_t* executable) {
   for (uint32_t run = 0; run < 3; ++run) {
     Context c; if (!setupPolicy(c, executable, db, mode, log)) { return 42; }
     PagefileShadow backing[3];
-    Parent parent(c, 6 + run * 100, 256, 256, 3, kDxt5, 0, 1, run == 2 ? "shader.dll:1234:10000:0:900;" : "shader.dll:1234:10000:0:800;");
+    TestParent parent(c, 6 + run * 100, 256, 256, 3, kDxt5, 0, 1, run == 2 ? "shader.dll:1234:10000:0:900;" : "shader.dll:1234:10000:0:800;");
     for (uint32_t mip = 0; mip < 3; ++mip) {
       parent.attach(mip, 7 + run * 100 + mip, backing[mip]);
       if (!upload(parent, backing[mip], mip, kDxt5, 256 >> mip)) { return 43; }
@@ -163,7 +253,7 @@ static int policyTests(const wchar_t* executable) {
   {
     Context c; if (!setupPolicy(c, executable, directory / L"overwrite.db", mode, log)) { return 55; }
     PagefileShadow backing;
-    Parent parent(c, 6, 256, 256, 1, kDxt1, 0, 1, "shader.dll:1234:10000:0:800;");
+    TestParent parent(c, 6, 256, 256, 1, kDxt1, 0, 1, "shader.dll:1234:10000:0:800;");
     parent.attach(0, 7, backing);
     if (!upload(parent, backing, 0, kDxt1, 256) || !backing.recoveryMissing()) { return 56; }
     if (!parent.beforeLock(0, D3DLOCK_DISCARD, RECT { 0, 0, 256, 256 }) || !upload(parent, backing, 0, kDxt1, 256, true)) { return 57; }
@@ -174,18 +264,18 @@ static int policyTests(const wchar_t* executable) {
     {
       Context c; mode = failure; if (!setupPolicy(c, executable, failureDb, mode, log)) { return 59; }
       PagefileShadow backing;
-      Parent parent(c, 6, 256, 256, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 7, backing);
+      TestParent parent(c, 6, 256, 256, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 7, backing);
       if (!upload(parent, backing, 0, kDxt5, 256) || !backing.recoveryMissing()) { return 60; }
       if (parent.beforeLock(0, 0, RECT { 0, 0, 256, 256 }) || !backing.recoveryMissing() || backing.acquire(65536, 0)
         || !c.fallback || c.failures != 1 || c.db.records() != 1 || (failure == 8 && c.hashMismatches != 1)) { return 61; }
       PagefileShadow freshBacking;
-      Parent fresh(c, 16, 512, 512, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:801;"); fresh.attach(0, 17, freshBacking);
+      TestParent fresh(c, 16, 512, 512, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:801;"); fresh.attach(0, 17, freshBacking);
       if (!upload(fresh, freshBacking, 0, kDxt5, 512) || freshBacking.recoveryMissing() || c.drops != 1) { return 62; }
     }
     {
       Context c; mode = 0; if (!setupPolicy(c, executable, failureDb, mode, log)) { return 63; }
       PagefileShadow backing;
-      Parent parent(c, 606, 256, 256, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 607, backing);
+      TestParent parent(c, 606, 256, 256, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 607, backing);
       if (!upload(parent, backing, 0, kDxt5, 256) || c.strongHits != 1 || c.drops || backing.recoveryMissing()) { return 64; }
     }
   }
@@ -196,12 +286,12 @@ static int policyTests(const wchar_t* executable) {
     const auto length = std::filesystem::file_size(corrupt);
     Context c; if (setupPolicy(c, executable, corrupt, mode, log) || c.db.valid()) { return 66; }
     c.disable("persistent-db-invalid");
-    PagefileShadow backing; Parent parent(c, 6, 256, 256, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 7, backing);
+    PagefileShadow backing; TestParent parent(c, 6, 256, 256, 1, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 7, backing);
     if (!upload(parent, backing, 0, kDxt5, 256) || backing.recoveryMissing() || std::filesystem::file_size(corrupt) != length) { return 67; }
   }
   for (const auto format : { kDxt1, kDxt5, 21u, 22u }) {
     Context c; if (!setupPolicy(c, executable, directory / (std::to_wstring(format) + L"-format.db"), mode, log)) { return 68; }
-    PagefileShadow backing; Parent parent(c, 6, 256, 256, 1, format, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 7, backing);
+    PagefileShadow backing; TestParent parent(c, 6, 256, 256, 1, format, 0, 1, "shader.dll:1234:10000:0:800;"); parent.attach(0, 7, backing);
     if (!upload(parent, backing, 0, format, 256) || !backing.recoveryMissing()
       || !parent.beforeLock(0, D3DLOCK_READONLY, RECT { 0, 0, 256, 256 }) || c.hashMatches != 1 || c.promotions != 1) { return 69; }
   }
@@ -210,7 +300,7 @@ static int policyTests(const wchar_t* executable) {
     for (uint32_t sample = 0; sample < 4; ++sample) {
       PagefileShadow backing;
       const uint32_t format = sample == 0 ? kDxt3 : kDxt5;
-      Parent parent(c, 6, 256, 256, 1, format, sample == 1 ? D3DUSAGE_DYNAMIC : 0u,
+      TestParent parent(c, 6, 256, 256, 1, format, sample == 1 ? D3DUSAGE_DYNAMIC : 0u,
         sample == 2 ? D3DPOOL_DEFAULT : D3DPOOL_MANAGED, sample == 3 ? "" : "shader.dll:1234:10000:0:800;");
       parent.attach(0, 7, backing);
       if (!upload(parent, backing, 0, format, 256) || backing.recoveryMissing() || c.drops || c.eligible || c.attempts) { return 74; }
@@ -218,7 +308,7 @@ static int policyTests(const wchar_t* executable) {
   }
   {
     Context c; if (!setupPolicy(c, executable, db, mode, log)) { return 75; }
-    PagefileShadow backing; Parent parent(c, 6, 256, 256, 3, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;");
+    PagefileShadow backing; TestParent parent(c, 6, 256, 256, 3, kDxt5, 0, 1, "shader.dll:1234:10000:0:800;");
     PagefileShadow others[2];
     parent.attach(0, 7, backing); parent.attach(1, 8, others[0]); parent.attach(2, 9, others[1]);
     Layout l; layout(256, 256, kDxt5, l);
@@ -235,7 +325,7 @@ static int policyTests(const wchar_t* executable) {
     if (log.find(required) == std::string::npos) { return 71; }
   }
   std::filesystem::remove_all(directory);
-  printf("PASS: real backing deletion, hash-only x86-to-x64 recovery, complete mip restoration, permanent KEEP, cross-run Strong/Content DB hits, overwrite without promotion, hash/readback failures and session fallback (independent mock backend)\n");
+  printf("PASS: real backing deletion, hash-only child-process recovery, complete mip restoration, permanent KEEP, cross-run Strong/Content DB hits, overwrite without promotion, hash/readback failures and session fallback (independent mock backend)\n");
   return 0;
 }
 
@@ -254,7 +344,10 @@ int wmain(int argc, wchar_t** argv) {
     request.resourceId = static_cast<uint32_t>(wcstoul(argv[10], nullptr, 10));
     request.parentId = static_cast<uint32_t>(wcstoul(argv[11], nullptr, 10));
     Layout l;
-    if (!layout(request.width, request.height, request.format, l)) { return 10; }
+    const bool supported = request.operation == 2 || request.operation == 3
+      ? residencyLayout(request.width, request.height, request.format, l)
+      : layout(request.width, request.height, request.format, l);
+    if (!supported) { return 10; }
     request.bytes = l.bytes;
     FakeBackend backend(request, mode);
     return runShared(backend, request, mode != 7, mode != 6) ? 0 : 11;
@@ -309,6 +402,8 @@ int wmain(int argc, wchar_t** argv) {
     if (response.stage != expected[mode] || SUCCEEDED(response.hresult) || response.bytes) { return 15; }
   }
   if (l4d2_memory::surfaceBackingBytes != baseline) { return 16; }
-  printf("PASS: %u x86-to-x64 independent mock readbacks, reference-only corruption detection, failure stages and original backing retained\n", checked);
+  const auto residencyResult = residencyTests(argv[1]);
+  if (residencyResult) { return residencyResult; }
+  printf("PASS: %u independent child-process mock readbacks, reference-only corruption detection, failure stages and original backing retained\n", checked);
   return policyTests(argv[1]);
 }

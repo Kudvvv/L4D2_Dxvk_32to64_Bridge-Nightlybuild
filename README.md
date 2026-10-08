@@ -2,15 +2,17 @@
 
 [中文](#chinese) | [English](#english) · [v1.1.1 补丁说明 / Patch notes](docs/RELEASE-V1.1.1.md) · [v1.1 更新 / v1.1 changes](docs/RELEASE-V1.1.md)
 
-**当前源码：1.1.2-dev.1 开发版**，整合崩溃归因、Reset 失败处理和可选 L4N 菜单导航修正。已有安装使用配套三件套补丁，安装与已知问题见 [开发版说明](docs/DEVELOPMENT-V1.1.2.md)。最近正式发布仍为 v1.1.1；下方保留其日常安装说明，开发版尚待 Windows 游戏实机验收。
+**当前实验版：1.2.0-dev.1**，累计整合 PageBlock 管理与格式恢复、第二版全屏/窗口切换修复、异常/API/内存诊断和联机偏色诊断。下载与升级见 [实验发布说明](docs/RELEASE-V1.2.0-dev.1.md)，完整变化和验证边界见 [相比 1.1 的累计更新](docs/CHANGES-SINCE-V1.1.md)。源码保留在 `codex/development-1.1.2-dev.1`，以 `v1.2.0-dev.1` GitHub prerelease 分发；最近正式版仍为 v1.1.1，下方保留其日常安装说明。
 
-**Current source: 1.1.2-dev.1**, with exception attribution, Reset failure handling and optional L4N menu navigation fixes. Use the matched three-binary update; see [development setup and limitations](docs/DEVELOPMENT-V1.1.2.md). v1.1.1 remains the last official release. This development build has not yet passed Windows gameplay validation.
+**Current experimental version: 1.2.0-dev.1.** Integrates PageBlock management/recovery, the second fullscreen/windowed Reset fix, crash/API/memory diagnostics and opt-in network colour diagnostics. See [experimental download and setup](docs/RELEASE-V1.2.0-dev.1.md) and [cumulative changes since 1.1](docs/CHANGES-SINCE-V1.1.md). Source remains on `codex/development-1.1.2-dev.1`; tag `v1.2.0-dev.1` is a GitHub prerelease. Network colour and game-module crash reports remain unresolved. v1.1.1 remains the last official release.
 
 <a id="chinese"></a>
 
 ## 项目目的与当前状态
 
 在 Windows《Left 4 Dead 2》的 **32 位游戏进程**中接收 D3D9 调用，再通过共享内存和命令队列交给独立 Bridge Host，由 DXVK 转为 Vulkan 渲染。可选 **x64 或 x86 Host**；游戏引擎本身仍是 32 位。x64 模式提供更大的渲染端地址空间，v1.1 的客户端资源保留策略减少不必要的 CPU 副本。
+
+**职责边界：**桥负责 D3D9 接口、桥接资源、跨进程传输与呈现，以及这些实现引起的问题。对游戏崩溃的排查应定位并修复桥自身的错误；Source 私有对象、贴花任务队列和游戏逻辑属于游戏内部，不纳入桥的实现或修复计划。
 
 v1.1.1 是最近正式发布、由作者实机测试确认的版本。后续已有部分玩家连续过图无响应/崩溃反馈，仍在分别调查；不保证所有设备、Mod 或场景都没有问题。项目没有显卡厂商白名单，不要求 NVIDIA/RTX。当前参考 GPU 为 Intel Arc B580，其他 GPU/驱动需按实际兼容性验证。
 
@@ -20,7 +22,7 @@ v1.1.1 主要修复 ReShade 点击返回游戏的激活路径。已有安装推�
 
 需要 **64 位 Windows 10/11**、Steam 版 L4D2，以及能运行所选 DXVK 的 Vulkan 显卡/驱动。首次使用窗口模式。
 
-1. 正式版选择 v1.1.1 完整发布包；开发测试选择 [1.1.2-dev.1 完整包或升级包](docs/DEVELOPMENT-V1.1.2.md)。Actions 完整包名为 **`l4d2-bridge-v<版本号>`**，核对包内 `VERSION` 与所选版本一致。更新已有安装时先备份客户端、整个 `.l4d2bridge` 目录和 Steam 启动选项；开发版必须配对更新三个桥二进制。
+1. 正式版选择 v1.1.1 完整发布包；开发测试先阅读 [当前累计版本与最新实验包](docs/CHANGES-SINCE-V1.1.md)。Actions 完整包名为 **`l4d2-bridge-v<版本号>`**，核对包内 `VERSION` 与所选版本一致。更新已有安装时先备份客户端、整个 `.l4d2bridge` 目录和 Steam 启动选项；开发版必须配对更新三个桥二进制。
 2. 关闭游戏及所有桥进程，将包内 `bin` 合并到游戏根目录。首次安装使用包内 `bridge.conf`；升级时手动合并配置，保留已有 DXVK、ReShade 和 retention DB。完整包带官方后端，直接覆盖会替换你的定制后端。
 3. 本项目使用 `bin/dxvk_d3d9.dll` 加载路径。如果原来在游戏根目录安装了 DXVK `d3d9.dll`，先备份并改名为 `d3d9.dll.before-bridge`，避免加载链混用。不要修改 Windows 系统 DLL。
 4. Steam → L4D2 → 属性 → 启动选项，使用：
@@ -48,13 +50,13 @@ Left 4 Dead 2/
 
 ### 正常 / 推荐配置
 
-完整设置见 [config/bridge.conf](config/bridge.conf)。v1.1 随包推荐 **x64 + learned-aggressive**，详细诊断关闭，ReShade 输入窗口按需启用。以下是关键设置，编辑时每个键只保留一份：
+完整设置见 [config/bridge.conf](config/bridge.conf)；每项作用、新增项、缺省值与诊断性能成本见 [配置参考](docs/CONFIGURATION.md)。当前随包默认 **x86 Host + learned-aggressive**；相比 1.1 的 x64 随包基线，默认改为 32 位渲染端，x64 继续可选。详细诊断关闭，ReShade 输入窗口按需启用。三文件升级包保留已有配置，切换模式时显式修改下面的键，每个键只保留一份：
 
 ```ini
 server.useVanillaDxvk = True
 exposeRemixApi = False
 forceX64Server = True
-client.testX86Server = False
+client.testX86Server = True
 client.forceWindowed = True
 useSharedHeap = False
 useShadowMemoryForDynamicBuffers = True
@@ -78,8 +80,8 @@ logLevel = Info
 
 | 模式 | 设置 / EXE / 后端 | 主要优势 | 主要限制 |
 | --- | --- | --- | --- |
-| x64 Bridge | `client.testX86Server = False`；`L4D2Bridge64.exe`；`d3d9vk_x64.dll` | 大地址空间，当前主要路径；适合希望有更多余量、RAM 充足的重度资源配置 | 当前 DXVK x64 路径的 Host 内存较高 |
-| x86 Bridge | `client.testX86Server = True`；`L4D2Bridge32.exe`；`d3d9vk_x86.dll` | 当前测试中内存明显较低，适合优先节省 RAM 且工作负载能容纳于 x86 Host 的用户 | LAA Host 在 64 位 Windows 上仍最多约 4 GiB 用户地址空间，连续空闲空间可能更少 |
+| x86 Bridge（当前随包默认） | `client.testX86Server = True`；`L4D2Bridge32.exe`；`d3d9vk_x86.dll` | 当前测试中内存明显较低，适合优先节省 RAM 且工作负载能容纳于 x86 Host 的用户 | LAA Host 在 64 位 Windows 上仍最多约 4 GiB 用户地址空间，连续空闲空间可能更少 |
+| x64 Bridge（可选） | `client.testX86Server = False`；`L4D2Bridge64.exe`；`d3d9vk_x64.dll` | 大地址空间，适合希望有更多余量、RAM 充足的重度资源配置 | 当前 DXVK x64 路径的 Host 内存较高 |
 
 客户端始终是 x86。x86 不是对所有负载都更好，x64 也不会使游戏引擎变为 64 位。可合并包内 `X86-HOST.conf` / `X64-HOST.conf`；模式切换不需要关闭 memory policy 或删除 DB。日志分别为 `bridge-host32.log` / `bridge64.log`，客户端始终是 `bridge32.log`。
 
@@ -115,7 +117,7 @@ client.DirectInput.forward.keyboardPolicy = 0
 
 ### 恢复推荐设置 / 卸载
 
-恢复包内 `bridge.conf` 的推荐值：`client.testX86Server=False`、`client.pageBlockRetentionPolicy=learned-aggressive`、`server.presenterWindow=False`、`client.hookMessagePump=False`、`client.overrideCustomWinHooks=False`，两项 DirectInput forwarding 为 `0`，诊断/参考 readback 关闭。需要排查 retention 问题时可单独设 `client.pageBlockRetentionPolicy=keep`，会增加冗余 backing；这是保守选项，不是优化配置。DB 无需删除。
+恢复当前随包 `bridge.conf` 的推荐值：`client.testX86Server=True`（x86 Host）、`client.pageBlockRetentionPolicy=learned-aggressive`、`server.presenterWindow=False`、`client.hookMessagePump=False`、`client.overrideCustomWinHooks=False`，两项 DirectInput forwarding 为 `0`，诊断/参考 readback 关闭。需要排查 retention 问题时可单独设 `client.pageBlockRetentionPolicy=keep`，会增加冗余 backing；这是保守选项，不是优化配置。DB 无需删除。
 
 退出后恢复备份的后端可撤销 mem1，同时移除 `dxvk.bridge*` 设置。彻底卸载则恢复原 DLL、桥目录和启动选项，恢复根目录旧 `d3d9.dll` 的原名；只处理本项目文件，保留其他 Mod。完整包含官方后端，升级时优先保留自己的后端/配置，**配对更新客户端和所用 Host**。
 
@@ -182,6 +184,7 @@ if (mappable)
 - [Host 内存诊断](docs/HOST-MEMORY-DIAGNOSTICS.md) · [GPU 分配诊断](docs/GPU-ALLOCATION-DIAGNOSTICS.md)
 - [地图加载 API / IPC 等待诊断](docs/API-WAIT-DIAGNOSTICS.md)：默认关闭，测量实际 API 调用线程、响应等待和队列背压，不推断 Source loading state 或 GPU 时间。
 - [异常归因与 Client/Host 退出报告](docs/EXCEPTION-DIAGNOSTICS.md)：开发补丁，记录实际故障模块、偏移与上下文；不声称已修复 studiorender。
+- [相比 1.1 的累计更新](docs/CHANGES-SINCE-V1.1.md) · [切屏修复与实机记录](docs/FULLSCREEN-WINDOW-RESET.md) · [联机偏色诊断](docs/NETWORK-COLOR-DIAGNOSTICS.md)
 - [x86/x64 实现与对照方法](docs/X86-HOST-COMPARISON.md) · [v1.0 首次验收](docs/FIRST-GAME-VALIDATION.md)
 - [v1.1 发布、升级与构建](docs/RELEASE-V1.1.md) · [测量证据](docs/V1.1-VALIDATION.md)
 
@@ -203,7 +206,7 @@ v1.1.1 fixes click-to-reactivate when returning to an open ReShade overlay. Exis
 
 Requires 64-bit Windows 10/11, Steam L4D2 and a Vulkan-capable GPU/driver compatible with your chosen DXVK. Start windowed.
 
-1. Choose the official v1.1.1 release, or the [1.1.2-dev.1 development full/update package](docs/DEVELOPMENT-V1.1.2.md). Complete Actions artifacts use **`l4d2-bridge-v<version>`**; verify `VERSION` matches the selected build. Back up the client, `bin/.l4d2bridge/` and Steam launch options. Development updates require all three matched Bridge binaries.
+1. Choose the official v1.1.1 release, or read the [current cumulative version and latest experiment](docs/CHANGES-SINCE-V1.1.md). Complete Actions artifacts use **`l4d2-bridge-v<version>`**; verify `VERSION` matches the selected build. Back up the client, `bin/.l4d2bridge/` and Steam launch options. Development updates require all three matched Bridge binaries.
 2. Exit the game and hosts, then merge the supplied `bin` into the game directory, using the layout above. For an upgrade, preserve custom DXVK/ReShade settings and the retention DB, and merge configuration manually. The full package includes official backends and can overwrite a custom backend.
 3. If using root-directory DXVK `d3d9.dll`, back it up and rename it to `d3d9.dll.before-bridge`. This project uses `bin/dxvk_d3d9.dll`, which must remain the **Bridge x86 client**, not an ordinary DXVK DLL. Never alter Windows system DLLs.
 4. Set Steam launch options to `-vulkan -insecure -windowed`. Add `-console -condebug` only if console logs are needed. This selects the game's DXVK-named D3D9 loader and non-VAC-secure mode; restore the original installation for VAC-secure play.
@@ -211,12 +214,12 @@ Requires 64-bit Windows 10/11, Steam L4D2 and a Vulkan-capable GPU/driver compat
 
 ### Recommended settings and mode selection
 
-[config/bridge.conf](config/bridge.conf) supplies **x64 + learned-aggressive**, with detailed diagnostics and the optional ReShade presenter disabled. Use the key configuration block above, retaining one value per key. An omitted policy still defaults to conservative `keep` in the implementation, so upgrades must explicitly merge `client.pageBlockRetentionPolicy = learned-aggressive`.
+[config/bridge.conf](config/bridge.conf) now supplies **x86 Host + learned-aggressive**, replacing the 1.1 packaged x64 baseline; x64 remains optional. See the [configuration reference (Chinese)](docs/CONFIGURATION.md) for each option, new keys, omitted defaults and diagnostic overhead. Three-binary updates preserve the existing Host selection. Use the key configuration block above, retaining one value per key. An omitted policy still defaults to conservative `keep` in the implementation, so upgrades must explicitly merge `client.pageBlockRetentionPolicy = learned-aggressive`.
 
 | Mode | Setting / executable / backend | Best suited to | Main limitation |
 | --- | --- | --- | --- |
-| x64 | `client.testX86Server = False`; `L4D2Bridge64.exe`; `d3d9vk_x64.dll` | More address-space headroom, sufficient RAM, large renderer workloads; primary Host path | Higher current x64 DXVK Host memory usage |
-| x86 | `client.testX86Server = True`; `L4D2Bridge32.exe`; `d3d9vk_x86.dll` | Prioritizing RAM use when the workload fits x86 limits | At most approximately 4 GiB user address space with LAA on 64-bit Windows; contiguous availability can be lower |
+| x86 (packaged default) | `client.testX86Server = True`; `L4D2Bridge32.exe`; `d3d9vk_x86.dll` | Prioritizing RAM use when the workload fits x86 limits | At most approximately 4 GiB user address space with LAA on 64-bit Windows; contiguous availability can be lower |
+| x64 (optional) | `client.testX86Server = False`; `L4D2Bridge64.exe`; `d3d9vk_x64.dll` | More address-space headroom, sufficient RAM, large renderer workloads | Higher current x64 DXVK Host memory usage |
 
 **Keep `forceX64Server = True` in both modes**: it selects the runtime directory, while `client.testX86Server` selects the actual executable. Exit both processes before switching and restart through Steam. Both modes share the x86 client; changing mode does not require deleting the DB or disabling retention. Supplied `X86-HOST.conf` / `X64-HOST.conf` are merge snippets. `bridge-host32.log` is the x86 Host log, `bridge64.log` the x64 Host log, and `bridge32.log` always the client log.
 
@@ -236,7 +239,7 @@ Merge [OVERLAY-INPUT.conf](config/OVERLAY-INPUT.conf), matching the ReShade bloc
 
 ### Restore recommended settings / uninstall
 
-Restore the shipped config: x64 (`client.testX86Server=False`), `learned-aggressive`, presenter/message-pump/custom-window hooks disabled, both DirectInput forwarding policies `0`, diagnostic/reference tests off. `client.pageBlockRetentionPolicy=keep` is a conservative troubleshooting option that retains more backing. Preserve the DB.
+Restore the current shipped config: x86 (`client.testX86Server=True`), `learned-aggressive`, presenter/message-pump/custom-window hooks disabled, both DirectInput forwarding policies `0`, diagnostic/reference tests off. `client.pageBlockRetentionPolicy=keep` is a conservative troubleshooting option that retains more backing. Preserve the DB.
 
 Restore the backed-up backend and remove `dxvk.bridge*` options to undo mem1. For complete removal, restore the original DLLs/directory and launch options, including the old root `d3d9.dll` filename, leaving unrelated mods intact. Upgrade the client and selected Host together; preserve custom backends/configuration.
 
@@ -284,6 +287,8 @@ Advanced documentation: [PageBlock](docs/PAGEBLOCK-DIAGNOSTICS.md), [learned ret
 Builds use a pinned upstream Bridge plus the [fork patch](patches/l4d2-bridge.patch), MSVC 14.29, Python 3.11, Meson 1.3.2 and Ninja 1.11.1.1. [CI](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/blob/main/.github/workflows/build.yml) builds the client and both Hosts and runs native protocol/layout/memory/recovery tests; it does not run L4D2 on a real GPU.
 
 <!-- Experimental development documentation; released v1.1.1 defaults are unchanged. -->
+
+当前累计状态：[相比 1.1 的更新与最新实验包](docs/CHANGES-SINCE-V1.1.md)；PageBlock 技术细节见 [统一 residency 的覆盖审计与 AV 实机步骤](docs/PAGEBLOCK-RESIDENCY-EXPERIMENT.md)。
 
 开发实验：[`drop`、三种手动 PageBlock GC 与 L4N v2 HUD 控制](docs/PAGEBLOCK-DROP-GC.md)。默认配置不启用此实验。 / Development experiment: opt-in PageBlock residency and L4N v2 controls; released defaults remain unchanged.
 

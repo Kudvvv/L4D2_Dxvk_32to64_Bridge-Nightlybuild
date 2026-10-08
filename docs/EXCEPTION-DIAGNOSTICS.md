@@ -102,7 +102,7 @@ termination=TerminateProcess termination_exit_code=0xe04c3441
 - 既有 API-wait 分析器的 6 项 Python 测试通过；完整补丁从固定上游基线重新应用并与本地源文件核对。
 - 此环境的 Wine WoW64 无法启动 x86 测试程序，因此本地记录不包含 x86 的**运行**结果；原生测试以对应 Windows CI 为准。尚未执行 Windows 实机 L4D2/MOD 过图或完整 Client↔Host 实机连接测试。合成 peer 测试验证共享退出辅助函数，不冒充真实游戏的跨位数会话验收。
 
-当前仓库未包含匹配 L4D2 的 studiorender 源码，本任务未审查其函数实现，也未修改游戏 DLL 或硬编码 RVA。外部项目的针对性修复仍是线索，尚无本项目确认的 game-side 修复。
+异常归因用于定位桥自身 D3D9 接口、内存、资源寿命或传输实现引起的问题。游戏私有对象与内部队列逻辑不属于桥的修复范围；该子系统不修改游戏 DLL，也不按游戏 RVA 跳过异常或继续执行。
 
 ## 本任务文件范围
 

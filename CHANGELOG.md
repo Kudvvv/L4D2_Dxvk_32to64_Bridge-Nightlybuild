@@ -5,6 +5,45 @@
 
 # 更新记录 / Changelog
 
+## 1.2.0-dev.1（实验发布 / Prerelease）
+
+- 将原 1.1.2 开发系列及后续切屏/偏色诊断整合为 1.2.0-dev.1；推送当前 `codex/development-1.1.2-dev.1` 分支，以 `v1.2.0-dev.1` 发布实验 prerelease。最近正式版仍为 1.1.1。
+- Client、x86/x64 Host 与包内 VERSION 使用同批新标识；完整包默认 x86 Host + learned-aggressive，可选诊断关闭。三件套补丁保留已有配置、DXVK、插件和 retention DB。
+- 提供完整包、匹配三件套升级包、可选 L4N v2 HUD 插件、诊断分析器及 SHA256 清单；普通安装不运行主动开启偏色诊断的专用脚本。
+- 累计改动包括统一 PageBlock 管理、Drop/LGC/AGC/FGC、Q8/ATI 恢复、Reset 引用修正、异常归因和诊断。VB/IB 仅新增分配释放统计；联机偏色、Volume pitch、Steam 输入及连续过图问题仍未解决。
+- 新版本 Bridge patch 与 `1.1.2-dev.3+b39cbd5e1a902ace` 相同。旧实机结果只证明对应场景，云端/CI 不替代新版本 GPU 游戏验收。
+
+完整变化见 [相比 1.1 的累计更新](docs/CHANGES-SINCE-V1.1.md)，下载与安装见 [实验发布说明](docs/RELEASE-V1.2.0-dev.1.md)，各项默认值与性能成本见 [配置参考](docs/CONFIGURATION.md)。
+
+Integrates the preceding development work as 1.2.0-dev.1 on the existing branch. Fresh installation defaults to x86 Host; matched updates preserve configuration and backends. Optional diagnostics remain off. VB/IB changes are counters only; network colour and other listed issues remain unresolved. Distributed as a prerelease, without replacing the latest stable release.
+
+## 1.1.2-dev.3（累计整合实验 / Integrated development experiment）
+
+相比 1.1 的完整清单与每项验证状态见 [累计更新说明](docs/CHANGES-SINCE-V1.1.md)。当前实验 build 为 `l4d2-1.1.2-dev.3+b39cbd5e1a902ace`，最近正式版仍为 1.1.1。
+
+- 默认 Host 改为 x86：当前随包配置使用 `client.testX86Server=True`，x64 继续可选；两种模式均保留 `forceX64Server=True`。已有三件套升级包保留运行配置，省略 Host 选择键时旧二进制仍使用 x64 兼容回退，见累计说明。
+
+- 补齐 MANAGED/SYSTEMMEM/SCRATCH、Usage=0 的 `Q8W8V8U8` 和 ATI1/ATI2 当前内容恢复；继续复用统一 Entry reclaim 与现有 READONLY/query/IPC。覆盖普通纹理 mip、cube face mip 和符合能力检查的独立 surface，不增加新的 persistent learned 身份。
+- ATI 按原始 BC4/BC5 压缩块回传，区分 DXVK 兼容 API Pitch 与物理 storage Pitch；Client 按现有 backing 大小重建。额外 API padding 不是压缩内容，重建时初始化，不拿它冒充 Host 像素。
+- 新增 36 个实际解除 Client 映射后恢复的格式用例、18 个独立子进程恢复用例，以及小 mip、部分写入、重复 Drop、错误 Pitch/Lock/Unlock 与完整 DISCARD 检查。测试 Host 为独立 mock；本环境没有实测 DXVK GPU 或原生 Windows 跨位数恢复。作者后续 x86 实机证实 FGC/过图后 AGC 分别释放 44.28/57.34 MiB VA，新增 ATI/Q8 共 30 个子资源被回收；实际三次 A8R8G8B8 回读成功，ATI/Q8 实机回读尚未触发。
+- 编译匹配 x86 Client、x86/x64 Host，ZIP 仅存放到原 ZIP 专用下载分支；不推送开发源码或发布正式版本。可选 L4N 插件功能维持 dev.2，升级包保留活动配置、DXVK 和 retention DB。
+- 累计加入第二版全屏/窗口切换修复：平衡 swapchain/backbuffer 及运行中 RT/depth getter 引用，修正最终 Release 后的成员访问；作者当前 x86 Host 实机三次 Reset 成功并确认画面正常。首版回归候选已被第二版替代，见 [切屏记录](docs/FULLSCREEN-WINDOW-RESET.md)。
+- 累计加入默认关闭的联机蓝绿偏色诊断：关联两端纹理创建/上传/绑定及真实 backend 状态，异步限量写日志，配套分析器与备份安装脚本。三件套编译及相关 x64 Wine 回归通过；尚待用户实机反馈，没有加入 DXT 尺寸 fallback 或宣称偏色已修复。
+- Volume pitch 缺陷已记录，尚未修正。RT/depth、DEFAULT/MSAA、VB/IB/Volume 通用恢复、小 buffer、Steam Overlay 输入及连续过图队列修复仍未完成。桥的修复范围限于自身 D3D9 接口、资源、传输和呈现；游戏内部对象与队列逻辑不纳入实现或修复计划。
+
+Integrates Q8/ATI current-content recovery, unified reclaim, the second fullscreen/windowed Reset fix and opt-in network colour diagnostics. Author x86 testing confirmed GC releases and the second Reset fix; native ATI/Q8 readback and colour results remain pending. Fixes are limited to Bridge-owned D3D9 interfaces, resources, transport and presentation; game-internal objects and queues are outside project scope. Matched experimental binaries are distributed through the existing ZIP-only branch; no formal release is published.
+
+## 1.1.2-dev.2（本地 residency 实验 / Local residency experiment）
+
+- 将自动 learned、Drop、LGC/AGC/FGC 统一到 Entry 的 capability/safety/policy/reclaim。无恢复实现的资源在释放前保留；unclassified、真实 KEEP、未同步和不支持分别统计。
+- 审计现有 surface registry，未发现新增遗漏类型；补全八类覆盖快照。修正 offscreen 普通/Ex API 的 Client Usage 描述。
+- 新增 VA PRIVATE/MAPPED/IMAGE 分类与 VB/IB 分配释放/峰值计数；手动 GC 前后自动采样，未把 VB/IB/Volume 或游戏 DataCache 加入回收。
+- Bridge 详细控制 ABI v2 保留 v1 208-byte prefix 与旧插件兼容；L4N v2 插件显示覆盖/跳过原因，明确根菜单是上次动作结果。
+- 保留 dev.1 修正、learned hash/DB/promotion、现有后端与输入设置。未加入 hot buffer、加载提速或 Steam 输入修复，未更改 Host 默认配置，未提交/推送。
+- 本地 MSVC/Wine 构建与 mock 检查边界、尚待原生 Windows CI / 实机验收见 [实验说明](docs/PAGEBLOCK-RESIDENCY-EXPERIMENT.md)。没有新 RAM/FPS/AV 基准。
+
+Local development only: a single recovery-capability/safety/reclaim path, conservative unsupported-resource retention, classified coverage, VA/VB/IB diagnostics and backward-compatible control v2. No new gameplay result, hot-buffer implementation or backend/input/default selection change; not pushed or released.
+
 ## 1.1.2-dev.1（独立开发分支 / Development branch）
 
 - 崩溃报告包含实际模块+偏移、异常/AV 参数、Client/Host、寄存器、故障线程命令上下文与短历史；原始日志和独立文本在终止前刷新。通用 SEH 模态断言改为记录后退出，对端异常退出与本地故障分开标注。

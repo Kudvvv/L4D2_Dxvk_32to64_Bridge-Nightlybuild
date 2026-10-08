@@ -2,6 +2,8 @@
 
 **v1.1 状态：**x86 Host 已实机确认正常启动/进图，现为正式可选模式。完整包同时包含 x86/x64 Host 和官方 DXVK 2.6.1 两种位数；一般使用保持 `learned-aggressive`，仅切换 `client.testX86Server`。作者观察到优化后 x86 总系统 RAM 约 16.7 GB、无桥约 16.5 GB；不是固定 +0.2 GB 保证。正常安装见 [README](../README.md)，证据见 [验证记录](V1.1-VALIDATION.md)。
 
+**当前默认：**后续开发版随包配置已改为 x86 Host（`client.testX86Server=True`），x64 保留为可选模式。已有升级包保留用户原配置；下文保留历史架构对照方法，当前累计变化见 [更新说明](CHANGES-SINCE-V1.1.md)。
+
 以下保留独立对照包及 KEEP 控制变量测试方法，**不是 v1.1 推荐配置的替代说明**。
 
 ## 安装与切换

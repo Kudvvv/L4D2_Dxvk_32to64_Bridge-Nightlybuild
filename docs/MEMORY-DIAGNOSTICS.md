@@ -1,5 +1,7 @@
 # v1.0.0 纹理 shadow 地址空间回收与诊断
 
+**文档范围：**下文 v1.0 数值与单客户端升级方式为历史记录。当前开发版请使用 [配套 residency 实验升级](PAGEBLOCK-RESIDENCY-EXPERIMENT.md)，不能与旧 Host 混装。schema=3 扩展见本页末尾。
+
 旧版进图采样中，纹理表面 shadow 达到 2,231,984,860 字节（约 2.08 GiB），加上顶点和索引 shadow 约 2.25 GiB。x86 进程空闲地址空间只剩约 147 MiB，最大连续空闲块约 55 MiB。这证明 bridge 的 CPU 副本造成严重地址空间压力；日志未记录最终异常，不能据此确定具体崩溃指令。
 
 新版将非共享堆路径的纹理表面 shadow 改为 Windows 分页文件支持的 section。Lock 时映射并保持指针有效，Unlock 将写入数据复制到现有 IPC 后解除锁定。缓存超出预算时，优先取消最久未使用且未锁定的映射；section 保留全部内容，下次 Lock 重新映射，不依赖 GPU 回读。资源销毁时关闭 section。预算按 Windows 分配粒度计入对齐开销，避免大量小 mip 映射消耗过多地址空间。
@@ -23,3 +25,13 @@ vertex_bytes/count、index_bytes/count 是顶点/索引缓冲 shadow，包括使
 采样由 Present 和 shadow 分配/映射触发，间隔至少五秒，没有后台线程；没有这些调用的阶段不会持续记录。统计是近似快照，不包含引擎其他内存、IPC 和代理对象。event=allocation-failed 记录缓冲 shadow 分配失败；section-create-failed、section-map-failed 记录 section 或映射失败，并附带 win32_error，立即刷新文件。没有失败事件不能排除其他位置的内存耗尽或访问错误。
 
 Windows x86 自动测试覆盖：映射回收后内容恢复、活动锁和嵌套锁保持指针有效、128 个小映射的预算控制、资源销毁时清零计数，以及原来的诊断分配失败路径。通过这些测试不能替代 L4D2 实测。
+
+## 1.1.2-dev.2：VA 分类与 VB/IB 分配释放统计（schema=3）
+
+在同一次已有 VirtualQuery 扫描中新增 `va_private_committed/reserved`、`va_mapped_committed/reserved`、`va_image_committed/reserved`、`va_other_committed/reserved`。完整扫描下，各 committed/reserved 分类之和分别等于原 `va_committed/va_reserved`；保留全部旧字段。未分类区域使用 other，尤其 reserved region 的 Type 可能为空。PRIVATE 并不等于游戏引擎，MAPPED 也并不等于全部 PageBlock；这些字段不能自行证明内存所有者或泄漏。
+
+`vertex_allocated_bytes/freed_bytes/allocations/frees/peak_bytes` 和对应 `index_*` 是现有 Bridge VB/IB heap shadow 的进程累计计数及当前 live bytes 峰值。`vertex_bytes/index_bytes` 仍是当下 live payload；不是 allocator heap 的全部保留 VA。单项原子计数不会把所有资源冻结成同一瞬间，动态帧中的统计是近似快照；PageBlock mapped/backing 有各自计数，不能累加为系统 RAM。
+
+没有新配置键，无后台线程，不提高原五秒周期。手动 GC 控制入口强制写 `pageblock-gc-before` / `pageblock-gc-after`，刷新日志，用这两行对照 va_free/类别及 PB_GC，不要求玩家报告精确秒数。运行期间分配/Present 是普通采样触发点，空闲/挂起且无这些调用时仍不持续采样。
+
+这只是定位剩余 AV 变化，不给 VB/IB 增加 eviction，也不清理游戏模型/声音/DataCache。Header-only scanner 测试使用真实 private allocation 与 mapped section 验证分类；x86 编译、x64 Wine 执行通过不等于 L4D2 的长期跨图测量。

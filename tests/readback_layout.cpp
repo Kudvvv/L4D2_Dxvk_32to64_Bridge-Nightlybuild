@@ -39,6 +39,29 @@ int main() {
   assert(residencyLayout(1, 3, 28, l) && l.rowBytes == 1 && l.bytes == 3);
   assert(!layout(1, 3, 28, l)); // Phase 1 format eligibility stays unchanged.
   assert(!residencyLayout(256, 256, 999, l));
+  assert(residencyLayout(32, 32, kQ8W8V8U8, l) && l.rowBytes == 128 && l.bytes == 4096);
+  assert(!layout(32, 32, kQ8W8V8U8, l));
+  for (const auto format : { l4d2_ati::kAti1, l4d2_ati::kAti2 }) {
+    for (const auto width : { 1u, 2u, 4u, 7u, 32u, 256u }) {
+      uint32_t clientPitch = 0; uint64_t clientBytes = 0;
+      assert(residencyBackingLayout(width, 7, format, l, clientPitch, clientBytes));
+      l4d2_ati::Layout ati; assert(l4d2_ati::layout(width, 7, format, ati));
+      assert(l.blockWidth == 4 && l.blockHeight == 4 && l.blockBytes == ati.blockBytes);
+      assert(l.bytes == ati.bytes && clientPitch == ati.storagePitch && clientBytes == ati.backingBytes);
+      std::vector<uint8_t> source(l.bytes + 32, 0xed), recovered(l.bytes);
+      for (uint32_t i = 0; i < l.bytes; ++i) { source[i] = static_cast<uint8_t>(i * 37 + 11); }
+      assert(packResidencyRows(source.data(), ati.apiPitch, width, 7, format, recovered.data(), l));
+      assert(compare(source.data(), recovered.data(), l.bytes).mismatchBytes == 0);
+      assert(packResidencyRows(source.data(), ati.storagePitch, width, 7, format, recovered.data(), l));
+      assert(!packResidencyRows(source.data(), -1, width, 7, format, recovered.data(), l));
+      assert(!packResidencyRows(source.data(), 0, width, 7, format, recovered.data(), l));
+      assert(!layout(width, 7, format, l));
+    }
+  }
+  uint32_t clientPitch = 0; uint64_t clientBytes = 0;
+  assert(residencyBackingLayout(8192, 8192, l4d2_ati::kAti1, l, clientPitch, clientBytes));
+  assert(l.bytes == 32u * 1024u * 1024u && clientBytes == kMaxBytes);
+  assert(!residencyBackingLayout(8192, 8193, l4d2_ati::kAti1, l, clientPitch, clientBytes));
   Selection selection;
   assert(!selection.take(kDxt5, 32, 32, 20));
   assert(selection.take(kDxt5, 256, 256, 20));

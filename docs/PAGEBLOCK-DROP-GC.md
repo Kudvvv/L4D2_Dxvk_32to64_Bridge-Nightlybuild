@@ -2,7 +2,7 @@
 
 此功能属于开发实验，**不是已发布的 v1.1.1 补丁内容**。正常推荐配置保持 `learned-aggressive`；省略配置键时的兼容回退仍为 `keep`。不修改 Present、Host 位数选择、DXVK 或正式发布版本号。
 
-当前 [1.1.2-dev.1 开发版](DEVELOPMENT-V1.1.2.md) 保留此功能为可选实验，并整合 HUD 父菜单导航修正。插件在普通开发包的 `optional/L4N/` 中，不自动安装或启用；原 `5951831` CI 结果不冒充此次新二进制的原生 Windows 验收。
+当前 **[1.1.2-dev.3 residency 实验](PAGEBLOCK-RESIDENCY-EXPERIMENT.md)** 保留统一 Entry reclaim 与 capability/safety/learned 分类，补齐 Q8W8V8U8、ATI1/ATI2 当前内容恢复。实验 ZIP 沿用原 ZIP 专用下载分支，开发源码未推送。插件在普通开发包的 `optional/L4N/` 中；实验 ZIP 直接放在实际安装路径。下文原 `5951831` CI 是历史记录。
 
 ## 安装和使用
 
@@ -34,23 +34,23 @@ client.testReadbackRecovery = False
 
 实际 surface 上传是同步复制到 IPC 所有的 payload。Host 不保存 Client view 的指针；新驱逐路径还请求 Host 有序 ack，确认前序命令被处理。ack 不等待 GPU idle。以后恢复当前内容，复用原 Host D3D9 READONLY Lock 与 EVENT query/flush/wait，随后按逻辑行布局重建 backing。没有 client 历史数据、缓存复制或零填充替代恢复。
 
-## 三种 GC 共用一个 walker
+## 所有自动策略与三种 GC 共用 reclaim
 
-内部 C++ API：`l4d2_residency::RunPageBlockGc(Context&, PageBlockGcMode)`；生产包装：`RunPageBlockGc(PageBlockGcMode)`。所有真实释放最终调用同一个 `PagefileShadow::evictBacking`，它自身再次检查 game Lock 和 Bridge transfer pin。
+内部 C++ API：`l4d2_residency::RunPageBlockGc(Context&, PageBlockGcMode)`；生产包装：`RunPageBlockGc(PageBlockGcMode)`。所有自动/手动释放都经过 `Entry::queryCapability/queryLearnedDecision/querySafety/reclaim`，最终调用同一个 `PagefileShadow::evictBacking`；它自身再次检查 game Lock 和 Bridge transfer pin。Parent 保留 hash/DB/promotion，通知 Entry，不再独立驱逐。
 
 | 模式 | 判定 |
 |---|---|
-| learned | 仅原 Parent learned 逻辑已经识别为可驱逐的 mip；不覆盖 KEEP、DB 命中、promotion 或 fallback |
-| aggressive | 忽略 learned 历史，驱逐所有无 game pointer、无 active Bridge use 且能确认 Host 内容的 backing |
+| learned | 能力/安全检查通过且 learned 已识别为可驱逐的 mip；KEEP 与 unclassified 分开，不覆盖 DB 命中、promotion 或 fallback |
+| aggressive | 忽略 learned 历史，驱逐所有具备恢复能力、无 game pointer、无 active Bridge use 且完整 upload/Host ACK 成功的 backing |
 | force | 同样保留 game pointer；对可安全完成的 Bridge-owned 工作调用 drain，再确认 Host 并驱逐 idle backing |
 
 force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确认的 Host upload；缓存的 ack 不计一次新等待。当前 surface payload copy 在 Unlock 内同步完成，所以生产代码没有可独立挂起的 PageBlock copy 任务。force 会在 residency gate 等待先前 Lock/Unlock 操作结束，并使用有序 Host ack；不会取消游戏的 Lock，也不引入 GPU-wide idle。底层 drain callback 扩展点用于已知可安全完成的 Bridge-only operation，测试覆盖该路径；不能把仍未完成的 transfer 硬改为 idle。没有可安全 drain 的 transfer 会报告 skippedTransferring。
 
-尚未上传成功、upload copy 失败、Host ack 失败的 backing 保留并报告 `implementation-gap stage=host-ack`，不以 KEEP 历史为理由跳过。这个例外保护尚未能证明 Host 已持有正确内容的数据。
+尚未完整上传、upload copy 失败、Host ack 失败的 backing 保留并报告 `unsafe-unsynchronized`，不以 KEEP 历史为理由跳过。不支持的类型与缺少恢复布局分别为 unsupported-capability 和 recovery-unavailable。这个例外保护尚未能证明 Host 已持有正确内容的数据。
 
 ## drop 策略
 
-每次 Unlock 后，在无暴露指针／传输 pin、首次/本次 upload 已完成、Host ack 成功时，立即实际驱逐 backing。后续 CPU 访问：
+每次 Unlock 后，在 capability 检查通过、无暴露指针／传输 pin、完整首次 upload 和本次 upload 已完成、Host ack 成功时，立即实际驱逐 backing。后续 CPU 访问：
 
 - 完整 DISCARD：重建临时 backing，不恢复丢弃前的内容。
 - READONLY、普通 Lock 或部分区域：先恢复**当前 Host 内容**，再返回 Client 指针；部分写入保留范围外逻辑像素。
@@ -61,19 +61,19 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 
 ## 控制 ABI 与插件
 
-客户端新增命名导出 `L4D2BridgePageBlockControl`（WINAPI/stdcall），见 `pageblock_control.h`：ABI version 1 的固定大小 Request/Response；操作 Stats、SetPolicy、Gc，枚举分别为 0/1/2。L4N **插件接口 version 2** 与 Bridge **控制 ABI version 1** 是两个不同版本号。
+客户端新增命名导出 `L4D2BridgePageBlockControl`（WINAPI/stdcall），见 `pageblock_control.h`：ABI v1 的 Request=16/Response=208 和 Stats/SetPolicy/Gc 枚举 0/1/2 保持不变。新增详细 v2 Response=656，按版本/大小选择写入；旧插件 buffer 不会被扩大。`experimental-3` 插件优先 v2，旧 Bridge 拒绝后回退 v1。L4N **插件接口 version 2** 与 Bridge **控制 ABI version 2** 是独立协议。
 
 插件枚举当前已加载模块，查找命名导出，不主动 LoadLibrary 一个 D3D9 runtime。HUD menu 的 callback/user_data 指针按 SDK KeyValues 格式生成。失败显示 HRESULT；GC 返回统计子菜单。插件不持有 D3D9 资源引用，不操作资源内存。未来其他 UI 可复用同一控制 ABI。
 
-菜单返回由 L4N HUD 自身管理，不再生成插件自己的 `Back` 项。SDK 的非空 callback 返回值代表进入子菜单，不能用“再次返回根菜单”模拟退回上一级。`experimental-2` 中说明/统计文字回调返回 nullptr，点击不会新增层级或执行 Bridge 操作；统计在重新进入 PageBlock Stats 时重新查询，不再用递归 Refresh。策略结果页返回 Retention Policy，统计和 GC 结果页返回 L4D2 Bridge。策略菜单不显示会因旧页面缓存而过期的 Current 标签，当前值可在 PageBlock Stats 中查询。
+菜单返回由 L4N HUD 自身管理，不再生成插件自己的 `Back` 项。SDK 的非空 callback 返回值代表进入子菜单，不能用“再次返回根菜单”模拟退回上一级。`experimental-2` 及后续版本中说明/统计文字回调返回 nullptr，点击不会新增层级或执行 Bridge 操作；统计在重新进入 PageBlock Stats 时重新查询，不再用递归 Refresh。策略结果页返回 Retention Policy，统计和 GC 结果页返回 L4D2 Bridge。策略菜单不显示会因旧页面缓存而过期的 Current 标签，当前值可在 PageBlock Stats 中查询。
 
-导航修正尚未包含在下文 `5951831` 的已下载 Windows 产物中。新增回归检查使用 SDK callback 语义构建菜单栈模型；本地以 Win32 API 桩运行实际插件源码和回归测试，修正后通过，旧源码在统计文字点击检查中失败。该检查验证生成逻辑和调用次数，不能替代 Windows DLL 构建和真实 L4N HUD 的实现验证。
+导航修正不属于下文历史 `5951831` 产物。本轮实际 Windows DLL 的 x64 Wine mock 回归包括 100 轮父菜单导航与 v1/v2 fallback；x86 编译通过但本地未执行。该检查不能替代真实 L4N HUD 验证。根菜单明确显示 `Last action result`，是上次 GC/动作的静态结果，不是实时残余；Stats 需重新进入获取新快照。
 
 ## 诊断
 
 输出在客户端 DLL 同目录的 `l4d2-pageblock-gc.log`。显式 GC 总会输出一行 `PB_GC`，至少包含：
 
-`mode`、`pageBlocksScanned`、`pageBlocksEvicted`、`pageBlocksSkippedLocked`、`pageBlocksSkippedTransferring`、`pageBlocksSkippedPolicy`、`bytesUnmapped`、`mappedBytesBefore`、`mappedBytesAfter`；额外输出 `pageBlocksSkippedUnsynchronized`、`failures`、`backingBytesReleased`。force 还有 `transfersDrained`、`drainWaitCount`、`drainWaitTimeMs`。
+`mode`、`pageBlocksScanned`、`pageBlocksEvicted`、`pageBlocksSkippedLocked`、`pageBlocksSkippedTransferring`、`pageBlocksSkippedPolicy`、`bytesUnmapped`、`mappedBytesBefore`、`mappedBytesAfter`；额外输出 `pageBlocksSkippedUnsynchronized`、`failures`、`backingBytesReleased`。force 还有 `transfersDrained`、`drainWaitCount`、`drainWaitTimeMs`。所有模式另有 `hostAckWaitCount/TimeMs`，旧 force drain 可能计入相同 ACK，不要将两者相加。新增独立 skip：unsupported-capability、recovery-unavailable、unclassified、reference-test、no-backing；只有真实 learned KEEP 计 skippedPolicy。Stats/GC 另写 `PB_COVERAGE` 和八类 `PB_COVERAGE_CATEGORY`，见统一实验说明。
 
 `bytesUnmapped` 和 mapped before/after 统计实际 view 的 VirtualQuery region 大小，**不等于 RAM 工作集或 section backing 字节数**。只有 view 映射着才能释放 mapped VA；已由预算 trim 解除 view 的 backing 被关闭时，backingBytesReleased 可以非零而 bytesUnmapped 为零。既有 `surfaceViewBudgetBytes` 的 64 KiB 对齐预算收费仍保留。
 
@@ -86,9 +86,9 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 ## 当前范围和已知实现限制
 
 - 注册范围是非 shared-heap 的 surface PagefileShadow：普通 2D mip、cube face mip、独立 surface、backbuffer。VB/IB 使用其他 shadow allocator，volume 使用 per-Lock heap；此任务不把它们重做成第二套 PageBlock allocator。
-- current-content recovery 支持原 DXT1/3/5、A8R8G8B8/X8R8G8B8 及显式列举的常见线性颜色格式。先用 `residencyLayout` 验证逻辑行，再处理 Client 最小 4-byte pitch；不比较／依赖 padding。
-- ATI1/ATI2 特殊布局、深度、未知 FOURCC、大于 64 MiB 的 subresource 尚无此路径的完整恢复支持。实际 readback 是否可用还取决于该资源的 backend Lock 能力；DEFAULT/RT/MSAA 特例可能返回错误，当前未新增通用 staging/GetRenderTargetData 回退。不是所有 D3D9 资源都已能恢复。
-- aggressive/drop 可释放已经由 Host ack 的上述资源；若其后合法 CPU 访问缺少恢复实现，会明确报 implementation-gap。这是实验要揭示的 Bridge 限制，不能描述成 L4D2 本身不允许恢复。
+- current-content recovery 支持 DXT1/3/5、A8R8G8B8/X8R8G8B8、Q8W8V8U8、ATI1/ATI2 及显式列举的线性格式。`residencyBackingLayout` 同时校验逻辑行与 Client allocation；ATI 区分兼容 API Pitch 和压缩 storage Pitch，传回原始压缩块，额外 padding 不作为像素。
+- 深度、未知 FOURCC、逻辑或实际 backing 大于 64 MiB 的 subresource 尚无此路径的完整恢复支持。实际 readback 还取决于 backend Lock 能力；DEFAULT/非零 Usage/RT/depth/MSAA/backbuffer 为 unsupported-capability，未新增通用 staging/GetRenderTargetData 回退。
+- aggressive/drop/force 在释放前检查恢复 capability。未知格式、不匹配/超限大小等 recovery-unavailable 保留 backing；能力范围内若实际 backend readback 失败，仍明确报错。加入三格式不等于所有 D3D9 路径已覆盖。
 - SharedHeap 或非 vanilla backend 不启用新策略／驱逐。策略日志不可写不改变数据语义；控制失败可见，不能保证日志可用。
 - 菜单接口已按提供的 SDK v2 接入；原生 mock 菜单测试不能替代真实 L4N 的 HUD 调用和游戏渲染验证。
 
@@ -109,7 +109,7 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 
 以上 Bridge 源码在仓库中由 `patches/l4d2-bridge.patch` 保存，构建时应用到固定上游。新实现署名与第三方来源见 LICENSE / THIRD_PARTY.md；提供的 L4N SDK header 原样保留，不将其声称为项目原创或自行赋予 MIT 授权。
 
-## 本轮构建验证
+## 原实验的历史构建验证
 
 [Windows CI 37598250948](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/actions/runs/37598250948) 在代码提交 `5951831` 全部通过：x86 Client、x64/x86 Host、x86 L4N plugin 编译；x86/x64 residency/GC 原生测试；SDK v2 HUD callback + mock 控制导出测试；既有 Phase 1、真实删除/hash恢复/DB promotion 回归；ATI、adapter、window/input、queue、API-wait 等现有原生检查。Linux 上逻辑布局测试和 6 项 Python 分析测试也通过。
 
@@ -117,7 +117,7 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 
 后续作者提供了 [x86 learned-aggressive 的 c2m2→c2m5 实机跨图观察](PAGEBLOCK-CROSS-MAP-OBSERVATION.md)：旧实验构建、没有启用 drop/手动 GC。四个样本映射约 57–59 MiB、backing 约 60 MiB，后三张图 AV 为 2445/2442/2456 MB，没有明显累积。它不属于 1.1.2-dev.1 新修正的实机验收，也不验证独立 drop/手动 GC。
 
-## 仓库文件变更清单
+## 原实验的历史文件变更清单
 
 Bridge 的 17 个源码／构建文件修改由一个 patch 保存：Client surface/.def/summary、PagefileShadow、retention policy/runtime、residency/runtime/control；util control ABI、readback layout/transport、meson；Host readback backend/main。固定上游和版权不变。
 

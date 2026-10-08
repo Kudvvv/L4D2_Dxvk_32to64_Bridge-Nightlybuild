@@ -6,6 +6,8 @@
 
 **v1.1 状态：**该策略已经过实际 gameplay 测试，正式推荐配置为 `learned-aggressive`、详细诊断关闭。真实淘汰一轮累计 5.5935 GiB、无 observed retention miss，并记录已有 DB 命中；累计淘汰不是同时节省的 RAM。Phase 1 的 13 个资源 / 39 次一致比较已通过，但不能把 retained-reference 验证或无 miss 会话当作完整真实恢复覆盖。方法和历史测试过程保留在下文，证据见 [v1.1 验证记录](V1.1-VALIDATION.md)，正常安装见 [README](../README.md)。
 
+**后续实现说明：**1.1.2-dev.2 把 learned 实际驱逐移交统一 Entry reclaim；原 hash/DB/promotion 保留，未完成指纹的资源现在独立统计 unclassified。下文是 v1.1 的历史实验与测量；本轮覆盖、安全边界和配套三文件安装见 [统一 residency 实验](PAGEBLOCK-RESIDENCY-EXPERIMENT.md)。
+
 ## 安装与配置
 
 下载本次成功构建中的 **`l4d2-bridge-learned-retention-experiment`**，完全退出游戏与桥，备份后同时替换同一包的（以下为 x64 专项更新；v1.1 完整包含两种 Host）：

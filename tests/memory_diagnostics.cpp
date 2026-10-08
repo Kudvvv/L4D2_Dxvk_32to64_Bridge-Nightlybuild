@@ -78,6 +78,18 @@ int main(int argc, char** argv) {
   auto index = allocate(2048, Kind::Index);
   if (bytes[0] != 4096 || bytes[1] != 8192 || bytes[2] != 2048 ||
       objects[0] != 1 || objects[1] != 1 || objects[2] != 1) { return 2; }
+  if (allocatedBytes[1] != 8192 || allocatedBytes[2] != 2048 || allocationCount[1] != 1
+      || allocationCount[2] != 1 || peakBytes[1] != 8192 || peakBytes[2] != 2048) { return 30; }
+  const auto privateRegion = VirtualAlloc(nullptr, 16 * 1024 * 1024, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  const auto mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, 8 * 1024 * 1024, nullptr);
+  const auto view = mapping ? MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0) : nullptr;
+  if (!privateRegion || !view) { return 31; }
+  const auto va = scanAddressSpace();
+  if (!va.complete || va.committed != va.privateCommitted + va.mappedCommitted + va.imageCommitted + va.otherCommitted
+      || va.reserved != va.privateReserved + va.mappedReserved + va.imageReserved + va.otherReserved
+      || va.free + va.reserved + va.committed != va.limit
+      || va.privateCommitted < 16 * 1024 * 1024 || va.mappedCommitted < 8 * 1024 * 1024 || !va.imageCommitted) { return 32; }
+  if (!UnmapViewOfFile(view) || !CloseHandle(mapping) || !VirtualFree(privateRegion, 0, MEM_RELEASE)) { return 33; }
   for (size_t i = 0; i < 8192; ++i) {
     if (vertex[i] != 0) { return 3; }
   }
@@ -86,6 +98,7 @@ int main(int argc, char** argv) {
   delete[] index; released(2048, Kind::Index);
   if (bytes[0] != 0 || bytes[1] != 0 || bytes[2] != 0 ||
       objects[0] != 0 || objects[1] != 0 || objects[2] != 0) { return 4; }
+  if (freedBytes[1] != 8192 || freedBytes[2] != 2048 || freeCount[1] != 1 || freeCount[2] != 1) { return 34; }
   bool failed = false;
   try {
     auto impossible = allocate(std::numeric_limits<size_t>::max(), Kind::Surface);
@@ -104,6 +117,9 @@ int main(int argc, char** argv) {
       text.find("q_wait_events=1") == std::string::npos ||
       text.find("q_full_wait_ms=17") == std::string::npos ||
       text.find("cpu_times_valid=1") == std::string::npos ||
-      text.find("schema=2") == std::string::npos) { return 6; }
+      text.find("schema=3") == std::string::npos ||
+      text.find("va_mapped_committed=") == std::string::npos ||
+      text.find("vertex_freed_bytes=8192") == std::string::npos ||
+      text.find("index_allocations=1") == std::string::npos) { return 6; }
   return 0;
 }

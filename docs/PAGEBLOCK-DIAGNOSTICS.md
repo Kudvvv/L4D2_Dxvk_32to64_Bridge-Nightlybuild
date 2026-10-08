@@ -4,6 +4,8 @@
 
 # PagefileShadow 寿命诊断 / Lifetime diagnostics
 
+**文档范围：**下文描述早期只读 lifetime 插桩，客户端单独安装步骤仅适用于当时兼容构建。当前开发版必须匹配三个桥二进制，并新增 [统一 coverage / reclaim 快照](PAGEBLOCK-RESIDENCY-EXPERIMENT.md)；诊断选项本身不等于 Drop/GC 开关。
+
 这一更新只观察桥客户端的 CPU shadow backing，帮助评估将来是否有机会减少长期保留的数据。**不会丢弃或回收任何 backing，不修改真实 LRU 映射缓存、资源寿命、D3D9 返回值、上传数据、IPC、DXVK 或渲染行为。** 原有解锁后 UnmapViewOfFile 行为仍照常执行，它是已有的映射回收，不是本诊断引入的 backing 回收。
 
 ## 安装和运行
