@@ -1,5 +1,5 @@
 diff --git a/bridge/meson.build b/bridge/meson.build
-index 495101d..fe56fe6 100644
+index 495101d..721b8a8 100644
 --- a/bridge/meson.build
 +++ b/bridge/meson.build
 @@ -1,3 +1,7 @@
@@ -34,12 +34,14 @@ index 495101d..fe56fe6 100644
  
  lib_version = bridge_compiler.find_library('Version')
  lib_commCtrl = bridge_compiler.find_library('Comctl32')
-@@ -246,6 +258,13 @@ endif
+@@ -246,6 +258,15 @@ endif
  
  message('Full version: ' + full_version)
  
 +# A matched fork build identifies its version and patch, not just the pinned upstream HEAD.
-+fork_build_id = run_command(python_interpreter.full_path(), [global_src_root_norm + './scripts-common/get_env.py', 'L4D2_BRIDGE_BUILD_ID'], check : true).stdout().strip()
++# The upstream get_env.py uses os._exit, which can discard buffered stdout
++# when Meson captures it. Normal Python exit preserves the fork build identity.
++fork_build_id = run_command(python_interpreter.full_path(), '-c', 'import os; print(os.environ.get("L4D2_BRIDGE_BUILD_ID", ""))', check : true).stdout().strip()
 +if fork_build_id != ''
 +  full_version = fork_build_id
 +  message('L4D2 fork build: ' + full_version)
@@ -48,7 +50,7 @@ index 495101d..fe56fe6 100644
  bridge_version = vcs_tag(
    command: [python_interpreter.full_path(), global_src_root_norm + './scripts-common/echo.py', full_version],
    input:  'version.h.in',
-@@ -322,7 +341,7 @@ foreach key : copy_targets.keys()
+@@ -322,7 +343,7 @@ foreach key : copy_targets.keys()
  endforeach
  
  # Building project files after builds for x86_64 and x86 platforms are created, here builds for x86 platform are created after x86_64
