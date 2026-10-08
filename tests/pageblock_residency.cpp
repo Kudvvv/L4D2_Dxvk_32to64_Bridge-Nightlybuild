@@ -58,9 +58,27 @@ uint8_t* upload(Entry& entry, PagefileShadow& backing, uint32_t size, uint8_t va
   auto* pointer = backing.acquire(size, SIZE_MAX); assert(pointer);
   std::memset(pointer, value, size); entry.uploaded(size); backing.release(SIZE_MAX); return pointer;
 }
+static unsigned int privateAddressReuses = 0;
 bool unmapped(const void* pointer) {
   MEMORY_BASIC_INFORMATION region {};
-  return VirtualQuery(pointer, &region, sizeof(region)) && region.State == MEM_FREE;
+  if (!VirtualQuery(pointer, &region, sizeof(region))) { return false; }
+  // GC logging can reuse a released view's address for a private heap allocation.
+  // A surviving section view remains MEM_MAPPED and must still fail this check.
+  if (region.Type == MEM_PRIVATE) { ++privateAddressReuses; }
+  return region.State == MEM_FREE || region.Type == MEM_PRIVATE;
+}
+
+void releasedAddressTests() {
+  PagefileShadow backing;
+  auto* pointer = backing.acquire(4096, SIZE_MAX); assert(pointer);
+  assert(!unmapped(pointer)); // Negative control: a live section must be detected.
+  backing.release(SIZE_MAX);
+  assert(SUCCEEDED(backing.evictBacking(4096)) && backing.recoveryMissing());
+  assert(unmapped(pointer));
+  auto* reused = VirtualAlloc(pointer, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  assert(reused == pointer && unmapped(pointer));
+  assert(backing.recoveryMissing() && !backing.get() && !backing.backingBytes());
+  assert(VirtualFree(reused, 0, MEM_RELEASE));
 }
 
 void formatRecoveryTests(std::string& log) {
@@ -370,8 +388,10 @@ int main() {
     assert(c.policy == Policy::Drop); // A miss never promotes drop into KEEP.
   }
   unifiedTests(desc, layout.bytes, log);
+  releasedAddressTests();
   formatRecoveryTests(log);
   assert(l4d2_memory::surfaceBackingBytes == baseline);
   assert(log.find("PB_GC mode=force") != std::string::npos && log.find("stage=reconstruction") != std::string::npos);
   puts("PASS: learned/aggressive/force GC; KEEP and transfer/Lock pins; real VA release; current Host readback, padded rows, repeated drop, discard and explicit recovery gaps (mock backend)");
+  printf("INFO: released addresses reused by private allocations=%u (includes one forced reuse control)\n", privateAddressReuses);
 }
