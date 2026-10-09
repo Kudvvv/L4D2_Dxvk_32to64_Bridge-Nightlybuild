@@ -22,7 +22,8 @@ def analyze(text):
                 session = {"role": fields["role"], "pid": int(fields["pid"]),
                            "build": fields["build"], "bits": int(fields["bits"]),
                            "start_ms": int(fields["tick_ms"]), "ended": False,
-                           "kinds": {}, "commands": {}, "limits": {}, "warnings": [],
+                           "kinds": {}, "commands": {}, "buffers": {}, "dynamic_locks": {}, "states": {},
+                           "limits": {}, "warnings": [],
                            "observed_live": {}, "largest_released": []}
                 sessions.append(session)
             if session is None:
@@ -33,6 +34,13 @@ def analyze(text):
             if event == "KIND":
                 # Records are cumulative. Replace the previous snapshot; never sum it.
                 session["kinds"][fields["kind"]] = values
+            elif event == "BUFFER":
+                session["buffers"][fields["kind"]] = values
+            elif event == "DYNAMIC_LOCK":
+                session["dynamic_locks"][fields["kind"]] = values
+            elif event == "STATE":
+                key = fields["command"] + ":" + fields["recording"]
+                session["states"][key] = {**values, "name": fields["name"]}
             elif event == "COMMAND":
                 key = fields["queue"] + ":" + fields["command"]
                 session["commands"][key] = {**values, "name": fields["name"], "queue": fields["queue"]}
@@ -65,6 +73,18 @@ def analyze(text):
             if session["limits"].get(key, 0):
                 session["warnings"].append(f"{key}={session['limits'][key]}: detailed evidence is incomplete")
         session["warnings"] = sorted(set(session["warnings"]))
+        for kind, values in session["dynamic_locks"].items():
+            count = values.get("lock_count", 0)
+            values["average_lock_bytes"] = values.get("total_lock_bytes", 0) / count if count else None
+            buckets = [value for key, value in values.items() if key.startswith("bucket_")]
+            if buckets and sum(buckets) != count:
+                session["warnings"].append(f"{kind}: dynamic histogram count mismatch")
+        for values in session["states"].values():
+            total, compared, same = (values.get(key, 0) for key in ("total_calls", "compared_calls", "same_value_calls"))
+            values["same_value_ratio"] = same / total if total else None
+            values["compared_same_value_ratio"] = same / compared if compared else None
+            if same > compared or compared > total:
+                session["warnings"].append(f"{values['name']}: inconsistent state equality counts")
         session["largest_observed_live"] = sorted(session["observed_live"].values(), key=lambda row: row.get("shadow_bytes", 0), reverse=True)[:20]
         # Live records rotate; this list is observed metadata, not a complete live inventory.
         del session["observed_live"]
@@ -91,6 +111,18 @@ def main():
             print(f"  {kind}: live={values.get('live', 0)} shadow={values.get('shadow_bytes', 0) / 1048576:.2f} MiB "
                   f"locks={values.get('locks', 0)} uploads={values.get('upload_bytes', 0) / 1048576:.2f} MiB "
                   f"readonly={values.get('readonly', 0)} invalid={values.get('invalid', 0)}")
+        for kind, values in session["buffers"].items():
+            print(f"  Storage {kind}: static WRITEONLY candidates={values.get('candidate_writeonly_static_bytes', 0) / 1048576:.2f} MiB "
+                  f"dynamic shadow={values.get('dynamic_shadow_live_bytes', 0) / 1048576:.2f} MiB "
+                  f"avoided={values.get('avoided_persistent_shadow_bytes_current', 0) / 1048576:.2f} MiB "
+                  f"staging enabled={values.get('range_staging_enabled', 0)}")
+        for kind, values in session["dynamic_locks"].items():
+            print(f"  Dynamic {kind}: locks={values.get('lock_count', 0)} average={values['average_lock_bytes']} B "
+                  f"min/max={values.get('min_lock_bytes', 0)}/{values.get('max_lock_bytes', 0)} B")
+        for values in session["states"].values():
+            print(f"  Local state {values['name']}: recording={values.get('recording', 0)} "
+                  f"same/total={values.get('same_value_calls', 0)}/{values.get('total_calls', 0)} "
+                  f"compared={values.get('compared_calls', 0)}")
         for row in session["largest_observed_live"][:5]:
             print(f"  Observed {row['kind']} id={row.get('id')}: shadow={row.get('shadow_bytes', 0) / 1048576:.2f} MiB "
                   f"locks={row.get('locks', 0)} lock_idle={row.get('lock_idle_ms', 0)} ms")

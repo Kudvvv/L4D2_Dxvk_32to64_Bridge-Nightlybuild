@@ -20,8 +20,15 @@ Push-Location $output
 try {
   & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /DNOMINMAX "/I$source/bridge/src/util" "$repoRoot/tests/data_diagnostics_test.cpp" "$source/bridge/src/util/data_diagnostics.cpp" /Fe:data-test.exe
   if ($LASTEXITCODE -ne 0) { throw 'Data test compilation failed' }
-  foreach ($mode in @('--disabled', 'normal', '--overflow', '--cap', '--periodic')) {
+  foreach ($mode in @('--disabled', 'normal', '--extended', '--overflow', '--cap', '--periodic')) {
     & .\data-test.exe $mode
     if ($LASTEXITCODE -ne 0) { throw "Data test $mode failed" }
   }
+  $constantSource = Join-Path $output 'actual_constant_diagnostics.cpp'
+  & python "$repoRoot/scripts/generate_buffer_contract_test.py" --source $source --output $constantSource --constants
+  if ($LASTEXITCODE -ne 0) { throw 'Constant diagnostic source generation failed' }
+  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /DNOMINMAX "/I$source/bridge/src/util" "/I$repoRoot/tests" $constantSource "$source/bridge/src/util/data_diagnostics.cpp" /Fe:constant-test.exe
+  if ($LASTEXITCODE -ne 0) { throw 'Constant diagnostics test compilation failed' }
+  & .\constant-test.exe
+  if ($LASTEXITCODE -ne 0) { throw 'Constant diagnostics regression test failed' }
 } finally { Pop-Location }

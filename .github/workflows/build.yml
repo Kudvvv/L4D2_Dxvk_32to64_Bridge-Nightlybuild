@@ -91,6 +91,9 @@ jobs:
           ./scripts/test_data_diagnostics.ps1
           python -m unittest discover -s tests -p test_data_analysis.py
           if ($LASTEXITCODE -ne 0) { throw 'Data log analysis tests failed' }
+      - name: Test x86 VB and IB historical contents and multiple Lock contract
+        shell: powershell
+        run: ./scripts/test_buffer_contract.ps1
       - name: Test Volume byte pitches and partial uploads on x86 and x64
         shell: powershell
         run: ./scripts/test_volume_layout.ps1

@@ -22,12 +22,14 @@ static std::string readFile() {
 }
 int main(int argc, char** argv) {
   static_assert(D3DLOCK_READONLY == 0x10 && D3DLOCK_DISCARD == 0x2000 && D3DLOCK_NOOVERWRITE == 0x1000);
+  static_assert(D3DUSAGE_WRITEONLY == 0x8 && D3DUSAGE_DYNAMIC == 0x200);
   const std::string mode = argc > 1 ? argv[1] : "normal";
   DeleteFileW(L"data-test.log");
   if (mode == "--disabled") {
     Resource resource; resource.open(Kind::Vertex, 1, 64, 64);
     resource.lock(0, 0, D3DLOCK_DISCARD, S_OK); resource.upload(64);
-    Temporary temporary(64); Wire wire; wire.add(68, 64, true);
+    resource.unlock(false); resource.destroyLocked(1);
+    stateSet(1, true, 16); Temporary temporary(64); Wire wire; wire.add(68, 64, true);
     sent(1, false, wire, true, 16); Dispatch dispatch(1, false); finish();
     check(!enabled.load() && !wire.bytes && GetFileAttributesW(L"data-test.log") == INVALID_FILE_ATTRIBUTES, "disabled path created state or output");
     return failures;
@@ -35,6 +37,37 @@ int main(int argc, char** argv) {
   check(!initialize("client", "test-build", 5000, L"missing-directory/data.log"), "invalid output path succeeded");
   check(!enabled.load(), "failed initialization enabled tracing");
   check(initialize("client", "test-build", mode == "--periodic" ? 1000 : 5000, L"data-test.log", mode == "--cap" ? 4096 : 64ull * 1024 * 1024), "initialization failed");
+  if (mode == "--extended") {
+    {
+      Resource stat; stat.open(Kind::Vertex, 1, 64, 64, D3DUSAGE_WRITEONLY, D3DPOOL_MANAGED);
+      stat.lock(8, 0, 0, S_OK); stat.unlock(true); stat.unlock(false); stat.destroyLocked(2);
+      Resource dynamic; dynamic.open(Kind::Index, 2, 131072, 131072, D3DUSAGE_WRITEONLY | D3DUSAGE_DYNAMIC);
+      const uint64_t sizes[] = { 0, 64, 65, 256, 257, 1024, 1025, 4096, 4097, 16384, 16385, 65536, 65537 };
+      for (auto size : sizes) { dynamic.lock(size ? 0 : 131072, size, D3DLOCK_NOOVERWRITE, S_OK); }
+      dynamic.lock(131071, 2, 0, S_OK); dynamic.lock(0, 32, 0, E_FAIL);
+      Resource readable; readable.open(Kind::Vertex, 3, 16, 16, 0);
+      Resource shared; shared.open(Kind::Vertex, 4, 32, 0, D3DUSAGE_WRITEONLY);
+      const auto texture = static_cast<uint16_t>(Commands::IDirect3DDevice9Ex_SetTexture);
+      stateSet(texture, true, 8); stateSet(texture, false, 8);
+      stateSet(texture, true, 8, true, false); stateSet(texture, true, 8, true);
+      std::vector<std::thread> threads;
+      for (int i = 0; i < 4; ++i) {
+        threads.emplace_back([&]() { for (int n = 0; n < 1000; ++n) { stateSet(texture, true, 8); } });
+      }
+      for (auto& thread : threads) { thread.join(); }
+    }
+    finish();
+    const auto log = readFile();
+    check(log.find("event=BUFFER kind=vb full_shadow_live_bytes=0 full_shadow_resource_count=0 dynamic_shadow_live_bytes=0 candidate_writeonly_static_bytes=0 peak_candidate_writeonly_static_bytes=64") != std::string::npos, "storage lifetime accounting differs");
+    check(log.find("eligible_writeonly_static_bytes=0 range_staging_enabled=0 avoided_persistent_shadow_bytes_current=0") != std::string::npos, "candidates were claimed as safe reclamation");
+    check(log.find("skipped_not_writeonly_count=1 skipped_not_writeonly_bytes=16 skipped_historical_contents_count=1 skipped_historical_contents_bytes=64 skipped_no_local_shadow_count=1 skipped_no_local_shadow_bytes=32") != std::string::npos, "storage exclusion reasons differ");
+    check(log.find("full_shadow_lock_count=1 full_shadow_lock_bytes=56 unlock_count=1 unlock_without_lock=1 destroy_while_locked=1") != std::string::npos, "lock/destruction observations differ");
+    check(log.find("event=DYNAMIC_LOCK kind=ib lock_count=13 total_lock_bytes=174726 min_lock_bytes=0 max_lock_bytes=65537 bucket_0_64=2 bucket_65_256=2 bucket_257_1024=2 bucket_1025_4096=2 bucket_4097_16384=2 bucket_16385_65536=2 bucket_over_65536=1") != std::string::npos, "dynamic histogram boundaries or failed-lock exclusion differ");
+    check(log.find("recording=0 total_calls=4002 compared_calls=4002 same_value_calls=4001 total_payload_bytes=32016 same_value_payload_bytes=32008") != std::string::npos, "state equality counters lost concurrent calls");
+    check(log.find("recording=1 total_calls=2 compared_calls=1 same_value_calls=1 total_payload_bytes=16 same_value_payload_bytes=8") != std::string::npos, "recording context or unknown state was miscounted");
+    std::cout << "Extended data diagnostics failures=" << failures << '\n';
+    return failures;
+  }
   if (mode == "--periodic") {
     {
       Resource resource; resource.open(Kind::Volume, 25, 0, 0);

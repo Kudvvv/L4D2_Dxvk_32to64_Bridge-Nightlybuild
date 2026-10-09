@@ -307,7 +307,7 @@ index 9de506f..9260d0d 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_device.cpp b/bridge/src/client/d3d9_device.cpp
-index 1abdf20..cea933c 100644
+index 1abdf20..3d53239 100644
 --- a/bridge/src/client/d3d9_device.cpp
 +++ b/bridge/src/client/d3d9_device.cpp
 @@ -1,3 +1,7 @@
@@ -348,7 +348,17 @@ index 1abdf20..cea933c 100644
  #include <assert.h>
  
  #define GET_PRES_PARAM() (m_pSwapchain->getPresentationParameters())
-@@ -144,6 +157,9 @@ ULONG Direct3DDevice9Ex_LSS<EnableSync>::Release() {
+@@ -83,6 +96,9 @@ void Direct3DDevice9Ex_LSS<EnableSync>::releaseInternalObjects(bool resetState)
+   destroyImplicitObjects();
+ 
+   if (resetState) {
++    // NV-DXVK start: Cleared resource state is no longer comparable.
++    invalidateDataState();
++    // NV-DXVK end
+     for (auto& texture : m_state.textures) {
+       texture.reset(nullptr);
+     }
+@@ -144,6 +160,9 @@ ULONG Direct3DDevice9Ex_LSS<EnableSync>::Release() {
    LogFunctionCall();
  
    const ULONG cnt = D3DBase::Release();
@@ -358,7 +368,7 @@ index 1abdf20..cea933c 100644
    const bool bDestroy = !m_bIsDestroying && (cnt == m_implicitRefCnt);
    if (bDestroy) {
      m_bIsDestroying = true;
-@@ -163,9 +179,15 @@ template<bool EnableSync>
+@@ -163,9 +182,15 @@ template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::TestCooperativeLevel() {
    ZoneScoped;
    LogFunctionCall();
@@ -377,7 +387,7 @@ index 1abdf20..cea933c 100644
  }
  
  template<bool EnableSync>
-@@ -234,11 +256,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::internalGetDeviceCaps(D3DCAPS9* pCaps
+@@ -234,11 +259,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::internalGetDeviceCaps(D3DCAPS9* pCaps
  
    HRESULT hresult = DeviceBridge::get_data();
    if (SUCCEEDED(hresult)) {
@@ -400,7 +410,7 @@ index 1abdf20..cea933c 100644
    }
    DeviceBridge::pop_front();
  
-@@ -379,6 +409,10 @@ template<bool EnableSync>
+@@ -379,6 +412,10 @@ template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetSwapChain(UINT iSwapChain, IDirect3DSwapChain9** pSwapChain) {
    ZoneScoped;
    LogFunctionCall();
@@ -411,7 +421,7 @@ index 1abdf20..cea933c 100644
  
    if (pSwapChain == nullptr) {
      return D3DERR_INVALIDCALL;
-@@ -411,45 +445,49 @@ unsigned int Direct3DDevice9Ex_LSS<EnableSync>::GetNumberOfSwapChains() {
+@@ -411,45 +448,49 @@ unsigned int Direct3DDevice9Ex_LSS<EnableSync>::GetNumberOfSwapChains() {
    return kNumImplicitSwapChains;
  }
  
@@ -490,7 +500,7 @@ index 1abdf20..cea933c 100644
  }
  
  HRESULT syncOnPresent() {
-@@ -459,6 +497,7 @@ HRESULT syncOnPresent() {
+@@ -459,6 +500,7 @@ HRESULT syncOnPresent() {
  
    // If we're syncing with the server on Present() then wait for the semaphore to be released
    if (GlobalOptions::getPresentSemaphoreEnabled()) {
@@ -498,7 +508,7 @@ index 1abdf20..cea933c 100644
      const auto maxRetries = GlobalOptions::getCommandRetries();
      size_t numRetries = 0;
      while (gbBridgeRunning && RESULT_FAILURE(gpPresent->wait()) && numRetries++ < maxRetries) {
-@@ -481,8 +520,12 @@ HRESULT syncOnPresent() {
+@@ -481,8 +523,12 @@ HRESULT syncOnPresent() {
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion) {
@@ -511,7 +521,7 @@ index 1abdf20..cea933c 100644
  
    // If the bridge was disabled in the meantime for some reason we want to bail
    // out here so we don't spend time waiting on the Present semaphore or trying
-@@ -502,6 +545,10 @@ template<bool EnableSync>
+@@ -502,6 +548,10 @@ template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetBackBuffer(UINT iSwapChain, UINT iBackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface9** ppBackBuffer) {
    ZoneScoped;
    LogFunctionCall();
@@ -522,7 +532,7 @@ index 1abdf20..cea933c 100644
    return m_pSwapchain->GetBackBuffer(iBackBuffer, Type, ppBackBuffer);
  }
  
-@@ -509,6 +556,9 @@ template<bool EnableSync>
+@@ -509,6 +559,9 @@ template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetRasterStatus(UINT iSwapChain, D3DRASTER_STATUS* pRasterStatus) {
    ZoneScoped;
    LogFunctionCall();
@@ -532,7 +542,7 @@ index 1abdf20..cea933c 100644
    return m_pSwapchain->GetRasterStatus(pRasterStatus);
  }
  
-@@ -557,6 +607,7 @@ void Direct3DDevice9Ex_LSS<EnableSync>::GetGammaRamp(UINT iSwapChain, D3DGAMMARA
+@@ -557,6 +610,7 @@ void Direct3DDevice9Ex_LSS<EnableSync>::GetGammaRamp(UINT iSwapChain, D3DGAMMARA
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture9** ppTexture, HANDLE* pSharedHandle) {
@@ -540,7 +550,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -564,27 +615,67 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
+@@ -564,27 +618,67 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateTexture(UINT Width, UINT Height
      return D3DERR_INVALIDCALL;
    }
  
@@ -579,8 +589,9 @@ index 1abdf20..cea933c 100644
 +      const l4d2_color::TextureRequest request { Width, Height, 1, Levels, Usage, static_cast<uint32_t>(Format), static_cast<uint32_t>(Pool), static_cast<uint32_t>(pLssTexture->getId()) };
 +      request.send2D(c);
 +      l4d2_color::texture("CREATE_TEXTURE_SERIALIZED", request, static_cast<uint32_t>(getId()), currentUID, S_OK, requestedLevels, pSharedHandle != nullptr, reinterpret_cast<uintptr_t>(_ReturnAddress()));
-+    }
-+  }
+     }
+   }
+-  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateTexture()", D3DERR_INVALIDCALL, currentUID);
 +  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper.
 +  bool serverResponded = false;
 +  const auto hresult = [&]() -> HRESULT {
@@ -590,15 +601,14 @@ index 1abdf20..cea933c 100644
 +      const auto result = static_cast<HRESULT>(DeviceBridge::get_data());
 +      DeviceBridge::pop_front();
 +      return result;
-     }
++    }
 +    return D3D_OK;
 +  }();
 +  if (FAILED(hresult)) {
 +    Logger::err(format_string("L4D2 CreateTexture failed on client: hresult=0x%08lx uid=%llu resource_id=%llu server_responded=%u",
 +      static_cast<unsigned long>(hresult), static_cast<unsigned long long>(currentUID),
 +      static_cast<unsigned long long>(pLssTexture->getId()), static_cast<unsigned>(serverResponded)));
-   }
--  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateTexture()", D3DERR_INVALIDCALL, currentUID);
++  }
 +  l4d2_color::texture("CREATE_TEXTURE_RESULT", { Width, Height, 1, Levels, Usage, static_cast<uint32_t>(Format), static_cast<uint32_t>(Pool), static_cast<uint32_t>(pLssTexture->getId()) },
 +    static_cast<uint32_t>(getId()), currentUID, hresult, requestedLevels, pSharedHandle != nullptr, 0, serverResponded);
 +  return l4d2_texture::completeCreation(pLssTexture, ppTexture, { hresult, serverResponded });
@@ -611,7 +621,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -606,6 +697,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVolumeTexture(UINT Width, UINT
+@@ -606,6 +700,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVolumeTexture(UINT Width, UINT
        ClientMessage c(Commands::IDirect3DDevice9Ex_CreateVolumeTexture, getId());
        currentUID = c.get_uid();
        c.send_many(Width, Height, Depth, Levels, Usage, Format, Pool, (uint32_t) pLssVolumeTexture->getId());
@@ -620,7 +630,7 @@ index 1abdf20..cea933c 100644
      }
    }
    WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("CreateVolumeTexture()", D3DERR_INVALIDCALL, currentUID);
-@@ -613,6 +706,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVolumeTexture(UINT Width, UINT
+@@ -613,6 +709,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVolumeTexture(UINT Width, UINT
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateCubeTexture(UINT EdgeLength, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DCubeTexture9** ppCubeTexture, HANDLE* pSharedHandle) {
@@ -628,7 +638,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -641,6 +735,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateCubeTexture(UINT EdgeLength, UI
+@@ -641,6 +738,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateCubeTexture(UINT EdgeLength, UI
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool, IDirect3DVertexBuffer9** ppVertexBuffer, HANDLE* pSharedHandle) {
@@ -636,7 +646,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogFunctionCall();
    if (Length == 0) {
-@@ -667,6 +762,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexBuffer(UINT Length, DWORD
+@@ -667,6 +765,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexBuffer(UINT Length, DWORD
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateIndexBuffer(UINT Length, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DIndexBuffer9** ppIndexBuffer, HANDLE* pSharedHandle) {
@@ -644,7 +654,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -694,6 +790,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateIndexBuffer(UINT Length, DWORD
+@@ -694,6 +793,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateIndexBuffer(UINT Length, DWORD
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTarget(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Lockable, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle) {
@@ -652,7 +662,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -729,6 +826,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTarget(UINT Width, UINT H
+@@ -729,6 +829,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTarget(UINT Width, UINT H
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurface(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Discard, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle) {
@@ -660,7 +670,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -762,6 +860,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurface(UINT Width,
+@@ -762,6 +863,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurface(UINT Width,
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::UpdateSurface(IDirect3DSurface9* pSourceSurface, CONST RECT* pSourceRect, IDirect3DSurface9* pDestinationSurface, CONST POINT* pDestPoint) {
@@ -668,7 +678,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -807,6 +906,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::UpdateTextureImpl(IDirect3DBaseTextur
+@@ -807,6 +909,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::UpdateTextureImpl(IDirect3DBaseTextur
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::UpdateTexture(IDirect3DBaseTexture9* pSourceTexture, IDirect3DBaseTexture9* pDestinationTexture) {
@@ -676,7 +686,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -920,6 +1020,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ColorFill(IDirect3DSurface9* pSurface
+@@ -920,6 +1023,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ColorFill(IDirect3DSurface9* pSurface
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurface(UINT Width, UINT Height, D3DFORMAT Format, D3DPOOL Pool, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle) {
@@ -684,7 +694,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -929,18 +1030,10 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurface(UINT Widt
+@@ -929,18 +1033,10 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurface(UINT Widt
  
    UID currentUID = 0;
    {
@@ -705,7 +715,58 @@ index 1abdf20..cea933c 100644
      (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
  
      {
-@@ -3216,6 +3309,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ComposeRects(IDirect3DSurface9* pSrc,
+@@ -1961,6 +2057,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTexture(DWORD Stage, IDirect3DBase
+       }
+       type = pTexture->GetType();
+     }
++    // NV-DXVK start: Measure local state equality without filtering calls.
++    if (l4d2_data::enabled.load(std::memory_order_relaxed)) {
++      const auto& state = m_stateRecording ? m_stateRecording->m_captureState : m_state;
++      const bool comparable = m_stateRecording ? m_stateRecording->m_dirtyFlags.textures[idx] : m_dataKnown && m_dataKnown->textures[idx];
++      l4d2_data::stateSet(static_cast<uint16_t>(Commands::IDirect3DDevice9Ex_SetTexture),
++        comparable && *state.textures[idx] == *objectRef && state.textureTypes[idx] == type, 8, m_stateRecording != nullptr, comparable);
++      if (!m_stateRecording && m_dataKnown) { m_dataKnown->textures[idx] = true; }
++    }
++    // NV-DXVK end
+     if (m_stateRecording) {
+       m_stateRecording->m_captureState.textures[idx] = std::move(objectRef);
+       m_stateRecording->m_captureState.textureTypes[idx] = type;
+@@ -2791,6 +2896,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
+   {
+     {
+       BRIDGE_DEVICE_LOCKGUARD();
++      // NV-DXVK start: Observe binding equality in the existing state domain.
++      if (l4d2_data::enabled.load(std::memory_order_relaxed)) {
++        const auto& state = m_stateRecording ? m_stateRecording->m_captureState : m_state;
++        const bool inRange = StreamNumber < state.streams.size();
++        const bool comparable = inRange && (m_stateRecording ? (m_stateRecording->m_dirtyFlags.streams[StreamNumber]
++          && (!pStreamData || m_stateRecording->m_dirtyFlags.streamOffsetsAndStrides[StreamNumber])) : m_dataKnown && m_dataKnown->streams[StreamNumber]);
++        const bool same = comparable && *state.streams[StreamNumber] == pLssStreamData
++          && (!pStreamData || (state.streamOffsets[StreamNumber] == OffsetInBytes && state.streamStrides[StreamNumber] == Stride));
++        l4d2_data::stateSet(static_cast<uint16_t>(Commands::IDirect3DDevice9Ex_SetStreamSource), same, 16, m_stateRecording != nullptr, comparable);
++        if (inRange && !m_stateRecording && m_dataKnown) { m_dataKnown->streams[StreamNumber] = true; }
++      }
++      // NV-DXVK end
+       if (m_stateRecording) {
+         m_stateRecording->m_captureState.streams[StreamNumber] = MakeD3DAutoPtr(pLssStreamData);
+         if (pStreamData != nullptr) {
+@@ -2886,6 +3003,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetIndices(IDirect3DIndexBuffer9* pIn
+   {
+     {
+       BRIDGE_DEVICE_LOCKGUARD();
++      // NV-DXVK start: Observe binding equality without changing reference ownership.
++      if (l4d2_data::enabled.load(std::memory_order_relaxed)) {
++        const auto& state = m_stateRecording ? m_stateRecording->m_captureState : m_state;
++        const bool comparable = m_stateRecording ? m_stateRecording->m_dirtyFlags.indices : m_dataKnown && m_dataKnown->indices;
++        l4d2_data::stateSet(static_cast<uint16_t>(Commands::IDirect3DDevice9Ex_SetIndices),
++          comparable && *state.indices == pLssIndexData, 4, m_stateRecording != nullptr, comparable);
++        if (!m_stateRecording && m_dataKnown) { m_dataKnown->indices = true; }
++      }
++      // NV-DXVK end
+       if (m_stateRecording) {
+         m_stateRecording->m_captureState.indices = MakeD3DAutoPtr(pLssIndexData);
+         m_stateRecording->m_dirtyFlags.indices = true;
+@@ -3216,6 +3342,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ComposeRects(IDirect3DSurface9* pSrc,
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion, DWORD dwFlags) {
@@ -713,7 +774,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    LogMissingFunctionCall();
    assert(m_ex);
-@@ -3234,6 +3328,9 @@ template<bool EnableSync>
+@@ -3234,6 +3361,9 @@ template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetGPUThreadPriority(INT* pPriority) {
    ZoneScoped;
    LogFunctionCall();
@@ -723,7 +784,7 @@ index 1abdf20..cea933c 100644
  
    // Function does not claim to support returning D3DERR_INVALIDCALL
    if (pPriority == nullptr) {
-@@ -3323,6 +3420,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckDeviceState(HWND hDestinationWin
+@@ -3323,6 +3453,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckDeviceState(HWND hDestinationWin
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Lockable, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle, DWORD Usage) {
@@ -731,7 +792,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3358,6 +3456,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
+@@ -3358,6 +3489,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Width, UINT Height, D3DFORMAT Format, D3DPOOL Pool, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle, DWORD Usage) {
@@ -739,7 +800,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3366,18 +3465,10 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+@@ -3366,18 +3498,10 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
      return D3DERR_INVALIDCALL;
    }
  
@@ -760,7 +821,7 @@ index 1abdf20..cea933c 100644
    (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
  
    UID currentUID = 0;
-@@ -3393,6 +3484,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+@@ -3393,6 +3517,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Discard, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle, DWORD Usage) {
@@ -768,7 +829,7 @@ index 1abdf20..cea933c 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3426,44 +3518,30 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
+@@ -3426,44 +3551,33 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ResetEx(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode) {
@@ -780,6 +841,9 @@ index 1abdf20..cea933c 100644
 +  if (!m_ex || !pPresentationParameters) { return D3DERR_INVALIDCALL; }
 +  BRIDGE_DEVICE_LOCKGUARD();
 +  if (!gbBridgeRunning || m_resetState.transportFailed()) { return D3DERR_DEVICELOST; }
++  // NV-DXVK start: ResetEx also starts a new diagnostic comparison interval.
++  invalidateDataState();
++  // NV-DXVK end
 +  const auto presParam = Direct3DSwapChain9_LSS::sanitizePresentationParameters(*pPresentationParameters, getCreateParams());
 +  m_resetState.begin();
 +  releaseInternalObjects(false);
@@ -829,7 +893,78 @@ index 1abdf20..cea933c 100644
  }
  
  template<bool EnableSync>
-@@ -3876,31 +3954,32 @@ void Direct3DDevice9Ex_LSS<EnableSync>::initImplicitDepthStencil() {
+@@ -3517,10 +3631,60 @@ HRESULT BaseDirect3DDevice9Ex_LSS::setShaderConstants(const uint32_t startRegist
+   const auto [commonHresult, adjCount] =
+     commonGetSetConstants<ShaderT, ConstantT, T>(startRegister, pConstantData, count);
+   if (!SUCCEEDED(commonHresult) || adjCount == 0) {
++    // NV-DXVK start: An accepted empty update has no state payload to compare.
++    if (SUCCEEDED(commonHresult) && l4d2_data::enabled.load(std::memory_order_relaxed)) {
++      constexpr bool vertex = ShaderT == ShaderType::Vertex;
++      constexpr auto command = ConstantT == ConstantType::Float
++        ? (vertex ? Commands::IDirect3DDevice9Ex_SetVertexShaderConstantF : Commands::IDirect3DDevice9Ex_SetPixelShaderConstantF)
++        : ConstantT == ConstantType::Int
++          ? (vertex ? Commands::IDirect3DDevice9Ex_SetVertexShaderConstantI : Commands::IDirect3DDevice9Ex_SetPixelShaderConstantI)
++          : (vertex ? Commands::IDirect3DDevice9Ex_SetVertexShaderConstantB : Commands::IDirect3DDevice9Ex_SetPixelShaderConstantB);
++      l4d2_data::stateSet(static_cast<uint16_t>(command), true, 0, m_stateRecording != nullptr);
++    }
++    // NV-DXVK end
+     return commonHresult;
+   }
+ 
+   auto setHelper = [&](auto& set) {
++    // NV-DXVK start: Compare constant storage before the existing update.
++    if (l4d2_data::enabled.load(std::memory_order_relaxed)) {
++      constexpr bool vertex = ShaderT == ShaderType::Vertex;
++      auto* flags = m_stateRecording ? &m_stateRecording->m_dirtyFlags : m_dataKnown.get();
++      bool* dirty = nullptr;
++      if (flags) {
++        if constexpr (ConstantT == ConstantType::Float) {
++          dirty = vertex ? flags->vertexConstants.fConsts.data() : flags->pixelConstants.fConsts.data();
++        } else if constexpr (ConstantT == ConstantType::Int) {
++          dirty = vertex ? flags->vertexConstants.iConsts.data() : flags->pixelConstants.iConsts.data();
++        } else {
++          dirty = vertex ? flags->vertexConstants.bConsts.data() : flags->pixelConstants.bConsts.data();
++        }
++      }
++      bool comparable = dirty != nullptr;
++      if (dirty) { for (uint32_t i = 0; i < adjCount; ++i) { comparable = comparable && dirty[startRegister + i]; } }
++      bool same = true;
++      uint16_t command = 0;
++      uint64_t payloadBytes = 0;
++      if constexpr (ConstantT == ConstantType::Float) {
++        command = static_cast<uint16_t>(vertex ? Commands::IDirect3DDevice9Ex_SetVertexShaderConstantF : Commands::IDirect3DDevice9Ex_SetPixelShaderConstantF);
++        payloadBytes = uint64_t(adjCount) * sizeof(Vec4f);
++        same = comparable && std::memcmp(set.fConsts[startRegister].data, pConstantData, static_cast<size_t>(payloadBytes)) == 0;
++      } else if constexpr (ConstantT == ConstantType::Int) {
++        command = static_cast<uint16_t>(vertex ? Commands::IDirect3DDevice9Ex_SetVertexShaderConstantI : Commands::IDirect3DDevice9Ex_SetPixelShaderConstantI);
++        payloadBytes = uint64_t(adjCount) * sizeof(Vec4i);
++        same = comparable && std::memcmp(set.iConsts[startRegister].data, pConstantData, static_cast<size_t>(payloadBytes)) == 0;
++      } else {
++        command = static_cast<uint16_t>(vertex ? Commands::IDirect3DDevice9Ex_SetVertexShaderConstantB : Commands::IDirect3DDevice9Ex_SetPixelShaderConstantB);
++        payloadBytes = uint64_t(adjCount) * sizeof(BOOL);
++        for (uint32_t i = 0; i < adjCount; ++i) {
++          const uint32_t index = startRegister + i;
++          same = comparable && same && ((set.bConsts[index / 32] & (1u << (index % 32))) != 0) == (pConstantData[i] != 0);
++        }
++      }
++      l4d2_data::stateSet(command, same, payloadBytes, m_stateRecording != nullptr, comparable);
++      if (!m_stateRecording && dirty) { for (uint32_t i = 0; i < adjCount; ++i) { dirty[startRegister + i] = true; } }
++    }
++    // NV-DXVK end
+     if constexpr (ConstantT == ConstantType::Float) {
+       const size_t size = adjCount * sizeof(Vec4f);
+       std::memcpy(set.fConsts[startRegister].data, pConstantData, size);
+@@ -3642,6 +3806,9 @@ std::tuple<HRESULT, size_t> BaseDirect3DDevice9Ex_LSS::commonGetSetConstants(con
+ 
+ template<bool EnableSync>
+ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ResetState() {
++  // NV-DXVK start: A reset invalidates diagnostic knowledge without changing defaults.
++  invalidateDataState();
++  // NV-DXVK end
+   for (uint32_t stageIdx = 0; stageIdx < kNumStageSamplers; ++stageIdx) {
+     // Reset Texture States
+     m_state.textureStageStates[stageIdx][TextureStageStateType::ColorOp] = stageIdx == 0 ? D3DTOP_MODULATE : D3DTOP_DISABLE;
+@@ -3876,31 +4043,32 @@ void Direct3DDevice9Ex_LSS<EnableSync>::initImplicitDepthStencil() {
  
  template<bool EnableSync>
  void Direct3DDevice9Ex_LSS<EnableSync>::destroyImplicitObjects() {
@@ -883,7 +1018,7 @@ index 1abdf20..cea933c 100644
  
  template<bool EnableSync>
 diff --git a/bridge/src/client/d3d9_device.h b/bridge/src/client/d3d9_device.h
-index df90d5f..eb0501c 100644
+index df90d5f..33ca519 100644
 --- a/bridge/src/client/d3d9_device.h
 +++ b/bridge/src/client/d3d9_device.h
 @@ -1,3 +1,7 @@
@@ -911,7 +1046,20 @@ index df90d5f..eb0501c 100644
    // Releases the internal objects, if any.
    void releaseInternalObjects(bool resetState = true);
    void onDestroy() override;
-@@ -229,7 +236,9 @@ public:
+@@ -74,6 +81,12 @@ public:
+     }
+     initImplicitObjects(presParams);
+     ResetState();
++    // NV-DXVK start: Failed diagnostic allocation leaves comparisons unknown.
++    if (l4d2_data::enabled.load(std::memory_order_relaxed)) {
++      try { m_dataKnown = std::make_unique<StateCaptureDirtyFlags>(); }
++      catch (const std::bad_alloc&) { }
++    }
++    // NV-DXVK end
+ 
+     if (!(createParams.BehaviorFlags & D3DCREATE_FPU_PRESERVE)) {
+       setupFPU();
+@@ -229,7 +242,9 @@ public:
  private:
    bool m_bIsDestroying = false;
  
@@ -922,11 +1070,42 @@ index df90d5f..eb0501c 100644
    HRESULT internalGetDeviceCaps(D3DCAPS9* pCaps);
  
    void initImplicitObjects(const D3DPRESENT_PARAMETERS& presParam);
-@@ -241,4 +250,3 @@ private:
+@@ -241,4 +256,3 @@ private:
    HRESULT UpdateTextureImpl(IDirect3DBaseTexture9* pSourceTexture, IDirect3DBaseTexture9* pDestinationTexture);
    void setupFPU();
  };
 -
+diff --git a/bridge/src/client/d3d9_device_base.h b/bridge/src/client/d3d9_device_base.h
+index 63d0907..4a72ae9 100644
+--- a/bridge/src/client/d3d9_device_base.h
++++ b/bridge/src/client/d3d9_device_base.h
+@@ -29,6 +29,9 @@
+ #include "shadow_map.h"
+ 
+ #include <array>
++// NV-DXVK start: Diagnostic validity is allocated only when tracing is enabled.
++#include <memory>
++// NV-DXVK end
+ 
+ class Direct3D9Ex_LSS;
+ class Direct3DSwapChain9_LSS;
+@@ -292,4 +295,14 @@ protected:
+ 
+   State m_state;
+   Direct3DStateBlock9_LSS* m_stateRecording = nullptr;
+-};
+\ No newline at end of file
++  // NV-DXVK start: Validity only; diagnostic comparisons reuse existing state values.
++  std::unique_ptr<StateCaptureDirtyFlags> m_dataKnown;
++  void invalidateDataState() {
++    if (!m_dataKnown) { return; }
++    m_dataKnown->textures.fill(false); m_dataKnown->streams.fill(false); m_dataKnown->indices = false;
++    m_dataKnown->vertexConstants.fConsts.fill(false); m_dataKnown->pixelConstants.fConsts.fill(false);
++    m_dataKnown->vertexConstants.iConsts.fill(false); m_dataKnown->pixelConstants.iConsts.fill(false);
++    m_dataKnown->vertexConstants.bConsts.fill(false); m_dataKnown->pixelConstants.bConsts.fill(false);
++  }
++  // NV-DXVK end
++};
 diff --git a/bridge/src/client/d3d9_indexbuffer.cpp b/bridge/src/client/d3d9_indexbuffer.cpp
 index 1593d51..19d9962 100644
 --- a/bridge/src/client/d3d9_indexbuffer.cpp
@@ -1290,6 +1469,20 @@ index 9f82b16..b8d03d9 100644
 -};
 \ No newline at end of file
 +};
+diff --git a/bridge/src/client/d3d9_stateblock.cpp b/bridge/src/client/d3d9_stateblock.cpp
+index 40cbd31..d9f4de4 100644
+--- a/bridge/src/client/d3d9_stateblock.cpp
++++ b/bridge/src/client/d3d9_stateblock.cpp
+@@ -209,6 +209,9 @@ HRESULT Direct3DStateBlock9_LSS::Capture() {
+ HRESULT Direct3DStateBlock9_LSS::Apply() {
+   LogFunctionCall();
+   StateTransfer(m_dirtyFlags, m_captureState, m_pDevice->m_state);
++  // NV-DXVK start: Do not compare against unverified captured storage.
++  m_pDevice->invalidateDataState();
++  // NV-DXVK end
+   {
+     ClientMessage { Commands::IDirect3DStateBlock9_Apply, getId() };
+   }
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
 index e54aec5..88ada52 100644
 --- a/bridge/src/client/d3d9_surface.cpp
@@ -2520,7 +2713,7 @@ index bbbd470..f392bcd 100644
    // Keep draining past the caller's buffer capacity so nothing is left queued to replay later.
    while (res != 0 && res != (UINT) -1) {
 diff --git a/bridge/src/client/lockable_buffer.h b/bridge/src/client/lockable_buffer.h
-index fbfc565..9cb4e69 100644
+index fbfc565..b0e01af 100644
 --- a/bridge/src/client/lockable_buffer.h
 +++ b/bridge/src/client/lockable_buffer.h
 @@ -1,3 +1,7 @@
@@ -2560,7 +2753,7 @@ index fbfc565..9cb4e69 100644
      g_totalBufferShadow += m_desc.Size;
      Logger::trace(format_string("Allocated a shadow for dynamic %s buffer [%p] "
                                  "(size: %zd, total shadow size: %zd)",
-@@ -95,6 +105,10 @@ protected:
+@@ -95,15 +105,24 @@ protected:
      if (!m_bUseSharedHeap) {
        initShadowMem();
      }
@@ -2571,7 +2764,12 @@ index fbfc565..9cb4e69 100644
    }
  
    ~LockableBuffer() {
-@@ -104,6 +118,8 @@ protected:
++    // NV-DXVK start: Observe outstanding locks without changing destruction.
++    m_dataTrace.destroyLocked(m_lockInfos.size());
++    // NV-DXVK end
+     if (m_bUseSharedHeap) {
+       if (m_bufferId != SharedHeap::kInvalidId) {
+         SharedHeap::deallocate(m_bufferId);
        }
      } else if (m_shadow) {
        g_totalBufferShadow -= m_desc.Size;
@@ -2580,7 +2778,7 @@ index fbfc565..9cb4e69 100644
        Logger::trace(format_string("Released shadow of dynamic %s buffer [%p] "
                                    "(size: %zd, total shadow size: %zd)",
                                    bIsVertexBuffer ? "vertex" : "index",
-@@ -113,6 +129,9 @@ protected:
+@@ -113,6 +132,9 @@ protected:
  
    HRESULT lock(const UINT offset, const UINT size, void** ppbData, const DWORD flags) {
      if (ppbData == nullptr) {
@@ -2590,7 +2788,7 @@ index fbfc565..9cb4e69 100644
        return D3DERR_INVALIDCALL;
      }
  
-@@ -137,6 +156,9 @@ protected:
+@@ -137,6 +159,9 @@ protected:
          ss << "m_desc.Size=" << m_desc.Size << ",";
          ss << "m_bufferId=" << m_bufferId << "}";
          Logger::err(ss.str());
@@ -2600,7 +2798,7 @@ index fbfc565..9cb4e69 100644
          return E_FAIL;
        }
        m_bufferId = nextBufId;
-@@ -167,6 +189,9 @@ protected:
+@@ -167,10 +192,16 @@ protected:
        m_lockInfos.push({ offset, size, *ppbData, flags, checkPtr });
      }
      // Store locked buffer pointer locally so we can copy the data on unlock
@@ -2610,7 +2808,14 @@ index fbfc565..9cb4e69 100644
      return S_OK;
    }
  
-@@ -190,6 +215,9 @@ protected:
+   void unlock() {
++    // NV-DXVK start: Observe the existing benign Unlock-without-Lock behavior.
++    m_dataTrace.unlock(!m_lockInfos.empty());
++    // NV-DXVK end
+     // Some engines may attempt to Unlock a non-locked resource "just in case"
+     if (m_lockInfos.empty()) {
+       return;
+@@ -190,6 +221,9 @@ protected:
  
      // If this is a read only access then don't bother sending
      if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
@@ -2620,7 +2825,7 @@ index fbfc565..9cb4e69 100644
        {
          Commands::Flags cmdFlags = 0;
  
-@@ -227,4 +255,4 @@ protected:
+@@ -227,4 +261,4 @@ protected:
      }
      m_lockInfos.pop();
    }
@@ -9169,10 +9374,10 @@ index 0000000..7b7a6e2
 +}
 diff --git a/bridge/src/util/data_diagnostics.cpp b/bridge/src/util/data_diagnostics.cpp
 new file mode 100644
-index 0000000..d359e97
+index 0000000..d97f8f2
 --- /dev/null
 +++ b/bridge/src/util/data_diagnostics.cpp
-@@ -0,0 +1,327 @@
+@@ -0,0 +1,408 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -9196,6 +9401,12 @@ index 0000000..d359e97
 +};
 +struct Inventory : Access {
 +  uint64_t created = 0, released = 0, live = 0, logicalBytes = 0, shadowBytes = 0, peakShadow = 0;
++  uint64_t fullShadowCount = 0, dynamicShadowBytes = 0, writeonlyStaticBytes = 0, peakWriteonlyStatic = 0;
++  uint64_t skippedDynamic = 0, skippedDynamicBytes = 0, skippedNotWriteonly = 0, skippedNotWriteonlyBytes = 0;
++  uint64_t skippedHistory = 0, skippedHistoryBytes = 0, skippedNoShadow = 0, skippedNoShadowBytes = 0;
++  uint64_t fullShadowLocks = 0, fullShadowLockBytes = 0, unlocks = 0, unlockWithoutLock = 0, destroyWhileLocked = 0;
++  uint64_t dynamicLocks = 0, dynamicLockBytes = 0, minDynamicLock = 0, maxDynamicLock = 0;
++  std::array<uint64_t, 7> lockBuckets {};
 +};
 +struct Object : Access {
 +  uint64_t bytes = 0, shadow = 0, born = 0, lastLock = 0, died = 0;
@@ -9205,6 +9416,9 @@ index 0000000..d359e97
 +struct Command : Wire {
 +  uint64_t tx = 0, rx = 0, publishFailures = 0, headerBytes = 0;
 +  uint64_t handled = 0, ticks = 0, maxTicks = 0, backendLocks = 0, backendUnlocks = 0, backendFailures = 0, backendBytes = 0;
++  struct Equality {
++    uint64_t calls = 0, compared = 0, same = 0, payloadBytes = 0, sameBytes = 0;
++  } state[2];
 +};
 +struct Report {
 +  std::array<Inventory, static_cast<size_t>(Kind::Count)> inventory {};
@@ -9295,11 +9509,23 @@ index 0000000..d359e97
 +      names[i], value.created, value.released, value.live, value.logicalBytes, value.shadowBytes, value.peakShadow,
 +      value.locks, value.readonly, value.discard, value.nooverwrite, value.partial, value.lockBytes, value.uploads,
 +      value.uploadBytes, value.sharedBytes, value.reservedBytes, value.invalid, value.failures, value.reads, value.readBytes);
++    if (i <= static_cast<size_t>(Kind::Index)) {
++      line("event=BUFFER kind=%s full_shadow_live_bytes=%llu full_shadow_resource_count=%llu dynamic_shadow_live_bytes=%llu candidate_writeonly_static_bytes=%llu peak_candidate_writeonly_static_bytes=%llu eligible_writeonly_static_bytes=0 range_staging_enabled=0 avoided_persistent_shadow_bytes_current=0 avoided_persistent_shadow_bytes_peak=0 skipped_dynamic_count=%llu skipped_dynamic_bytes=%llu skipped_not_writeonly_count=%llu skipped_not_writeonly_bytes=%llu skipped_historical_contents_count=%llu skipped_historical_contents_bytes=%llu skipped_no_local_shadow_count=%llu skipped_no_local_shadow_bytes=%llu full_shadow_lock_count=%llu full_shadow_lock_bytes=%llu unlock_count=%llu unlock_without_lock=%llu destroy_while_locked=%llu",
++        names[i], value.shadowBytes, value.fullShadowCount, value.dynamicShadowBytes, value.writeonlyStaticBytes,
++        value.peakWriteonlyStatic, value.skippedDynamic, value.skippedDynamicBytes, value.skippedNotWriteonly,
++        value.skippedNotWriteonlyBytes, value.skippedHistory, value.skippedHistoryBytes, value.skippedNoShadow,
++        value.skippedNoShadowBytes, value.fullShadowLocks, value.fullShadowLockBytes, value.unlocks,
++        value.unlockWithoutLock, value.destroyWhileLocked);
++      line("event=DYNAMIC_LOCK kind=%s lock_count=%llu total_lock_bytes=%llu min_lock_bytes=%llu max_lock_bytes=%llu bucket_0_64=%llu bucket_65_256=%llu bucket_257_1024=%llu bucket_1025_4096=%llu bucket_4097_16384=%llu bucket_16385_65536=%llu bucket_over_65536=%llu",
++        names[i], value.dynamicLocks, value.dynamicLockBytes, value.minDynamicLock, value.maxDynamicLock,
++        value.lockBuckets[0], value.lockBuckets[1], value.lockBuckets[2], value.lockBuckets[3],
++        value.lockBuckets[4], value.lockBuckets[5], value.lockBuckets[6]);
++    }
 +  }
 +  for (size_t queue = 0; queue < 2; ++queue) {
 +    for (size_t i = 0; i < kCommands; ++i) {
 +      const auto& value = report.commands[queue][i];
-+      if (!value.tx && !value.rx && !value.publishFailures && !value.handled) { continue; }
++      if (!value.tx && !value.rx && !value.publishFailures && !value.handled && !value.state[0].calls && !value.state[1].calls) { continue; }
 +      const auto name = i == 514 ? std::string("UnknownOverflow") : Commands::toString(static_cast<Commands::D3D9Command>(commandId(i)));
 +      line("event=COMMAND queue=%s command=%u name=%s tx=%llu rx=%llu data_bytes=%llu blob_bytes=%llu reserved_bytes=%llu header_bytes=%llu serialization_failures=%llu publish_failures=%llu handled=%llu handler_us=%llu max_handler_us=%llu backend_locks=%llu backend_unlocks=%llu backend_failures=%llu backend_bytes=%llu",
 +        queue ? "module" : "device", commandId(i), name.c_str(), value.tx, value.rx, value.bytes, value.blobs,
@@ -9307,6 +9533,12 @@ index 0000000..d359e97
 +        value.ticks / context->frequency * 1000000 + value.ticks % context->frequency * 1000000 / context->frequency,
 +        value.maxTicks / context->frequency * 1000000 + value.maxTicks % context->frequency * 1000000 / context->frequency,
 +        value.backendLocks, value.backendUnlocks, value.backendFailures, value.backendBytes);
++      for (size_t mode = 0; mode < 2; ++mode) {
++        const auto& state = value.state[mode];
++        if (!state.calls) { continue; }
++        line("event=STATE command=%u name=%s recording=%zu total_calls=%llu compared_calls=%llu same_value_calls=%llu total_payload_bytes=%llu same_value_payload_bytes=%llu",
++          commandId(i), name.c_str(), mode, state.calls, state.compared, state.same, state.payloadBytes, state.sameBytes);
++      }
 +    }
 +  }
 +  for (uint32_t i = 0; i < report.retiredCount; ++i) { objectLine(report.retired[i], "RESOURCE_RELEASE"); }
@@ -9412,6 +9644,15 @@ index 0000000..d359e97
 +  if (unlock) { ++value.backendUnlocks; } else { ++value.backendLocks; }
 +  if (FAILED(result)) { ++value.backendFailures; } else if (!unlock) { value.backendBytes += bytes; }
 +}
++void stateSet(uint16_t command, bool same, uint64_t payloadBytes, bool recording, bool comparable) {
++  if (!enabled.load(std::memory_order_acquire)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_acquire)) { return; }
++  auto& state = context->commands[0][commandSlot(command)].state[recording ? 1 : 0];
++  ++state.calls; state.payloadBytes += payloadBytes;
++  if (comparable) { ++state.compared; }
++  if (comparable && same) { ++state.same; state.sameBytes += payloadBytes; }
++}
 +Dispatch::Dispatch(uint16_t command, bool module) : m_command(command), m_module(module) {
 +  if (enabled.load(std::memory_order_acquire)) { m_start = counter(); }
 +}
@@ -9428,10 +9669,24 @@ index 0000000..d359e97
 +  if (m_kind != Kind::Count || kind == Kind::Count || !enabled.load(std::memory_order_acquire)) { return; }
 +  Guard guard;
 +  if (!enabled.load(std::memory_order_acquire)) { return; }
-+  m_kind = kind; m_bytes = bytes; m_shadow = shadow;
++  m_kind = kind; m_bytes = bytes; m_shadow = shadow; m_usage = usage;
 +  auto& value = context->inventory[static_cast<size_t>(kind)];
 +  ++value.created; ++value.live; value.logicalBytes += bytes; value.shadowBytes += shadow;
 +  value.peakShadow = (std::max)(value.peakShadow, value.shadowBytes);
++  if (kind == Kind::Vertex || kind == Kind::Index) {
++    if (shadow) { ++value.fullShadowCount; }
++    if (usage & 0x200) {
++      value.dynamicShadowBytes += shadow; ++value.skippedDynamic; value.skippedDynamicBytes += bytes;
++    } else if (!(usage & 0x8)) {
++      ++value.skippedNotWriteonly; value.skippedNotWriteonlyBytes += bytes;
++    } else if (!shadow) {
++      ++value.skippedNoShadow; value.skippedNoShadowBytes += bytes;
++    } else {
++      // WRITEONLY permits writing a subset of a larger Lock range without DISCARD.
++      value.writeonlyStaticBytes += shadow; ++value.skippedHistory; value.skippedHistoryBytes += bytes;
++      value.peakWriteonlyStatic = (std::max)(value.peakWriteonlyStatic, value.writeonlyStaticBytes);
++    }
++  }
 +  for (size_t i = 0; i < kResources; ++i) {
 +    const uint32_t slot = (context->cursor + static_cast<uint32_t>(i)) % kResources;
 +    if (context->objects[slot].kind != Kind::Count) { continue; }
@@ -9449,6 +9704,11 @@ index 0000000..d359e97
 +  if (!enabled.load(std::memory_order_acquire)) { return; }
 +  auto& value = context->inventory[static_cast<size_t>(m_kind)];
 +  ++value.released; --value.live; value.logicalBytes -= m_bytes; value.shadowBytes -= m_shadow;
++  if (m_kind == Kind::Vertex || m_kind == Kind::Index) {
++    if (m_shadow) { --value.fullShadowCount; }
++    if (m_usage & 0x200) { value.dynamicShadowBytes -= m_shadow; }
++    else if ((m_usage & 0x8) && m_shadow) { value.writeonlyStaticBytes -= m_shadow; }
++  }
 +  if (m_slot) {
 +    auto& object = context->objects[m_slot - 1];
 +    object.died = GetTickCount64();
@@ -9466,6 +9726,19 @@ index 0000000..d359e97
 +  Guard guard;
 +  if (!enabled.load(std::memory_order_acquire)) { return; }
 +  addLock(context->inventory[static_cast<size_t>(m_kind)], offset, bytes, m_bytes, flags, result, valid, partial);
++  if ((m_kind == Kind::Vertex || m_kind == Kind::Index) && valid && SUCCEEDED(result)) {
++    auto& value = context->inventory[static_cast<size_t>(m_kind)];
++    if (m_shadow) { ++value.fullShadowLocks; value.fullShadowLockBytes += bytes; }
++    if (m_usage & 0x200) {
++      value.minDynamicLock = value.dynamicLocks ? (std::min)(value.minDynamicLock, bytes) : bytes;
++      value.maxDynamicLock = (std::max)(value.maxDynamicLock, bytes);
++      ++value.dynamicLocks; value.dynamicLockBytes += bytes;
++      const uint64_t limits[] = { 64, 256, 1024, 4096, 16384, 65536 };
++      size_t bucket = 0;
++      while (bucket < 6 && bytes > limits[bucket]) { ++bucket; }
++      ++value.lockBuckets[bucket];
++    }
++  }
 +  if (m_slot) {
 +    auto& object = context->objects[m_slot - 1];
 +    addLock(object, offset, bytes, m_bytes, flags, result, valid, partial); object.lastLock = GetTickCount64();
@@ -9486,6 +9759,19 @@ index 0000000..d359e97
 +  ++value.reads; value.readBytes += bytes;
 +  if (m_slot) { auto& object = context->objects[m_slot - 1]; ++object.reads; object.readBytes += bytes; }
 +}
++void Resource::unlock(bool locked) {
++  if (m_kind == Kind::Count || !enabled.load(std::memory_order_acquire)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_acquire)) { return; }
++  auto& value = context->inventory[static_cast<size_t>(m_kind)];
++  if (locked) { ++value.unlocks; } else { ++value.unlockWithoutLock; }
++}
++void Resource::destroyLocked(uint64_t locks) {
++  if (!locks || m_kind == Kind::Count || !enabled.load(std::memory_order_acquire)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_acquire)) { return; }
++  ++context->inventory[static_cast<size_t>(m_kind)].destroyWhileLocked;
++}
 +Temporary::Temporary(uint64_t bytes) {
 +  if (!bytes || !enabled.load(std::memory_order_acquire)) { return; }
 +  Guard guard;
@@ -9502,10 +9788,10 @@ index 0000000..d359e97
 +}
 diff --git a/bridge/src/util/data_diagnostics.h b/bridge/src/util/data_diagnostics.h
 new file mode 100644
-index 0000000..e8aca95
+index 0000000..87e81e1
 --- /dev/null
 +++ b/bridge/src/util/data_diagnostics.h
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,76 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -9536,6 +9822,8 @@ index 0000000..e8aca95
 +void sent(uint16_t command, bool module, const Wire& wire, bool published, uint32_t headerBytes);
 +void received(uint16_t command, bool module);
 +void backend(uint16_t command, bool unlock, uint64_t bytes, HRESULT result);
++// Compare the Client's existing state; this never filters an API or IPC call.
++void stateSet(uint16_t command, bool same, uint64_t payloadBytes, bool recording = false, bool comparable = true);
 +
 +class Dispatch {
 +  uint64_t m_start = 0;
@@ -9553,6 +9841,7 @@ index 0000000..e8aca95
 +  uint32_t m_slot = 0;
 +  Kind m_kind = Kind::Count;
 +  uint64_t m_bytes = 0, m_shadow = 0;
++  uint32_t m_usage = 0;
 +public:
 +  Resource() = default;
 +  ~Resource();
@@ -9563,6 +9852,8 @@ index 0000000..e8aca95
 +  void lock(uint64_t offset, uint64_t bytes, uint32_t flags, HRESULT result, bool valid = true, bool partial = false);
 +  void upload(uint64_t bytes, bool shared = false, bool reserved = false);
 +  void read(uint64_t bytes);
++  void unlock(bool locked);
++  void destroyLocked(uint64_t locks);
 +};
 +
 +class Temporary {

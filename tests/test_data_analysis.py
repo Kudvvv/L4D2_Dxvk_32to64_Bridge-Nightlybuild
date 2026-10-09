@@ -61,6 +61,40 @@ class DataAnalysis(unittest.TestCase):
                                 + END.replace("retired_dropped=0", "retired_dropped=4"))[0]
         self.assertEqual(len(result["warnings"]), 2)
 
+    def test_buffer_candidates_are_not_claimed_savings(self):
+        result = module.analyze(CONFIG + "schema=1 event=BUFFER kind=vb candidate_writeonly_static_bytes=64 avoided_persistent_shadow_bytes_current=0 range_staging_enabled=0\n"
+                                "schema=1 event=BUFFER kind=vb candidate_writeonly_static_bytes=128 avoided_persistent_shadow_bytes_current=0 range_staging_enabled=0\n" + END)[0]
+        self.assertEqual(result["buffers"]["vb"]["candidate_writeonly_static_bytes"], 128)
+        self.assertEqual(result["buffers"]["vb"]["avoided_persistent_shadow_bytes_current"], 0)
+
+    def test_dynamic_distribution_uses_latest_cumulative_values(self):
+        result = module.analyze(CONFIG + "schema=1 event=DYNAMIC_LOCK kind=ib lock_count=1 total_lock_bytes=16 bucket_0_64=1\n"
+                                "schema=1 event=DYNAMIC_LOCK kind=ib lock_count=2 total_lock_bytes=48 bucket_0_64=2\n" + END)[0]
+        self.assertEqual(result["dynamic_locks"]["ib"]["average_lock_bytes"], 24)
+        self.assertFalse(result["warnings"])
+
+    def test_empty_distribution_and_bad_histogram(self):
+        result = module.analyze(CONFIG + "schema=1 event=DYNAMIC_LOCK kind=vb lock_count=0 total_lock_bytes=0 bucket_0_64=0\n" + END)[0]
+        self.assertIsNone(result["dynamic_locks"]["vb"]["average_lock_bytes"])
+        bad = module.analyze(CONFIG + "schema=1 event=DYNAMIC_LOCK kind=vb lock_count=2 bucket_0_64=1\n" + END)[0]
+        self.assertIn("histogram count mismatch", bad["warnings"][0])
+
+    def test_recording_state_and_runtime_state_are_separate(self):
+        result = module.analyze(CONFIG + "schema=1 event=STATE command=1 name=SetTexture recording=0 total_calls=4 compared_calls=4 same_value_calls=2\n"
+                                "schema=1 event=STATE command=1 name=SetTexture recording=1 total_calls=3 compared_calls=2 same_value_calls=1\n" + END)[0]
+        self.assertEqual(len(result["states"]), 2)
+        self.assertEqual(result["states"]["1:0"]["same_value_ratio"], .5)
+        self.assertEqual(result["states"]["1:1"]["compared_same_value_ratio"], .5)
+
+    def test_uncompared_state_does_not_count_as_redundant(self):
+        result = module.analyze(CONFIG + "schema=1 event=STATE command=1 name=SetIndices recording=1 total_calls=1 compared_calls=0 same_value_calls=0\n" + END)[0]
+        self.assertIsNone(result["states"]["1:1"]["compared_same_value_ratio"])
+        self.assertFalse(result["warnings"])
+
+    def test_inconsistent_state_counts(self):
+        result = module.analyze(CONFIG + "schema=1 event=STATE command=1 name=SetIndices recording=0 total_calls=1 compared_calls=0 same_value_calls=1\n" + END)[0]
+        self.assertIn("inconsistent state equality", result["warnings"][0])
+
 
 if __name__ == "__main__":
     unittest.main()

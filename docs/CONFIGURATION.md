@@ -136,3 +136,5 @@ Memory Policy 的 keep / lg / drop 仅调用运行时 SetPolicy，点击 `save t
 ## 数据/资源追踪（新增，默认关闭）
 
 `client.dataDiagnostics=False`、`server.dataDiagnostics=False` 控制两侧独立追踪。`client.dataSnapshotMs=5000`、`server.dataSnapshotMs=5000` 是摘要间隔（最低 1000 ms）。开启后采集 VB/IB/Volume、shader/declaration/StateBlock 存储和访问，以及通用 IPC 命令量/Host 分派时间；有诊断计数锁、后台线程和日志开销。完整重启生效，不在 L4N 菜单中。日志不会保留资源正文，也不触发回收。使用方法、限制和离线分析见 [DATA-TRACKING.md](DATA-TRACKING.md)。
+
+同一开关也控制新增的静态/动态 VB/IB 存储分类、动态锁大小直方图，以及绑定/常量同值比较。开启会增加载荷比较和 Device 有效性标记开销；关闭时不比较载荷、不分配该标记。没有 RANGE_STAGING 开关或新增静态回收行为，详见 [BUFFER-SHADOW-CONTRACT.md](BUFFER-SHADOW-CONTRACT.md)。

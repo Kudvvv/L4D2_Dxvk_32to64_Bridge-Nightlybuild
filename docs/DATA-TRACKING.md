@@ -2,6 +2,8 @@
 
 本轮只补充证据采集，供下一版本评估 VB、IB、Volume 3D 等优化。没有更改资源容量、Lock/Unlock 返回值、PageBlock 回收/恢复、GC、DXVK、Host 生命周期、控制 ABI 或 L4N 插件。不能根据锁标志、短期未使用或上传次数直接认定资源可安全卸载。
 
+静态 WRITEONLY 缓冲仍保留 FULL_SHADOW：WRITEONLY 不保证写满 Lock 范围，D3D9 允许多次 Lock。新增 BUFFER 分类、动态锁直方图、绑定/常量同值摘要及契约测试见 [BUFFER-SHADOW-CONTRACT.md](BUFFER-SHADOW-CONTRACT.md)。`candidate` 是候选容量，`avoided` 本轮为 0；未启用 RANGE_STAGING。
+
 ## 启用与采集
 
 四项设置见 [DATA-TRACKING.conf](../config/DATA-TRACKING.conf)，合并到已有 `bin/.l4d2bridge/bridge.conf`，完整重启游戏。默认配置中两侧 `dataDiagnostics=False`；追踪关闭时没有该诊断的线程、文件、元数据表或计时查询，仍有少量开关判断和 wrapper/命令内的追踪字段。开启后有计数锁、后台摘要线程、约 3 MiB 固定元数据和日志开销，不宜直接用开启追踪的帧率评估最终优化收益。
@@ -33,6 +35,8 @@ python scripts/analyze_data_diagnostics.py l4d2-data-client.log l4d2-data-host.l
 `shadow_bytes` 是当前已知 Client 存储，`logical_bytes` 是资源描述/固定结构大小，均不是 VRAM。`upload_bytes` 是累计提交的逻辑字节。`data_bytes` 是发送端 serializer 成功接受的 footprint（含标量/UID/blob 长度前缀/4 字节对齐）；`blob_bytes` 不含这些元数据。`reserved_bytes` 在 COMMAND 中表示 arena blob 预留，在 KIND/RESOURCE 中表示优化 VB/IB reserved 上传路径；不要相加。backend_bytes 是 Host 成功 Lock 的逻辑请求字节，Unlock 成功仍需单独看失败计数。
 
 Shader/declaration 的 `reads` 含只查询长度的调用（字节为 0），有返回内容时才累计 `read_bytes`。VB/IB 的 `readonly` 表示游戏请求读取 Bridge 本地 Lock 存储，不意味着本轮已从 Host 读回。
+
+新 STATE 比较只读取 Client 已有的有效本地状态，不写入日志正文，也不留第二份值缓存。首次未知状态及 Reset/StateBlock Apply 后先失效，正常与录制域分开计数。启用后增加载荷比较、动态直方图计数及每个 Device 的有效性标记开销；关闭时不进行这些比较或分配。统计不能直接证明状态调用可删除。
 
 尚未量化：Source/L4N 私有容量和内存、Client 私有数据字典和 Device 本地缓存的全部动态节点、共享堆实际 committed/reserved 峰值、输入旁路消息、驱动/DXVK 内部资源和 VRAM。新追踪不读取这些私有实现，也不扫描或复制资源正文。
 

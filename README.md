@@ -326,3 +326,5 @@ Builds use a pinned upstream Bridge plus the [fork patch](patches/l4d2-bridge.pa
 New fork implementation and modifications are released under MIT, Copyright © 2026 yeyunyyds. Original upstream code retains its own copyrights/licenses; the project's MIT license does not relicense third-party components. Preserve the original notices when redistributing.
 
 VB/IB、Volume 3D 等下一版本优化的证据采集见 [数据/资源追踪实验](docs/DATA-TRACKING.md)。追踪默认关闭，本轮不改回收/恢复算法；L4N 插件沿用原版，无需更新。
+
+静态 WRITEONLY VB/IB 继续保留完整 shadow；范围暂存缺少旧内容保证，因此本轮只增加分类、动态锁分布及状态同值诊断和契约测试。说明见 [VB/IB 副本契约](docs/BUFFER-SHADOW-CONTRACT.md)，候选容量不代表已节省内存。
