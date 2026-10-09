@@ -58,6 +58,8 @@ Valve 公开 SDK 的 [`studio.h`](https://github.com/ValveSoftware/source-sdk-20
 
 ## 生成和校验副本
 
+GitHub ThinFlex 测试版另附 Windows 工具 ZIP，内含 `ThinFlexPatch.exe`，无需安装 Python。先阅读随包的 `README.txt`；两个 Bridge ZIP 本身不会应用该引擎修复。以下 Python 命令供源码方式使用。
+
 需要 Python 3。以下 PowerShell 示例在本仓库根目录执行；先将 `$gameRoot` 替换为实际游戏目录。游戏及其 Bridge Host 必须先正常退出。
 
 ```powershell

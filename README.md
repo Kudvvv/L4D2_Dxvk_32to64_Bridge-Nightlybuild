@@ -28,6 +28,7 @@
 - `upstream_commit` 留空跟随最新代码；填写完整 40 位 SHA 可指定提交。
 - 勾选 `force_rebuild` 可强制编译并创建新的独立版本；已有版本和附件保留，默认关闭。
 - 勾选 `validation_only` 仅构建、测试和运行 A/B 基准，保存结果供检查，跳过发布。
+- 手动勾选 `thinflex_test` 发布独立标记的 ThinFlex 测试版，附带免安装 Python 的修复工具 ZIP；两个 Bridge ZIP 本身不会应用引擎缓存修复。工具使用和回退见 [测试版说明](docs/THINFLEX-TEST-README.txt)。测试发布为 Pre-release，不设为 Latest。
 
 去重同时检查上游提交和构建输入指纹；补丁、后端配置、脚本或测试更新会触发新构建。版本名为 `nightly-YYYYMMDD-上游短SHA-r输入指纹-b运行ID.重试号`，日期采用上游提交日期（UTC）。强制重建和重新运行均产生独立版本；旧附件不覆盖。Release 说明及包内 `UPSTREAM.json` 记录完整提交、输入指纹和构建实例。补丁冲突、编译或测试失败时不发布。
 

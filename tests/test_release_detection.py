@@ -17,7 +17,7 @@ RECIPE = "b" * 64
 
 
 class HeadDetection(unittest.TestCase):
-    def run_case(self, existing=None, failure=None, manual="", branch="main", force=False):
+    def run_case(self, existing=None, failure=None, manual="", branch="main", force=False, thinflex=False):
         calls = []
         def api(path):
             calls.append(path)
@@ -30,7 +30,7 @@ class HeadDetection(unittest.TestCase):
             if "/releases?" in path:
                 return [] if existing is None else [dict(existing, tag_name="previous", body=existing.get("body", f"Upstream commit: {SHA}\nRecipe digest: {RECIPE}"))]
             raise HTTPError(path, 404, "missing", {}, None)
-        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": manual, "FORCE_REBUILD": str(force).lower(), "GITHUB_RUN_ID":"123", "GITHUB_RUN_ATTEMPT":"1"}), patch.object(detect, "api", api), patch.object(detect, "recipe_digest", return_value=RECIPE):
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo", "UPSTREAM_COMMIT": manual, "FORCE_REBUILD": str(force).lower(), "THINFLEX_TEST": str(thinflex).lower(), "GITHUB_RUN_ID":"123", "GITHUB_RUN_ATTEMPT":"1"}), patch.object(detect, "api", api), patch.object(detect, "recipe_digest", return_value=RECIPE):
             rows = detect.pending()
         return rows, calls
 
@@ -57,6 +57,22 @@ class HeadDetection(unittest.TestCase):
     def test_force_manual_commit(self):
         rows, calls = self.run_case(manual=SHA, force=True)
         self.assertEqual(rows[0]["branch"], "manual")
+
+    def test_thinflex_test_has_distinct_title_tag_and_third_archive(self):
+        rows, _ = self.run_case(manual=SHA, force=True, thinflex=True)
+        row = rows[0]
+        self.assertIn("-thinflex-test-", row["release_tag"])
+        self.assertIn("ThinFlex", row["title"])
+        self.assertIn("测试", row["title"])
+        for name in ("archive", "update_archive", "thinflex_archive"):
+            self.assertIn(row["release_tag"], row[name])
+
+    def test_channels_do_not_suppress_each_other(self):
+        normal = {"draft": False, "body": f"Upstream commit: {SHA}\nRecipe digest: {RECIPE}"}
+        experiment = {"draft": False, "body": f"Release channel: thinflex-test\nUpstream commit: {SHA}\nExperimental recipe digest: {RECIPE}"}
+        self.assertTrue(self.run_case(existing=normal, thinflex=True)[0])
+        self.assertTrue(self.run_case(existing=experiment)[0])
+        self.assertEqual(self.run_case(existing=experiment, thinflex=True)[0], [])
 
     def test_draft_retried(self):
         self.assertEqual(len(self.run_case(existing={"draft": True})[0]), 1)

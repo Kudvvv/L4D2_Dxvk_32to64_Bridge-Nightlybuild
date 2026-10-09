@@ -32,6 +32,9 @@ def api(path):
 
 def pending():
     force = os.environ.get("FORCE_REBUILD", "false").lower() == "true"
+    thinflex = os.environ.get("THINFLEX_TEST", "false").lower() == "true"
+    channel = "thinflex-test" if thinflex else "nightly"
+    digest_label = "Experimental recipe digest" if thinflex else "Recipe digest"
     manual = os.environ.get("UPSTREAM_COMMIT", "").strip()
     if manual:
         if not re.fullmatch(r"[0-9a-fA-F]{40}", manual):
@@ -51,8 +54,11 @@ def pending():
             releases = api(f"repos/{os.environ['GITHUB_REPOSITORY']}/releases?per_page=100&page={page}")
             for release in releases:
                 lines = (release.get("body") or "").splitlines()
+                release_channel = next((line.split(": ", 1)[1] for line in lines
+                                        if line.startswith("Release channel: ")), "nightly")
                 if (not release["draft"] and f"Upstream commit: {commit}" in lines
-                        and f"Recipe digest: {recipe}" in lines):
+                        and release_channel == channel
+                        and f"{digest_label}: {recipe}" in lines):
                     print(f"Already published upstream and recipe as {release['tag_name']}")
                     return []
             if len(releases) < 100:
@@ -65,10 +71,12 @@ def pending():
     version = (Path(__file__).resolve().parents[1] / "VERSION").read_text().strip()
     if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", version):
         raise ValueError("Invalid project version")
-    identifier = "v" + version + "-" + names["release_tag"]
-    names.update(release_tag=identifier, title="v" + version,
+    identifier = "v" + version + ("-thinflex-test-" if thinflex else "-") + names["release_tag"]
+    title = "v" + version + (" ThinFlex 崩溃修复测试版" if thinflex else "")
+    names.update(release_tag=identifier, title=title,
                  archive="l4d2-bridge-" + identifier + ".zip",
-                 update_archive="l4d2-bridge-update-" + identifier + ".zip")
+                 update_archive="l4d2-bridge-update-" + identifier + ".zip",
+                 thinflex_archive="l4d2-bridge-thinflex-test-" + identifier + ".zip" if thinflex else "")
     return [{"tag": names["group"], "commit": commit, "branch": branch,
              "recipe_digest": recipe, **names}]
 
