@@ -22,7 +22,8 @@ def analyze(text):
                 session = {"role": fields["role"], "pid": int(fields["pid"]),
                            "build": fields["build"], "bits": int(fields["bits"]),
                            "start_ms": int(fields["tick_ms"]), "ended": False,
-                           "kinds": {}, "commands": {}, "limits": {}, "warnings": []}
+                           "kinds": {}, "commands": {}, "limits": {}, "warnings": [],
+                           "observed_live": {}, "largest_released": []}
                 sessions.append(session)
             if session is None:
                 raise ValueError("record before CONFIG")
@@ -37,6 +38,16 @@ def analyze(text):
                 session["commands"][key] = {**values, "name": fields["name"], "queue": fields["queue"]}
                 if fields["name"] == "UnknownOverflow":
                     session["warnings"].append("unknown command IDs were coalesced")
+            elif event in ("RESOURCE_LIVE", "RESOURCE_RELEASE"):
+                key = fields["kind"] + ":" + fields["id"]
+                resource = {**values, "kind": fields["kind"]}
+                if event == "RESOURCE_LIVE":
+                    session["observed_live"][key] = resource
+                else:
+                    session["observed_live"].pop(key, None)
+                    session["largest_released"].append(resource)
+                    session["largest_released"].sort(key=lambda row: row.get("shadow_bytes", 0), reverse=True)
+                    del session["largest_released"][20:]
             elif event in ("SNAPSHOT", "END"):
                 session["limits"].update(values)
                 if event == "END":
@@ -54,6 +65,9 @@ def analyze(text):
             if session["limits"].get(key, 0):
                 session["warnings"].append(f"{key}={session['limits'][key]}: detailed evidence is incomplete")
         session["warnings"] = sorted(set(session["warnings"]))
+        session["largest_observed_live"] = sorted(session["observed_live"].values(), key=lambda row: row.get("shadow_bytes", 0), reverse=True)[:20]
+        # Live records rotate; this list is observed metadata, not a complete live inventory.
+        del session["observed_live"]
         session["largest_transfer_commands"] = sorted(session["commands"].values(), key=lambda row: row.get("data_bytes", 0), reverse=True)[:10]
         session["slowest_handler_commands"] = sorted(session["commands"].values(), key=lambda row: row.get("handler_us", 0), reverse=True)[:10]
     return sessions
@@ -77,6 +91,9 @@ def main():
             print(f"  {kind}: live={values.get('live', 0)} shadow={values.get('shadow_bytes', 0) / 1048576:.2f} MiB "
                   f"locks={values.get('locks', 0)} uploads={values.get('upload_bytes', 0) / 1048576:.2f} MiB "
                   f"readonly={values.get('readonly', 0)} invalid={values.get('invalid', 0)}")
+        for row in session["largest_observed_live"][:5]:
+            print(f"  Observed {row['kind']} id={row.get('id')}: shadow={row.get('shadow_bytes', 0) / 1048576:.2f} MiB "
+                  f"locks={row.get('locks', 0)} lock_idle={row.get('lock_idle_ms', 0)} ms")
         for row in session["largest_transfer_commands"][:5]:
             print(f"  TX {row['queue']}/{row['name']}: {row.get('data_bytes', 0) / 1048576:.2f} MiB")
         for row in session["slowest_handler_commands"][:5]:

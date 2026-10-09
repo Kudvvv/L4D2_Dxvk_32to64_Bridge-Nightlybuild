@@ -24,6 +24,18 @@ class DataAnalysis(unittest.TestCase):
         self.assertEqual(result["largest_transfer_commands"][0]["data_bytes"], 30)
         self.assertEqual(result["slowest_handler_commands"][0]["handler_us"], 500)
 
+    def test_resource_lifecycle(self):
+        result = module.analyze(CONFIG + "schema=1 event=RESOURCE_LIVE kind=vb id=5 shadow_bytes=64 locks=1\n"
+                                "schema=1 event=RESOURCE_RELEASE kind=vb id=5 shadow_bytes=64 locks=2\n" + END)[0]
+        self.assertFalse(result["largest_observed_live"])
+        self.assertEqual(result["largest_released"][0]["locks"], 2)
+
+    def test_live_samples_are_latest_observations(self):
+        result = module.analyze(CONFIG + "schema=1 event=RESOURCE_LIVE kind=vb id=5 shadow_bytes=64 locks=1\n"
+                                "schema=1 event=RESOURCE_LIVE kind=vb id=5 shadow_bytes=64 locks=4\n" + END)[0]
+        self.assertEqual(len(result["largest_observed_live"]), 1)
+        self.assertEqual(result["largest_observed_live"][0]["locks"], 4)
+
     def test_cap_and_overflow(self):
         result = module.analyze(CONFIG + END.replace("file_discarded=0", "file_discarded=9").replace("resource_overflow=0", "resource_overflow=3"))[0]
         self.assertEqual(len(result["warnings"]), 2)

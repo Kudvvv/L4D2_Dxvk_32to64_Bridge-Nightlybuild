@@ -4,7 +4,7 @@
 
 ## 启用与采集
 
-四项设置见 [DATA-TRACKING.conf](../config/DATA-TRACKING.conf)，合并到已有 `bin/.l4d2bridge/bridge.conf`，完整重启游戏。默认配置中两侧 `dataDiagnostics=False`；追踪关闭时没有该诊断的线程、文件、元数据表或计时查询。开启后有计数锁、后台摘要线程、约 3 MiB 固定元数据和日志开销，不宜直接用开启追踪的帧率评估最终优化收益。
+四项设置见 [DATA-TRACKING.conf](../config/DATA-TRACKING.conf)，合并到已有 `bin/.l4d2bridge/bridge.conf`，完整重启游戏。默认配置中两侧 `dataDiagnostics=False`；追踪关闭时没有该诊断的线程、文件、元数据表或计时查询，仍有少量开关判断和 wrapper/命令内的追踪字段。开启后有计数锁、后台摘要线程、约 3 MiB 固定元数据和日志开销，不宜直接用开启追踪的帧率评估最终优化收益。
 
 Client 在游戏 EXE 所在目录写 `l4d2-data-client.log`；Host 在 Host EXE 所在目录写 `l4d2-data-host.log`（通常是 `bin/.l4d2bridge/`）。使用 Unicode Windows 路径；初始化失败只报告失败，不中止 Bridge。日志每次完整启动重新创建，复制上一轮日志后再重启。
 
@@ -40,7 +40,7 @@ Shader/declaration 的 `reads` 含只查询长度的调用（字节为 0），�
 
 固定表最多 8192 个同时存活的目标 wrapper。表满后聚合计数继续有效，逐资源信息缺失用 `resource_overflow` 标记。释放记录在最多 2048 条的释放记录缓冲中交给工作线程，溢出用 `retired_dropped` 标记。每份摘要最多轮转采样 128 个存活对象；聚合 KIND 不受采样影响。不要把没有出现在某份摘要中的 ID 当作已释放。
 
-摘要间隔最低 1000 ms，默认 5000 ms。每个进程日志最大 64 MiB，预留 END 空间；`file_discarded` 和 `write_failures` 表示文件证据不完整。正常退出生成最终摘要和 END；崩溃/强杀可能缺少 END。分析器按 CONFIG 分会话，只取每项最新累计值，明确提示溢出、缺 END、角色混杂或未知记录格式。
+摘要间隔最低 1000 ms，默认 5000 ms。每个进程日志最大 64 MiB，预留 END 空间；`file_discarded` 和 `write_failures` 表示文件证据不完整。正常退出生成最终摘要和 END；崩溃/强杀可能缺少 END。分析器按 CONFIG 分会话，只取每项最新累计值，明确提示溢出、缺 END、角色混杂或未知记录格式；报告还列出较大的已观察存活对象和已释放对象。已观察列表不是完整实时清单，`lock_idle_ms` 只表示距离最近 CPU Lock 尝试的时间，不能当作 GPU 未使用时间。
 
 ## 下一版本决策
 
