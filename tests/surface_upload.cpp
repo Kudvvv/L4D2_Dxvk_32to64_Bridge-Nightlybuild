@@ -22,6 +22,7 @@ void require(bool value, const char* message) { if (!value) throw std::runtime_e
 struct Logger { static void err(const std::string&) {} };
 #pragma warning(push)
 #pragma warning(disable: 4505) // Other static format helpers are unused in this isolated harness.
+#pragma warning(disable: 4063) // Legal FourCC extensions are outside the SDK D3DFORMAT enum.
 #include "surface_format.h"
 #pragma warning(pop)
 #include "ati_texture_layout.h"
