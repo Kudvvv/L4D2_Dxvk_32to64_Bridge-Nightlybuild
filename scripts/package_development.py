@@ -49,7 +49,7 @@ def package(args):
         if build.get("build_id") != build_id or build.get("patch_sha256") != patch_hash:
             raise ValueError("Build receipt does not match current patch")
     destinations = [args.output / "l4d2-bridge-patch"]
-    if backends:
+    if backends and not args.patch_only:
         destinations.append(args.output / "l4d2-bridge")
     for output in destinations:
         if output.exists():
@@ -77,7 +77,7 @@ def package(args):
             shutil.copytree(ROOT / directory, output / directory)
         scripts = output / "scripts"
         scripts.mkdir()
-        for filename in ("analyze_api_wait.py", "analyze_color_diagnostics.py"):
+        for filename in ("analyze_api_wait.py", "analyze_color_diagnostics.py", "analyze_data_diagnostics.py"):
             shutil.copy2(ROOT / "scripts" / filename, scripts / filename)
         shutil.copy2(ROOT / "scripts/install_color_diagnostics.ps1", output / "Install-ColorDiagnostics.ps1")
         licenses = output / "licenses"
@@ -112,4 +112,5 @@ if __name__ == "__main__":
     for option in ("client", "host64", "host32", "dxvk", "dxvk-x86", "plugin", "build-info"):
         parser.add_argument("--" + option, type=Path)
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
+    parser.add_argument("--patch-only", action="store_true", help="Only package matched Bridge binaries")
     package(parser.parse_args())

@@ -5,7 +5,8 @@
 param(
   [Parameter(Mandatory = $true)][string]$DxvkDll,
   [Parameter(Mandatory = $true)][string]$Dxvk32Dll,
-  [string]$VcVarsVer = '14.29'
+  [string]$VcVarsVer = '14.29',
+  [switch]$PatchOnly
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -36,6 +37,10 @@ try {
 $packager = if ($projectVersion.Contains('-dev')) { 'package_development.py' } else { 'package_release.py' }
 $packageArgs = @("$PSScriptRoot/$packager", '--source', $source, '--dxvk', $dxvkPath)
 if ($Dxvk32Dll) { $packageArgs += @('--dxvk-x86', (Resolve-Path $Dxvk32Dll).Path) }
+if ($PatchOnly) {
+  if (!$projectVersion.Contains('-dev')) { throw 'PatchOnly requires a development version' }
+  $packageArgs += '--patch-only'
+}
 if ($projectVersion.Contains('-dev')) {
   $plugin = Join-Path $repoRoot '.deps/l4n-plugin/L4D2BridgePlugin.dll'
   if (Test-Path $plugin) { $packageArgs += @('--plugin', $plugin) }

@@ -324,3 +324,5 @@ Builds use a pinned upstream Bridge plus the [fork patch](patches/l4d2-bridge.pa
 本项目新增代码和修改采用 **MIT License**，Copyright © 2026 yeyunyyds，全文见 [LICENSE](LICENSE)。原代码继续遵循原许可证；本项目 MIT 不重新授权 DXVK、Tracy、游戏或显卡驱动。
 
 New fork implementation and modifications are released under MIT, Copyright © 2026 yeyunyyds. Original upstream code retains its own copyrights/licenses; the project's MIT license does not relicense third-party components. Preserve the original notices when redistributing.
+
+VB/IB、Volume 3D 等下一版本优化的证据采集见 [数据/资源追踪实验](docs/DATA-TRACKING.md)。追踪默认关闭，本轮不改回收/恢复算法；L4N 插件沿用原版，无需更新。

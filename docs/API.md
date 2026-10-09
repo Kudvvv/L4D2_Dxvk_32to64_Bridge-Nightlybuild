@@ -690,3 +690,7 @@ Client backing 可有最小行 pitch/padding，wire bytes 只含逻辑像素；�
 真实 L4D2 + L4N 的 HUD 容量、导航、保存失败提示，以及完整重启后 Host/Presenter 应用仍需实机验证。单元/mock 测试不等于验证所有游戏资源恢复或所有 GPU/Mod 组合。
 
 本次文档核对：从字段表生成 117 条 sizeof/offsetof 静态断言，使用 MSVC v142 分别按 Windows x86/x64 编译通过；三个 C++ 代码块合并后在两种架构均通过 `/W4 /WX` 编译。该检查验证字段布局和示例可编译性，不执行真实游戏控制调用，也不重建 Bridge 或插件。
+
+## 可选数据追踪
+
+本轮未新增或修改公开导出、请求结构、命令 ID 或 IPC payload。Client/Host 通过 `client/server.dataDiagnostics` 启用内部追踪，不通过 L4N 控制；日志格式和分析入口见 [DATA-TRACKING.md](DATA-TRACKING.md)。

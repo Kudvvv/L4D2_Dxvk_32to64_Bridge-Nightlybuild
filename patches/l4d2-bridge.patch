@@ -238,6 +238,21 @@ index 0000000..ba680c7
 +void initialize();
 +void recordHost(Host host);
 +}
+diff --git a/bridge/src/client/d3d9_commonshader.h b/bridge/src/client/d3d9_commonshader.h
+index a3c5dba..0e509fb 100644
+--- a/bridge/src/client/d3d9_commonshader.h
++++ b/bridge/src/client/d3d9_commonshader.h
+@@ -162,6 +162,10 @@ public:
+     return m_code.size();
+   }
+ 
++  // NV-DXVK start: Diagnostic vector storage excludes temporary constructor copies.
++  size_t getStorageBytes() const { return m_code.capacity(); }
++  // NV-DXVK end
++
+   const uint32_t getMajorVersion() const {
+     return m_majorVersion;
+   }
 diff --git a/bridge/src/client/d3d9_cubetexture.cpp b/bridge/src/client/d3d9_cubetexture.cpp
 index 9de506f..9260d0d 100644
 --- a/bridge/src/client/d3d9_cubetexture.cpp
@@ -941,7 +956,7 @@ index 1593d51..19d9962 100644
    {
      BRIDGE_PARENT_DEVICE_LOCKGUARD();
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
-index 300aaf5..97b2858 100644
+index 300aaf5..7790cc6 100644
 --- a/bridge/src/client/d3d9_lss.cpp
 +++ b/bridge/src/client/d3d9_lss.cpp
 @@ -1,3 +1,7 @@
@@ -1047,10 +1062,16 @@ index 300aaf5..97b2858 100644
  
      // Find path of original executable to properly set up paths
      if (!initFileSys(hModule)) {
-@@ -521,25 +550,36 @@ bool RemixAttach(HMODULE hModule) {
+@@ -521,25 +550,42 @@ bool RemixAttach(HMODULE hModule) {
  
      // Initialize logger
      Logger::init();
++    // NV-DXVK start: Data/resource tracing is opt-in and independent of color/API wait diagnostics.
++    if (Config::getOption<bool>("client.dataDiagnostics", false)) {
++      const bool ready = l4d2_data::initialize("client", BRIDGE_VERSION, Config::getOption<unsigned>("client.dataSnapshotMs", 5000));
++      Logger::info(ready ? "L4D2 data diagnostics enabled: client" : "L4D2 data diagnostics initialization failed: client");
++    }
++    // NV-DXVK end
 +    if (Config::getOption<bool>("client.apiWaitDiagnostics", false)) {
 +      const bool ready = l4d2_api_wait::initialize(true, "client", Config::getOption<unsigned>("client.apiWaitSnapshotMs", 5000));
 +      Logger::info(ready ? "L4D2 API wait diagnostics enabled: client" : "L4D2 API wait diagnostics failed to initialize: client");
@@ -1089,7 +1110,7 @@ index 300aaf5..97b2858 100644
  
      DInputHookAttach();
  
-@@ -606,6 +646,12 @@ void RemixDetach() {
+@@ -606,6 +652,13 @@ void RemixDetach() {
      // Clean up resources
      delete gpPresent;
  
@@ -1098,6 +1119,7 @@ index 300aaf5..97b2858 100644
 +    l4d2_retention::summary();
 +    l4d2_residency::summary();
 +
++    l4d2_data::finish();
 +    l4d2_color::finish();
      Logger::info("Shutdown cleanup successful, exiting now!");
      BridgeState::setClientState(BridgeState::ProcessState::Exited);
@@ -1113,6 +1135,30 @@ index 0fbd289..61f4f9b 100644
 +
 +  L4D2BridgePageBlockControl @ 41
 +  L4D2BridgeControl @ 42
+diff --git a/bridge/src/client/d3d9_lss.h b/bridge/src/client/d3d9_lss.h
+index 8b76f5d..52ab540 100644
+--- a/bridge/src/client/d3d9_lss.h
++++ b/bridge/src/client/d3d9_lss.h
+@@ -127,12 +127,19 @@ private:
+  */
+ class Direct3DStateBlock9_LSS: public D3DBase<IDirect3DStateBlock9> {
+   void onDestroy() override;
++  // NV-DXVK start: Optional data/resource tracing.
++  l4d2_data::Resource m_dataTrace;
++  // NV-DXVK end
+ protected:
+   BaseDirect3DDevice9Ex_LSS* const m_pDevice = nullptr;
+ public:
+   Direct3DStateBlock9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice)
+     : D3DBase((IDirect3DStateBlock9*) nullptr, pDevice)
+     , m_pDevice(pDevice) {
++    const auto fixedBytes = sizeof(m_captureState) + sizeof(m_dirtyFlags);
++    // NV-DXVK start: Optional data/resource tracing.
++    m_dataTrace.open(l4d2_data::Kind::StateBlock, getId(), fixedBytes, fixedBytes);
++    // NV-DXVK end
+   }
+ 
+   friend BaseDirect3DDevice9Ex_LSS;
 diff --git a/bridge/src/client/d3d9_module.cpp b/bridge/src/client/d3d9_module.cpp
 index 175430f..c8b0ed4 100644
 --- a/bridge/src/client/d3d9_module.cpp
@@ -1199,6 +1245,51 @@ index 175430f..c8b0ed4 100644
 -}
 \ No newline at end of file
 +}
+diff --git a/bridge/src/client/d3d9_pixelshader.cpp b/bridge/src/client/d3d9_pixelshader.cpp
+index 688d883..4e7054d 100644
+--- a/bridge/src/client/d3d9_pixelshader.cpp
++++ b/bridge/src/client/d3d9_pixelshader.cpp
+@@ -74,6 +74,9 @@ HRESULT Direct3DPixelShader9_LSS::GetFunction(void* pFunction, UINT* pSizeOfData
+     memcpy(pFunction, m_shader.getCode(), m_shader.getSize());
+   }
+ 
++  // NV-DXVK start: Optional data/resource tracing.
++  m_dataTrace.read(pFunction ? m_shader.getSize() : 0);
++  // NV-DXVK end
+   (*pSizeOfData) = m_shader.getSize();
+ 
+   return S_OK;
+diff --git a/bridge/src/client/d3d9_pixelshader.h b/bridge/src/client/d3d9_pixelshader.h
+index 9f82b16..b8d03d9 100644
+--- a/bridge/src/client/d3d9_pixelshader.h
++++ b/bridge/src/client/d3d9_pixelshader.h
+@@ -29,6 +29,9 @@
+ class Direct3DPixelShader9_LSS: public D3DBase<IDirect3DPixelShader9> {
+   void onDestroy() override;
+   CommonShader m_shader;
++  // NV-DXVK start: Optional data/resource tracing.
++  l4d2_data::Resource m_dataTrace;
++  // NV-DXVK end
+ protected:
+   BaseDirect3DDevice9Ex_LSS* const m_pDevice = nullptr;
+ public:
+@@ -36,6 +39,9 @@ public:
+     : D3DBase((IDirect3DPixelShader9*) nullptr, pDevice)
+     , m_pDevice(pDevice)
+     , m_shader(shader) {
++    // NV-DXVK start: Optional data/resource tracing.
++    m_dataTrace.open(l4d2_data::Kind::PixelShader, getId(), m_shader.getSize(), m_shader.getStorageBytes());
++    // NV-DXVK end
+   }
+ 
+   /*** IUnknown methods ***/
+@@ -46,4 +52,4 @@ public:
+   /*** IDirect3DPixelShader9 methods ***/
+   STDMETHOD(GetDevice)(THIS_ IDirect3DDevice9** ppDevice);
+   STDMETHOD(GetFunction)(THIS_ void*, UINT* pSizeOfData);
+-};
+\ No newline at end of file
++};
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
 index e54aec5..88ada52 100644
 --- a/bridge/src/client/d3d9_surface.cpp
@@ -1922,8 +2013,99 @@ index 36ebe3a..eb0f174 100644
    LogFunctionCall();
    {
      BRIDGE_PARENT_DEVICE_LOCKGUARD();
+diff --git a/bridge/src/client/d3d9_vertexdeclaration.cpp b/bridge/src/client/d3d9_vertexdeclaration.cpp
+index a90a28b..02c8b6e 100644
+--- a/bridge/src/client/d3d9_vertexdeclaration.cpp
++++ b/bridge/src/client/d3d9_vertexdeclaration.cpp
+@@ -74,6 +74,9 @@ HRESULT Direct3DVertexDeclaration9_LSS::GetDeclaration(D3DVERTEXELEMENT9* pEleme
+   if (pElement != nullptr)
+     memcpy(pElement, m_elements.data(), m_elements.size() * sizeof(D3DVERTEXELEMENT9));
+ 
++  // NV-DXVK start: Optional data/resource tracing.
++  m_dataTrace.read(pElement ? m_elements.size() * sizeof(D3DVERTEXELEMENT9) : 0);
++  // NV-DXVK end
+   (*pNumElements) = m_elements.size();
+ 
+   return S_OK;
+diff --git a/bridge/src/client/d3d9_vertexdeclaration.h b/bridge/src/client/d3d9_vertexdeclaration.h
+index 2d450bf..bc80a0f 100644
+--- a/bridge/src/client/d3d9_vertexdeclaration.h
++++ b/bridge/src/client/d3d9_vertexdeclaration.h
+@@ -30,6 +30,9 @@
+ class Direct3DVertexDeclaration9_LSS: public D3DBase<IDirect3DVertexDeclaration9> {
+   void onDestroy() override;
+   std::vector<D3DVERTEXELEMENT9> m_elements;
++  // NV-DXVK start: Optional data/resource tracing.
++  l4d2_data::Resource m_dataTrace;
++  // NV-DXVK end
+ 
+ protected:
+   BaseDirect3DDevice9Ex_LSS* const m_pDevice = nullptr;
+@@ -44,6 +47,10 @@ public:
+       ++counter;
+     }
+     m_elements.push_back(*counter);
++    // NV-DXVK start: Optional data/resource tracing.
++    m_dataTrace.open(l4d2_data::Kind::Declaration, getId(), m_elements.size() * sizeof(D3DVERTEXELEMENT9),
++      m_elements.capacity() * sizeof(D3DVERTEXELEMENT9));
++    // NV-DXVK end
+   }
+ 
+   /*** IUnknown methods ***/
+@@ -54,4 +61,4 @@ public:
+   /*** IDirect3DVertexDeclaration9 methods ***/
+   STDMETHOD(GetDevice)(THIS_ IDirect3DDevice9** ppDevice);
+   STDMETHOD(GetDeclaration)(THIS_ D3DVERTEXELEMENT9* pElement, UINT* pNumElements);
+-};
+\ No newline at end of file
++};
+diff --git a/bridge/src/client/d3d9_vertexshader.cpp b/bridge/src/client/d3d9_vertexshader.cpp
+index 242b864..616a9af 100644
+--- a/bridge/src/client/d3d9_vertexshader.cpp
++++ b/bridge/src/client/d3d9_vertexshader.cpp
+@@ -77,6 +77,9 @@ HRESULT Direct3DVertexShader9_LSS::GetFunction(void* pFunction, UINT* pSizeOfDat
+     memcpy(pFunction, m_shader.getCode(), m_shader.getSize());
+   }
+ 
++  // NV-DXVK start: Optional data/resource tracing.
++  m_dataTrace.read(pFunction ? m_shader.getSize() : 0);
++  // NV-DXVK end
+   (*pSizeOfData) = m_shader.getSize();
+ 
+   return S_OK;
+diff --git a/bridge/src/client/d3d9_vertexshader.h b/bridge/src/client/d3d9_vertexshader.h
+index 620bb2c..eb11c3c 100644
+--- a/bridge/src/client/d3d9_vertexshader.h
++++ b/bridge/src/client/d3d9_vertexshader.h
+@@ -29,6 +29,9 @@
+ class Direct3DVertexShader9_LSS: public D3DBase<IDirect3DVertexShader9> {
+   void onDestroy() override;
+   CommonShader m_shader;
++  // NV-DXVK start: Optional data/resource tracing.
++  l4d2_data::Resource m_dataTrace;
++  // NV-DXVK end
+ protected:
+   BaseDirect3DDevice9Ex_LSS* const m_pDevice = nullptr;
+ public:
+@@ -36,6 +39,9 @@ public:
+     : D3DBase((IDirect3DVertexShader9*) nullptr, pDevice)
+     , m_pDevice(pDevice)
+     , m_shader(shader) {
++    // NV-DXVK start: Optional data/resource tracing.
++    m_dataTrace.open(l4d2_data::Kind::VertexShader, getId(), m_shader.getSize(), m_shader.getStorageBytes());
++    // NV-DXVK end
+   }
+ 
+   /*** IUnknown methods ***/
+@@ -50,4 +56,4 @@ public:
+   const CommonShader& getCommonShader() const {
+     return m_shader;
+   }
+-};
+\ No newline at end of file
++};
 diff --git a/bridge/src/client/d3d9_volume.cpp b/bridge/src/client/d3d9_volume.cpp
-index 11704cf..0b7c04d 100644
+index 11704cf..8610760 100644
 --- a/bridge/src/client/d3d9_volume.cpp
 +++ b/bridge/src/client/d3d9_volume.cpp
 @@ -20,9 +20,14 @@
@@ -1948,7 +2130,7 @@ index 11704cf..0b7c04d 100644
 +  l4d2_api_wait::ApiScope apiTiming(l4d2_api_wait::Api::VolumeLockBox);
    LogFunctionCall();
 +  // NV-DXVK start: Validate the output before dereferencing it.
-+  if (pLockedVolume == nullptr) { return D3DERR_INVALIDCALL; }
++  if (pLockedVolume == nullptr) { m_dataTrace.lock(0, 0, Flags, D3DERR_INVALIDCALL, false); return D3DERR_INVALIDCALL; }
 +  // NV-DXVK end
    // Store locked rect pointer locally so we can copy the data on unlock
    {
@@ -1974,7 +2156,7 @@ index 11704cf..0b7c04d 100644
    LogFunctionCall();
    {
      BRIDGE_PARENT_DEVICE_LOCKGUARD();
-@@ -125,20 +138,29 @@ HRESULT Direct3DVolume9_LSS::UnlockBox() {
+@@ -125,20 +138,33 @@ HRESULT Direct3DVolume9_LSS::UnlockBox() {
    return S_OK;
  }
  
@@ -1997,17 +2179,21 @@ index 11704cf..0b7c04d 100644
 +  l4d2_volume::Layout layout;
 +  if (!l4d2_volume::layout(box, m_desc, bridge_util::getBlockSize(m_desc.Format),
 +    bridge_util::getBytesFromFormat(m_desc.Format), layout)) {
++    m_dataTrace.lock(0, 0, flags, D3DERR_INVALIDCALL, false);
 +    return D3DERR_INVALIDCALL;
 +  }
 +  std::unique_ptr<uint8_t[]> data(new (std::nothrow) uint8_t[layout.bytes]);
-+  if (!data) { return E_OUTOFMEMORY; }
++  if (!data) { m_dataTrace.lock(0, layout.bytes, flags, E_OUTOFMEMORY); return E_OUTOFMEMORY; }
 +  const D3DLOCKED_BOX locked = l4d2_volume::lockedBox(data.get(), layout);
 +  try {
-+    m_lockInfoQueue.push({ locked, box, flags, layout, std::move(data) });
++    m_lockInfoQueue.push({ locked, box, flags, layout, std::move(data), l4d2_data::Temporary(layout.bytes) });
 +  } catch (const std::bad_alloc&) {
++    m_dataTrace.lock(0, layout.bytes, flags, E_OUTOFMEMORY);
 +    return E_OUTOFMEMORY;
 +  }
 +  lockedVolume = locked;
++  const bool partial = box.Left || box.Top || box.Front || box.Right != m_desc.Width || box.Bottom != m_desc.Height || box.Back != m_desc.Depth;
++  m_dataTrace.lock(0, layout.bytes, flags, S_OK, true, partial);
 +  if (l4d2_color::enabled.load(std::memory_order_relaxed)) {
 +    l4d2_color::record("event=CLIENT_VOLUME_LOCK resource_id=%u width=%u height=%u depth=%u format=0x%08x reported_row_pitch=%d reported_slice_pitch=%d expected_row_bytes=%u expected_slice_bytes=%u allocated_bytes=%u flags=0x%08x",
 +      static_cast<uint32_t>(getId()), layout.width, layout.height, layout.depth, m_desc.Format,
@@ -2017,7 +2203,7 @@ index 11704cf..0b7c04d 100644
  }
  
  void Direct3DVolume9_LSS::unlock() {
-@@ -146,54 +168,44 @@ void Direct3DVolume9_LSS::unlock() {
+@@ -146,54 +172,45 @@ void Direct3DVolume9_LSS::unlock() {
    if (m_lockInfoQueue.empty()) {
      return;
    }
@@ -2036,6 +2222,7 @@ index 11704cf..0b7c04d 100644
  
 -  // Now send the box dimensions and surface handle
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
++    m_dataTrace.upload(layout.bytes);
      ClientMessage c(Commands::IDirect3DVolume9_UnlockBox, getId());
 -
 -    c.send_data(sizeof(D3DBOX), &box);
@@ -2094,10 +2281,10 @@ index 11704cf..0b7c04d 100644
 -           box.Back   - box.Front };
 -}
 diff --git a/bridge/src/client/d3d9_volume.h b/bridge/src/client/d3d9_volume.h
-index ba9821d..2efca3a 100644
+index ba9821d..021afd0 100644
 --- a/bridge/src/client/d3d9_volume.h
 +++ b/bridge/src/client/d3d9_volume.h
-@@ -22,6 +22,10 @@
+@@ -22,14 +22,26 @@
  #pragma once
  
  #include "d3d9_lss.h"
@@ -2108,18 +2295,43 @@ index ba9821d..2efca3a 100644
  
  class Direct3DVolume9_LSS: public D3DBase<IDirect3DVolume9> {
    void onDestroy() override;
-@@ -30,6 +34,10 @@ class Direct3DVolume9_LSS: public D3DBase<IDirect3DVolume9> {
+   D3DVOLUME_DESC m_desc;
++  // NV-DXVK start: Optional data/resource tracing.
++  l4d2_data::Resource m_dataTrace;
++  // NV-DXVK end
+   struct LockInfo {
      D3DLOCKED_BOX lockedVolume;
      D3DBOX box;
      DWORD flags;
 +    // NV-DXVK start: Volume byte layout and lock-buffer ownership.
 +    l4d2_volume::Layout layout;
 +    std::unique_ptr<uint8_t[]> data;
++    l4d2_data::Temporary accounting;
 +    // NV-DXVK end
    };
    std::queue<LockInfo> m_lockInfoQueue;
  protected:
-@@ -67,8 +75,9 @@ public:
+@@ -40,6 +52,9 @@ public:
+     : D3DBase((IDirect3DVolume9*) nullptr, pDevice)
+     , m_pDevice(pDevice)
+     , m_desc(desc) {
++    // NV-DXVK start: Optional data/resource tracing.
++    m_dataTrace.open(l4d2_data::Kind::Volume, getId(), 0, 0, desc.Usage, desc.Pool, desc.Format, desc.Width, desc.Height, desc.Depth);
++    // NV-DXVK end
+     assert(0 && "Must not be called!");
+   }
+ 
+@@ -50,6 +65,9 @@ public:
+     : D3DBase((IDirect3DVolume9*) nullptr, pDevice, pContainerVolumeTexture)
+     , m_pDevice(pDevice)
+     , m_desc(desc) {
++    // NV-DXVK start: Optional data/resource tracing.
++    m_dataTrace.open(l4d2_data::Kind::Volume, getId(), 0, 0, desc.Usage, desc.Pool, desc.Format, desc.Width, desc.Height, desc.Depth);
++    // NV-DXVK end
+   }
+ 
+   /*** IUnknown methods ***/
+@@ -67,8 +85,9 @@ public:
    STDMETHOD(UnlockBox)(THIS);
  
  private:
@@ -2308,7 +2520,7 @@ index bbbd470..f392bcd 100644
    // Keep draining past the caller's buffer capacity so nothing is left queued to replay later.
    while (res != 0 && res != (UINT) -1) {
 diff --git a/bridge/src/client/lockable_buffer.h b/bridge/src/client/lockable_buffer.h
-index fbfc565..2e1218a 100644
+index fbfc565..9cb4e69 100644
 --- a/bridge/src/client/lockable_buffer.h
 +++ b/bridge/src/client/lockable_buffer.h
 @@ -1,3 +1,7 @@
@@ -2327,7 +2539,17 @@ index fbfc565..2e1218a 100644
  
  #include <d3d9.h>
  #include <queue>
-@@ -72,7 +77,9 @@ private:
+@@ -49,6 +54,9 @@ class LockableBuffer: public Direct3DResource9_LSS<T> {
+     SharedHeap::AllocId bufferId = SharedHeap::kInvalidId;
+     SharedHeap::AllocId discardedBufferId = SharedHeap::kInvalidId;
+   };
++  // NV-DXVK start: Trace shadow lifetimes without changing buffer retention.
++  l4d2_data::Resource m_dataTrace;
++  // NV-DXVK end
+   std::queue<LockInfo> m_lockInfos;
+ 
+   const bool m_bUseSharedHeap = false;
+@@ -72,7 +80,9 @@ private:
    }
  
    void initShadowMem() {
@@ -2338,7 +2560,18 @@ index fbfc565..2e1218a 100644
      g_totalBufferShadow += m_desc.Size;
      Logger::trace(format_string("Allocated a shadow for dynamic %s buffer [%p] "
                                  "(size: %zd, total shadow size: %zd)",
-@@ -104,6 +111,8 @@ protected:
+@@ -95,6 +105,10 @@ protected:
+     if (!m_bUseSharedHeap) {
+       initShadowMem();
+     }
++    // NV-DXVK start: Optional data/resource tracing.
++    m_dataTrace.open(bIsVertexBuffer ? l4d2_data::Kind::Vertex : l4d2_data::Kind::Index,
++      getId(), desc.Size, m_shadow ? desc.Size : 0, desc.Usage, desc.Pool, desc.Format);
++    // NV-DXVK end
+   }
+ 
+   ~LockableBuffer() {
+@@ -104,6 +118,8 @@ protected:
        }
      } else if (m_shadow) {
        g_totalBufferShadow -= m_desc.Size;
@@ -2347,7 +2580,47 @@ index fbfc565..2e1218a 100644
        Logger::trace(format_string("Released shadow of dynamic %s buffer [%p] "
                                    "(size: %zd, total shadow size: %zd)",
                                    bIsVertexBuffer ? "vertex" : "index",
-@@ -227,4 +236,4 @@ protected:
+@@ -113,6 +129,9 @@ protected:
+ 
+   HRESULT lock(const UINT offset, const UINT size, void** ppbData, const DWORD flags) {
+     if (ppbData == nullptr) {
++      // NV-DXVK start: Optional data/resource tracing.
++      m_dataTrace.lock(offset, size, flags, D3DERR_INVALIDCALL);
++      // NV-DXVK end
+       return D3DERR_INVALIDCALL;
+     }
+ 
+@@ -137,6 +156,9 @@ protected:
+         ss << "m_desc.Size=" << m_desc.Size << ",";
+         ss << "m_bufferId=" << m_bufferId << "}";
+         Logger::err(ss.str());
++        // NV-DXVK start: Optional data/resource tracing.
++        m_dataTrace.lock(offset, size, flags, E_FAIL);
++        // NV-DXVK end
+         return E_FAIL;
+       }
+       m_bufferId = nextBufId;
+@@ -167,6 +189,9 @@ protected:
+       m_lockInfos.push({ offset, size, *ppbData, flags, checkPtr });
+     }
+     // Store locked buffer pointer locally so we can copy the data on unlock
++    // NV-DXVK start: Optional data/resource tracing.
++    m_dataTrace.lock(offset, size, flags, S_OK);
++    // NV-DXVK end
+     return S_OK;
+   }
+ 
+@@ -190,6 +215,9 @@ protected:
+ 
+     // If this is a read only access then don't bother sending
+     if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
++      // NV-DXVK start: Optional data/resource tracing.
++      m_dataTrace.upload(size, m_bUseSharedHeap, m_optimizedLock && !m_bUseSharedHeap);
++      // NV-DXVK end
+       {
+         Commands::Flags cmdFlags = 0;
+ 
+@@ -227,4 +255,4 @@ protected:
      }
      m_lockInfos.pop();
    }
@@ -5455,7 +5728,7 @@ index 0000000..c6ccbb1
 +};
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..b82a499 100644
+index 86434ec..c0c6ccc 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -5673,17 +5946,20 @@ index 86434ec..b82a499 100644
    return hresult;
  }
  
-@@ -300,6 +433,9 @@ void ProcessDeviceCommandQueue() {
+@@ -300,6 +433,12 @@ void ProcessDeviceCommandQueue() {
  #endif
  
      const Header rpcHeader = DeviceBridge::pop_front();
 +    bridge_exception::CommandScope exceptionContext(bridge_exception::Queue::Device,
 +      static_cast<uint16_t>(rpcHeader.command), rpcHeader.pHandle, "ProcessDeviceCommandQueue");
++    // NV-DXVK start: Optional data/resource tracing.
++    l4d2_data::Dispatch dataHandler(static_cast<uint16_t>(rpcHeader.command), false);
++    // NV-DXVK end
 +    l4d2_api_wait::ApiScope apiHandlerTiming(l4d2_api_wait::commandApi(rpcHeader.command));
  
  #ifdef _DEBUG
      // If data batching is enabled and the data offset on the comamnd is different from
-@@ -318,6 +454,7 @@ void ProcessDeviceCommandQueue() {
+@@ -318,6 +457,7 @@ void ProcessDeviceCommandQueue() {
          ZoneName(commandStr.c_str(), commandStr.size());
        }
        PULL_U(currentUID);
@@ -5691,7 +5967,7 @@ index 86434ec..b82a499 100644
  #if defined(_DEBUG) || defined(DEBUGOPT)
        if (GlobalOptions::getLogServerCommands()) {
          Logger::info("Device Processing: " + toString(rpcHeader.command) + " UID: " + std::to_string(currentUID));
-@@ -338,9 +475,10 @@ void ProcessDeviceCommandQueue() {
+@@ -338,9 +478,10 @@ void ProcessDeviceCommandQueue() {
          uint32_t* rawPresentationParameters = nullptr;
          DeviceBridge::get_data((void**) &rawPresentationParameters);
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
@@ -5703,7 +5979,7 @@ index 86434ec..b82a499 100644
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
            ss << format_string("CreateDeviceEx() call failed with error code 0x%x", hresult) << std::endl;
-@@ -373,9 +511,16 @@ void ProcessDeviceCommandQueue() {
+@@ -373,9 +514,16 @@ void ProcessDeviceCommandQueue() {
          uint32_t* rawPresentationParameters = nullptr;
          DeviceBridge::get_data((void**) &rawPresentationParameters);
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
@@ -5721,7 +5997,7 @@ index 86434ec..b82a499 100644
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
            ss << format_string("CreateDevice() call failed with error code 0x%x", hresult) << std::endl;
-@@ -383,6 +528,10 @@ void ProcessDeviceCommandQueue() {
+@@ -383,6 +531,10 @@ void ProcessDeviceCommandQueue() {
          } else {
            Logger::info("Server side D3D9 Device created successfully!");
            gpD3DDevices[pHandle] = (IDirect3DDevice9Ex*) pD3DDevice;
@@ -5732,7 +6008,7 @@ index 86434ec..b82a499 100644
            if(GlobalOptions::getExposeRemixApi()) {
              remixapi::g_device = (IDirect3DDevice9Ex*) pD3DDevice;
              remixapi::g_remix.dxvk_RegisterD3D9Device(remixapi::g_device);
-@@ -426,9 +575,10 @@ void ProcessDeviceCommandQueue() {
+@@ -426,9 +578,10 @@ void ProcessDeviceCommandQueue() {
          PULL(DWORD, Usage);
          PULL_HND(pHandle);
          LPDIRECT3DSURFACE9 pSurface;
@@ -5744,7 +6020,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -444,9 +594,10 @@ void ProcessDeviceCommandQueue() {
+@@ -444,9 +597,10 @@ void ProcessDeviceCommandQueue() {
          PULL(DWORD, Usage);
          PULL_HND(pHandle);
          LPDIRECT3DSURFACE9 pSurface;
@@ -5756,7 +6032,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -464,9 +615,10 @@ void ProcessDeviceCommandQueue() {
+@@ -464,9 +618,10 @@ void ProcessDeviceCommandQueue() {
          PULL(DWORD, Usage);
          PULL_HND(pHandle);
          LPDIRECT3DSURFACE9 pSurface;
@@ -5768,7 +6044,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -483,6 +635,7 @@ void ProcessDeviceCommandQueue() {
+@@ -483,6 +638,7 @@ void ProcessDeviceCommandQueue() {
          IDirect3DSwapChain9* pSwapChain = nullptr;
          const auto hresult = pD3DDevice->GetSwapChain(0, &pSwapChain);
          if (SUCCEEDED(hresult)) {
@@ -5776,7 +6052,7 @@ index 86434ec..b82a499 100644
            gpD3DSwapChains[pClientSwapchain] = pSwapChain;
          }
          break;
-@@ -495,7 +648,9 @@ void ProcessDeviceCommandQueue() {
+@@ -495,7 +651,9 @@ void ProcessDeviceCommandQueue() {
          IDirect3DSurface9* pBackbuffer = nullptr;
          const auto hresult = pD3DDevice->GetBackBuffer(0, index, D3DBACKBUFFER_TYPE_MONO, &pBackbuffer);
          if (SUCCEEDED(hresult)) {
@@ -5786,7 +6062,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -507,7 +662,9 @@ void ProcessDeviceCommandQueue() {
+@@ -507,7 +665,9 @@ void ProcessDeviceCommandQueue() {
          IDirect3DSurface9* pDepthStencil = nullptr;
          const auto hresult = pD3DDevice->GetDepthStencilSurface(&pDepthStencil);
          if (SUCCEEDED(hresult)) {
@@ -5796,7 +6072,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -527,7 +684,8 @@ void ProcessDeviceCommandQueue() {
+@@ -527,7 +687,8 @@ void ProcessDeviceCommandQueue() {
        {
          GET_RES(pD3DDevice, gpD3DDevices);
          const auto hresult = pD3DDevice->TestCooperativeLevel();
@@ -5806,7 +6082,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DDevice9Ex_GetAvailableTextureMem:
-@@ -561,8 +719,14 @@ void ProcessDeviceCommandQueue() {
+@@ -561,8 +722,14 @@ void ProcessDeviceCommandQueue() {
        {
  
          GET_RES(pD3DDevice, gpD3DDevices);
@@ -5822,7 +6098,7 @@ index 86434ec..b82a499 100644
          BRIDGE_ASSERT_LOG(SUCCEEDED(hresult), "Issue retrieving D3D9 device specific information");
          {
            ServerMessage c(Commands::Bridge_Response, currentUID);
-@@ -632,9 +796,11 @@ void ProcessDeviceCommandQueue() {
+@@ -632,9 +799,11 @@ void ProcessDeviceCommandQueue() {
          uint32_t* rawPresentationParameters = nullptr;
          DeviceBridge::get_data((void**) &rawPresentationParameters);
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
@@ -5834,7 +6110,7 @@ index 86434ec..b82a499 100644
            gpD3DSwapChains[pHandle] = pSwapChain;
          }
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -646,8 +812,13 @@ void ProcessDeviceCommandQueue() {
+@@ -646,8 +815,13 @@ void ProcessDeviceCommandQueue() {
          PULL_U(iSwapChain);
          IDirect3DSwapChain9* pSwapChain = nullptr;
          const auto hresult = pD3DDevice->GetSwapChain(iSwapChain, &pSwapChain);
@@ -5850,7 +6126,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DDevice9Ex_GetNumberOfSwapChains:
-@@ -664,19 +835,31 @@ void ProcessDeviceCommandQueue() {
+@@ -664,19 +838,31 @@ void ProcessDeviceCommandQueue() {
          uint32_t* rawPresentationParameters = nullptr;
          DeviceBridge::get_data((void**) &rawPresentationParameters);
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
@@ -5894,7 +6170,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DDevice9Ex_ResetEx:
-@@ -689,19 +872,31 @@ void ProcessDeviceCommandQueue() {
+@@ -689,19 +875,31 @@ void ProcessDeviceCommandQueue() {
          PULL_DATA(sizeof(D3DDISPLAYMODEEX), pFullscreenDisplayMode);
  
          D3DPRESENT_PARAMETERS PresentationParameters = getPresParamFromRaw(rawPresentationParameters);
@@ -5938,7 +6214,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DDevice9Ex_Present:
-@@ -717,9 +912,10 @@ void ProcessDeviceCommandQueue() {
+@@ -717,9 +915,10 @@ void ProcessDeviceCommandQueue() {
          PULL(uint32_t, hDestWindowOverride);
          PULL_OBJ(RGNDATA, pDirtyRegion);
  
@@ -5951,7 +6227,7 @@ index 86434ec..b82a499 100644
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
            ss << "Present() failed! Check all logs for reported errors.";
-@@ -746,6 +942,7 @@ void ProcessDeviceCommandQueue() {
+@@ -746,6 +945,7 @@ void ProcessDeviceCommandQueue() {
          assert(SUCCEEDED(hresult));
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pSurfaceHandle] = pBackbuffer;
@@ -5959,7 +6235,7 @@ index 86434ec..b82a499 100644
          }
          break;
        }
-@@ -767,6 +964,7 @@ void ProcessDeviceCommandQueue() {
+@@ -767,6 +967,7 @@ void ProcessDeviceCommandQueue() {
          PULL_D(Flags);
          PULL_OBJ(D3DGAMMARAMP, pRamp);
          pD3DDevice->SetGammaRamp(iSwapChain, Flags, pRamp);
@@ -5967,7 +6243,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DDevice9Ex_GetGammaRamp:
-@@ -780,20 +978,30 @@ void ProcessDeviceCommandQueue() {
+@@ -780,20 +981,30 @@ void ProcessDeviceCommandQueue() {
        case IDirect3DDevice9Ex_CreateTexture:
        {
          GET_RES(pD3DDevice, gpD3DDevices);
@@ -6008,7 +6284,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DDevice9Ex_CreateVolumeTexture:
-@@ -807,10 +1015,15 @@ void ProcessDeviceCommandQueue() {
+@@ -807,10 +1018,15 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -6025,7 +6301,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -826,9 +1039,10 @@ void ProcessDeviceCommandQueue() {
+@@ -826,9 +1042,10 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
          LPDIRECT3DCUBETEXTURE9 pCubeTexture;
@@ -6037,7 +6313,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -843,9 +1057,10 @@ void ProcessDeviceCommandQueue() {
+@@ -843,9 +1060,10 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
          LPDIRECT3DVERTEXBUFFER9 pVertexBuffer;
@@ -6049,7 +6325,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -860,9 +1075,10 @@ void ProcessDeviceCommandQueue() {
+@@ -860,9 +1078,10 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
          LPDIRECT3DINDEXBUFFER9 pIndexBuffer;
@@ -6061,7 +6337,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -879,9 +1095,10 @@ void ProcessDeviceCommandQueue() {
+@@ -879,9 +1098,10 @@ void ProcessDeviceCommandQueue() {
          PULL(BOOL, Lockable);
          PULL_HND(pHandle);
          LPDIRECT3DSURFACE9 pSurface;
@@ -6073,7 +6349,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -898,9 +1115,10 @@ void ProcessDeviceCommandQueue() {
+@@ -898,9 +1118,10 @@ void ProcessDeviceCommandQueue() {
          PULL(BOOL, Discard);
          PULL_HND(pHandle);
          LPDIRECT3DSURFACE9 pSurface;
@@ -6085,7 +6361,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -919,7 +1137,8 @@ void ProcessDeviceCommandQueue() {
+@@ -919,7 +1140,8 @@ void ProcessDeviceCommandQueue() {
          const auto& pDestinationSurface = (IDirect3DSurface9*) gpD3DResources[pDestHandle];
          assert(pDestinationSurface != nullptr);
          if (pSourceSurface != nullptr && pDestinationSurface != nullptr) {
@@ -6095,7 +6371,7 @@ index 86434ec..b82a499 100644
            assert(SUCCEEDED(hresult));
          }
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -936,7 +1155,8 @@ void ProcessDeviceCommandQueue() {
+@@ -936,7 +1158,8 @@ void ProcessDeviceCommandQueue() {
          const auto& pDestinationTexture = (IDirect3DBaseTexture9*) gpD3DResources[pDestinationTextureHandle];
          assert(pDestinationTexture != nullptr);
          if (pSourceTexture != nullptr && pDestinationTexture != nullptr) {
@@ -6105,7 +6381,7 @@ index 86434ec..b82a499 100644
            assert(SUCCEEDED(hresult));
          }
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -949,7 +1169,7 @@ void ProcessDeviceCommandQueue() {
+@@ -949,7 +1172,7 @@ void ProcessDeviceCommandQueue() {
          PULL_HND(pDestSurfaceHandle);
          const auto& pRenderTarget = (IDirect3DSurface9*) gpD3DResources[pRenderTargetHandle];
          const auto& pDestSurface = (IDirect3DSurface9*) gpD3DResources[pDestSurfaceHandle];
@@ -6114,7 +6390,7 @@ index 86434ec..b82a499 100644
          hresult = ReturnSurfaceDataToClient(pDestSurface, hresult, currentUID);
          assert(SUCCEEDED(hresult));
          break;
-@@ -1002,9 +1222,10 @@ void ProcessDeviceCommandQueue() {
+@@ -1002,9 +1225,10 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
          LPDIRECT3DSURFACE9 pSurface;
@@ -6126,7 +6402,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
-@@ -1023,6 +1244,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1023,6 +1247,7 @@ void ProcessDeviceCommandQueue() {
          assert((pHandle != 0 && pRenderTarget != 0) || pHandle == 0);
          if ((pHandle != 0 && pRenderTarget != 0) || pHandle == 0) {
            hresult = pD3DDevice->SetRenderTarget(IN RenderTargetIndex, IN pRenderTarget);
@@ -6134,7 +6410,7 @@ index 86434ec..b82a499 100644
            assert(SUCCEEDED(hresult));
          }
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -1034,12 +1256,9 @@ void ProcessDeviceCommandQueue() {
+@@ -1034,12 +1259,9 @@ void ProcessDeviceCommandQueue() {
          PULL_D(RenderTargetIndex);
          PULL_HND(pSurfaceHandle);
          IDirect3DSurface9* pRenderTarget = nullptr;
@@ -6149,7 +6425,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DDevice9Ex_SetDepthStencilSurface:
-@@ -1054,6 +1273,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1054,6 +1276,7 @@ void ProcessDeviceCommandQueue() {
          assert((pHandle != 0 && pDepthStencil != 0) || pHandle == 0);
          if ((pHandle != 0 && pDepthStencil != 0) || pHandle == 0) {
            hresult = pD3DDevice->SetDepthStencilSurface(IN pDepthStencil);
@@ -6157,7 +6433,7 @@ index 86434ec..b82a499 100644
            assert(SUCCEEDED(hresult));
          }
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -1064,11 +1284,8 @@ void ProcessDeviceCommandQueue() {
+@@ -1064,11 +1287,8 @@ void ProcessDeviceCommandQueue() {
          GET_RES(pD3DDevice, gpD3DDevices);
          PULL_HND(pSurfaceHandle);
          IDirect3DSurface9* pZStencilSurface = nullptr;
@@ -6171,7 +6447,7 @@ index 86434ec..b82a499 100644
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -1084,6 +1301,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1084,6 +1304,7 @@ void ProcessDeviceCommandQueue() {
        {
          GET_RES(pD3DDevice, gpD3DDevices);
          const auto hresult = pD3DDevice->EndScene();
@@ -6179,7 +6455,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1186,6 +1404,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1186,6 +1407,7 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DRENDERSTATETYPE, State);
          PULL_D(Value);
          const auto hresult = pD3DDevice->SetRenderState(IN State, IN Value);
@@ -6187,7 +6463,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1244,6 +1463,30 @@ void ProcessDeviceCommandQueue() {
+@@ -1244,6 +1466,30 @@ void ProcessDeviceCommandQueue() {
            assert(pTexture != nullptr);
          }
          const auto hresult = pD3DDevice->SetTexture(IN Stage, IN pTexture);
@@ -6218,7 +6494,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1270,6 +1513,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1270,6 +1516,7 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DSAMPLERSTATETYPE, Type);
          PULL_D(Value);
          const auto hresult = pD3DDevice->SetSamplerState(IN Sampler, IN Type, IN Value);
@@ -6226,7 +6502,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1323,6 +1567,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1323,6 +1570,7 @@ void ProcessDeviceCommandQueue() {
        case IDirect3DDevice9Ex_DrawPrimitive:
        {
          GET_RES(pD3DDevice, gpD3DDevices);
@@ -6234,7 +6510,7 @@ index 86434ec..b82a499 100644
          PULL(D3DPRIMITIVETYPE, PrimitiveType);
          PULL_U(StartVertex);
          PULL_U(PrimitiveCount);
-@@ -1334,6 +1579,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1334,6 +1582,7 @@ void ProcessDeviceCommandQueue() {
        case IDirect3DDevice9Ex_DrawIndexedPrimitive:
        {
          GET_RES(pD3DDevice, gpD3DDevices);
@@ -6242,7 +6518,7 @@ index 86434ec..b82a499 100644
          PULL(D3DPRIMITIVETYPE, Type);
          PULL_I(BaseVertexIndex);
          PULL_U(MinVertexIndex);
-@@ -1348,6 +1594,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1348,6 +1597,7 @@ void ProcessDeviceCommandQueue() {
        case IDirect3DDevice9Ex_DrawPrimitiveUP:
        {
          GET_RES(pD3DDevice, gpD3DDevices);
@@ -6250,7 +6526,7 @@ index 86434ec..b82a499 100644
          PULL(D3DPRIMITIVETYPE, PrimitiveType);
          PULL_U(PrimitiveCount);
          void* pVertexStreamZeroData = nullptr;
-@@ -1361,6 +1608,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1361,6 +1611,7 @@ void ProcessDeviceCommandQueue() {
        case IDirect3DDevice9Ex_DrawIndexedPrimitiveUP:
        {
          GET_RES(pD3DDevice, gpD3DDevices);
@@ -6258,7 +6534,7 @@ index 86434ec..b82a499 100644
          PULL(D3DPRIMITIVETYPE, PrimitiveType);
          PULL_U(MinVertexIndex);
          PULL_U(NumVertices);
-@@ -1450,6 +1698,10 @@ void ProcessDeviceCommandQueue() {
+@@ -1450,6 +1701,10 @@ void ProcessDeviceCommandQueue() {
          if (SUCCEEDED(hresult)) {
            gpD3DVertexShaders[pHandle] = pShader;
          }
@@ -6269,7 +6545,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1463,6 +1715,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1463,6 +1718,7 @@ void ProcessDeviceCommandQueue() {
            pShader = gpD3DVertexShaders[pHandle];
          }
          const auto hresult = pD3DDevice->SetVertexShader(IN pShader);
@@ -6277,7 +6553,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1568,6 +1821,10 @@ void ProcessDeviceCommandQueue() {
+@@ -1568,6 +1824,10 @@ void ProcessDeviceCommandQueue() {
          if (SUCCEEDED(hresult)) {
            gpD3DPixelShaders[pHandle] = pShader;
          }
@@ -6288,7 +6564,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1581,6 +1838,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1581,6 +1841,7 @@ void ProcessDeviceCommandQueue() {
            pShader = gpD3DPixelShaders[pHandle];
          }
          const auto hresult = pD3DDevice->SetPixelShader(IN pShader);
@@ -6296,7 +6572,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1595,6 +1853,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1595,6 +1856,7 @@ void ProcessDeviceCommandQueue() {
          float* pConstantData = nullptr;
          PULL_DATA(Count * sizeof(float) * 4, pConstantData);
          const auto hresult = pD3DDevice->SetPixelShaderConstantF(IN StartRegister, IN pConstantData, IN Count);
@@ -6304,7 +6580,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1734,6 +1993,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1734,6 +1996,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pSB = gpD3DStateBlocks[pHandle];
          assert(pSB != nullptr);
          const auto hresult = pSB->Apply();
@@ -6312,7 +6588,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -1749,7 +2009,17 @@ void ProcessDeviceCommandQueue() {
+@@ -1749,7 +2012,17 @@ void ProcessDeviceCommandQueue() {
        {
          GET_HND(pHandle);
          const auto& pSwapChain = gpD3DSwapChains[pHandle];
@@ -6331,7 +6607,7 @@ index 86434ec..b82a499 100644
          gpD3DSwapChains.erase(pHandle);
          break;
        }
-@@ -1767,9 +2037,9 @@ void ProcessDeviceCommandQueue() {
+@@ -1767,9 +2040,9 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RGNDATA, pDirtyRegion);
          PULL(uint32_t, dwFlags);
  
@@ -6343,7 +6619,7 @@ index 86434ec..b82a499 100644
  
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
-@@ -1793,6 +2063,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1793,6 +2066,7 @@ void ProcessDeviceCommandQueue() {
          auto hresult = pSwapChain->GetFrontBufferData(pDestSurface);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pDestSurfaceHandle] = pDestSurface;
@@ -6351,7 +6627,7 @@ index 86434ec..b82a499 100644
          }
          hresult = ReturnSurfaceDataToClient(pDestSurface, hresult, currentUID);
          assert(SUCCEEDED(hresult));
-@@ -1807,7 +2078,9 @@ void ProcessDeviceCommandQueue() {
+@@ -1807,7 +2081,9 @@ void ProcessDeviceCommandQueue() {
          IDirect3DSurface9* pBackbuffer = nullptr;
          const auto hresult = pSwapChain->GetBackBuffer(iBackBuffer, Type, &pBackbuffer);
          if (SUCCEEDED(hresult)) {
@@ -6361,7 +6637,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -2019,6 +2292,9 @@ void ProcessDeviceCommandQueue() {
+@@ -2019,6 +2295,9 @@ void ProcessDeviceCommandQueue() {
          const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pHandle];
          safeDestroy(pTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -6371,7 +6647,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DTexture9_GetDevice:
-@@ -2063,7 +2339,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2063,7 +2342,7 @@ void ProcessDeviceCommandQueue() {
          PULL_U(Level);
          const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pHandle];
          D3DSURFACE_DESC pDesc;
@@ -6380,7 +6656,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2074,9 +2350,14 @@ void ProcessDeviceCommandQueue() {
+@@ -2074,9 +2353,14 @@ void ProcessDeviceCommandQueue() {
          PULL_HND(pSurfaceHandle);
          const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pTextureHandle];
          LPDIRECT3DSURFACE9 pSurfaceLevel;
@@ -6396,7 +6672,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2120,6 +2401,9 @@ void ProcessDeviceCommandQueue() {
+@@ -2120,6 +2404,9 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
          safeDestroy(pVolumeTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -6406,7 +6682,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DVolumeTexture9_GetDevice:
-@@ -2164,7 +2448,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2164,7 +2451,7 @@ void ProcessDeviceCommandQueue() {
          PULL_U(Level);
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
          D3DVOLUME_DESC pDesc;
@@ -6415,7 +6691,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2175,9 +2459,13 @@ void ProcessDeviceCommandQueue() {
+@@ -2175,9 +2462,13 @@ void ProcessDeviceCommandQueue() {
          PULL_HND(pVolumeLevelHandle);
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pVolumeTextureHandle];
          LPDIRECT3DVOLUME9 pVolumeLevel;
@@ -6430,7 +6706,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2196,7 +2484,12 @@ void ProcessDeviceCommandQueue() {
+@@ -2196,7 +2487,12 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
          // Now lock the box so we can copy the data into it
          D3DLOCKED_BOX pLockedVolume;
@@ -6444,7 +6720,15 @@ index 86434ec..b82a499 100644
          assert(S_OK == hresult);
          // Copy the data over
          PULL_U(bytesPerPixel);
-@@ -2208,6 +2501,8 @@ void ProcessDeviceCommandQueue() {
+@@ -2204,10 +2500,16 @@ void ProcessDeviceCommandQueue() {
+         PULL_U(height);
+         PULL_U(depth);
+         const auto row_size = width * bytesPerPixel;
++        // NV-DXVK start: Optional data/resource tracing.
++        l4d2_data::backend(static_cast<uint16_t>(rpcHeader.command), false,
++          static_cast<uint64_t>(row_size) * height * depth, colorLockResult);
++        // NV-DXVK end
+ #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
          void* data = nullptr;
          const auto slice_size = row_size * height;
          size_t pulledSize = DeviceBridge::get_data(&data);
@@ -6453,7 +6737,7 @@ index 86434ec..b82a499 100644
  #endif
          for (uint32_t z = 0; z < depth; z++) {
            for (uint32_t y = 0; y < height; y++) {
-@@ -2217,6 +2512,8 @@ void ProcessDeviceCommandQueue() {
+@@ -2217,6 +2519,8 @@ void ProcessDeviceCommandQueue() {
  #else
              void* row = nullptr;
              const auto read_size = DeviceBridge::get_data(&row);
@@ -6462,12 +6746,15 @@ index 86434ec..b82a499 100644
              assert(row_size == read_size);
  #endif
              memcpy((void*) ptr, (void*) row, row_size);
-@@ -2225,7 +2522,13 @@ void ProcessDeviceCommandQueue() {
+@@ -2225,7 +2529,16 @@ void ProcessDeviceCommandQueue() {
  #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
          assert(pulledSize == depth * slice_size);
  #endif
 -        hresult = pVolumeTexture->UnlockBox(Level);
 +        hresult = l4d2_api_wait::backend([&]() { return pVolumeTexture->UnlockBox(Level); });
++        // NV-DXVK start: Optional data/resource tracing.
++        l4d2_data::backend(static_cast<uint16_t>(rpcHeader.command), true, 0, hresult);
++        // NV-DXVK end
 +        const auto colorParent = gColorParents.find(pHandle);
 +        l4d2_color::upload(pHandle, colorParent == gColorParents.end() ? 0 : colorParent->second, "VolumeUploadBackend", currentUID, colorDesc.Format,
 +          // NV-DXVK start: Diagnostic extents are pixels; the wire uses block counts.
@@ -6477,7 +6764,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2259,6 +2562,9 @@ void ProcessDeviceCommandQueue() {
+@@ -2259,6 +2572,9 @@ void ProcessDeviceCommandQueue() {
          const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pHandle];
          safeDestroy(pCubeTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -6487,7 +6774,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DCubeTexture9_GetDevice:
-@@ -2303,7 +2609,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2303,7 +2619,7 @@ void ProcessDeviceCommandQueue() {
          GET_HND(pHandle);
          const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pHandle];
          D3DSURFACE_DESC pDesc;
@@ -6496,7 +6783,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2315,9 +2621,10 @@ void ProcessDeviceCommandQueue() {
+@@ -2315,9 +2631,10 @@ void ProcessDeviceCommandQueue() {
          PULL_HND(pCubeMapSurfaceHandle);
          const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pCubeTextureHandle];
          LPDIRECT3DSURFACE9 pCubeMapSurface;
@@ -6508,7 +6795,7 @@ index 86434ec..b82a499 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2362,6 +2669,9 @@ void ProcessDeviceCommandQueue() {
+@@ -2362,6 +2679,9 @@ void ProcessDeviceCommandQueue() {
          const auto& pVertexBuffer = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
          safeDestroy(pVertexBuffer, pHandle);
          gpD3DResources.erase(pHandle);
@@ -6518,25 +6805,31 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DVertexBuffer9_GetDevice:
-@@ -2398,7 +2708,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2398,7 +2718,10 @@ void ProcessDeviceCommandQueue() {
  
          // Now lock the buffer so we can copy the data into it
          void* pbData = nullptr;
 -        auto hresult = pVertexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags);
 +        auto hresult = l4d2_api_wait::backend([&]() { return pVertexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags); });
++        // NV-DXVK start: Optional data/resource tracing.
++        l4d2_data::backend(static_cast<uint16_t>(rpcHeader.command), false, SizeToLock, hresult);
++        // NV-DXVK end
          assert(S_OK == hresult);
  
          // Copy the data over
-@@ -2414,7 +2724,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2414,7 +2737,10 @@ void ProcessDeviceCommandQueue() {
            assert(SizeToLock == size);
          }
          memcpy(pbData, data, SizeToLock);
 -        hresult = pVertexBuffer->Unlock();
 +        hresult = l4d2_api_wait::backend([&]() { return pVertexBuffer->Unlock(); });
++        // NV-DXVK start: Optional data/resource tracing.
++        l4d2_data::backend(static_cast<uint16_t>(rpcHeader.command), true, 0, hresult);
++        // NV-DXVK end
          assert(SUCCEEDED(hresult));
  
          break;
-@@ -2425,7 +2735,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2425,7 +2751,7 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(D3DVERTEXBUFFER_DESC, orig_desc);
          const auto& pVertexBuffer = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
          D3DVERTEXBUFFER_DESC pDesc;
@@ -6545,7 +6838,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2448,6 +2758,9 @@ void ProcessDeviceCommandQueue() {
+@@ -2448,6 +2774,9 @@ void ProcessDeviceCommandQueue() {
          const auto& pIndexBuffer = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
          safeDestroy(pIndexBuffer, pHandle);
          gpD3DResources.erase(pHandle);
@@ -6555,25 +6848,31 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DIndexBuffer9_GetDevice:
-@@ -2484,7 +2797,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2484,7 +2813,10 @@ void ProcessDeviceCommandQueue() {
  
          // Now lock the buffer so we can copy the data into it
          void* pbData = nullptr;
 -        auto hresult = pIndexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags);
 +        auto hresult = l4d2_api_wait::backend([&]() { return pIndexBuffer->Lock(IN OffsetToLock, IN SizeToLock, IN & pbData, IN Flags); });
++        // NV-DXVK start: Optional data/resource tracing.
++        l4d2_data::backend(static_cast<uint16_t>(rpcHeader.command), false, SizeToLock, hresult);
++        // NV-DXVK end
          assert(S_OK == hresult);
  
          // Copy the data over
-@@ -2500,7 +2813,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2500,7 +2832,10 @@ void ProcessDeviceCommandQueue() {
            assert(SizeToLock == size);
          }
          memcpy(pbData, data, SizeToLock);
 -        hresult = pIndexBuffer->Unlock();
 +        hresult = l4d2_api_wait::backend([&]() { return pIndexBuffer->Unlock(); });
++        // NV-DXVK start: Optional data/resource tracing.
++        l4d2_data::backend(static_cast<uint16_t>(rpcHeader.command), true, 0, hresult);
++        // NV-DXVK end
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2510,7 +2823,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2510,7 +2845,7 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(D3DINDEXBUFFER_DESC, orig_desc);
          const auto& pIndexBuffer = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
          D3DINDEXBUFFER_DESC pDesc;
@@ -6582,7 +6881,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2531,8 +2844,11 @@ void ProcessDeviceCommandQueue() {
+@@ -2531,8 +2866,11 @@ void ProcessDeviceCommandQueue() {
        {
          GET_HND(pHandle);
          const auto& pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
@@ -6595,7 +6894,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DSurface9_GetDevice:
-@@ -2559,10 +2875,55 @@ void ProcessDeviceCommandQueue() {
+@@ -2559,10 +2897,55 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(D3DSURFACE_DESC, orig_desc);
          const auto& pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
          D3DSURFACE_DESC pDesc;
@@ -6652,7 +6951,7 @@ index 86434ec..b82a499 100644
        case IDirect3DSurface9_LockRect:
        {
          // Currently we only recieve calls for LockRect in cases where backbuffer data is to be copied for screenshots
-@@ -2578,18 +2939,77 @@ void ProcessDeviceCommandQueue() {
+@@ -2578,18 +2961,77 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RECT, pRect);
          PULL_D(Flags);
          const auto pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
@@ -6733,7 +7032,7 @@ index 86434ec..b82a499 100644
          // If we're using the shared heap, then pData will be pointing
          // to the equivalent of a fully allocated pitch line. If we're
          // using the data queue then we've only allocated just enough 
-@@ -2602,12 +3022,18 @@ void ProcessDeviceCommandQueue() {
+@@ -2602,12 +3044,18 @@ void ProcessDeviceCommandQueue() {
          } else {
            size_t pulledSize = DeviceBridge::get_data(&pData);
            const size_t numRows = bridge_util::calcStride(height, format);
@@ -6753,7 +7052,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
  
          break;
-@@ -2635,6 +3061,8 @@ void ProcessDeviceCommandQueue() {
+@@ -2635,6 +3083,8 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolume = gpD3DVolumes[pHandle];
          safeDestroy(pVolume, pHandle);
          gpD3DVolumes.erase(pHandle);
@@ -6762,7 +7061,7 @@ index 86434ec..b82a499 100644
          break;
        }
        case IDirect3DVolume9_GetDevice:
-@@ -2653,7 +3081,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2653,7 +3103,7 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(D3DVOLUME_DESC, orig_desc);
          const auto& pVolume = gpD3DVolumes[pHandle];
          D3DVOLUME_DESC pDesc;
@@ -6771,7 +7070,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2670,7 +3098,12 @@ void ProcessDeviceCommandQueue() {
+@@ -2670,7 +3120,12 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolume = gpD3DVolumes[pHandle];
          // Now lock the box so we can copy the data into it
          D3DLOCKED_BOX pLockedVolume;
@@ -6785,7 +7084,15 @@ index 86434ec..b82a499 100644
          assert(S_OK == hresult);
          // Copy the data over
          PULL_U(bytesPerPixel);
-@@ -2682,6 +3115,8 @@ void ProcessDeviceCommandQueue() {
+@@ -2678,10 +3133,16 @@ void ProcessDeviceCommandQueue() {
+         PULL_U(height);
+         PULL_U(depth);
+         const auto row_size = width * bytesPerPixel;
++        // NV-DXVK start: Optional data/resource tracing.
++        l4d2_data::backend(static_cast<uint16_t>(rpcHeader.command), false,
++          static_cast<uint64_t>(row_size) * height * depth, colorLockResult);
++        // NV-DXVK end
+ #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
          void* data = nullptr;
          const auto slice_size = row_size * height;
          size_t pulledSize = DeviceBridge::get_data(&data);
@@ -6794,7 +7101,7 @@ index 86434ec..b82a499 100644
  #endif
          for (uint32_t z = 0; z < depth; z++) {
            for (uint32_t y = 0; y < height; y++) {
-@@ -2691,6 +3126,8 @@ void ProcessDeviceCommandQueue() {
+@@ -2691,6 +3152,8 @@ void ProcessDeviceCommandQueue() {
  #else
              void* row = nullptr;
              const auto read_size = DeviceBridge::get_data(&row);
@@ -6803,12 +7110,15 @@ index 86434ec..b82a499 100644
              assert(row_size == read_size);
  #endif
              memcpy((void*) ptr, (void*) row, row_size);
-@@ -2699,7 +3136,13 @@ void ProcessDeviceCommandQueue() {
+@@ -2699,7 +3162,16 @@ void ProcessDeviceCommandQueue() {
  #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
          assert(pulledSize == depth * slice_size);
  #endif
 -        hresult = pVolume->UnlockBox();
 +        hresult = l4d2_api_wait::backend([&]() { return pVolume->UnlockBox(); });
++        // NV-DXVK start: Optional data/resource tracing.
++        l4d2_data::backend(static_cast<uint16_t>(rpcHeader.command), true, 0, hresult);
++        // NV-DXVK end
 +        const auto colorParent = gColorParents.find(pHandle);
 +        l4d2_color::upload(pHandle, colorParent == gColorParents.end() ? 0 : colorParent->second, "VolumeUploadBackend", currentUID, colorDesc.Format,
 +          // NV-DXVK start: Diagnostic extents are pixels; the wire uses block counts.
@@ -6818,7 +7128,7 @@ index 86434ec..b82a499 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2805,13 +3248,17 @@ void ProcessDeviceCommandQueue() {
+@@ -2805,13 +3277,17 @@ void ProcessDeviceCommandQueue() {
        case Bridge_UnlinkResource:
        {
          GET_HND(pHandle);
@@ -6836,7 +7146,7 @@ index 86434ec..b82a499 100644
          break;
        }
        /*
-@@ -3209,6 +3656,9 @@ void ProcessDeviceCommandQueue() {
+@@ -3209,6 +3685,9 @@ void ProcessDeviceCommandQueue() {
  
      const auto count = DeviceBridge::end_read_data();
  
@@ -6846,7 +7156,7 @@ index 86434ec..b82a499 100644
  #ifdef ENABLE_DATA_BATCHING_TRACE
      Logger::trace(format_string("Finished batch data read with %d data items.", count));
  #endif
-@@ -3268,14 +3718,26 @@ bool InitializeD3D() {
+@@ -3268,14 +3747,26 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -6876,7 +7186,7 @@ index 86434ec..b82a499 100644
      // Since vanilla dxvk is diabled attempt loading regular d3d9.dll which
      // could be either the system d3d9 one or our own Remix dxvk flavor of it.
      ghModule = LoadLibraryExA("d3d9.dll", nullptr,
-@@ -3285,6 +3747,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3776,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -6887,7 +7197,7 @@ index 86434ec..b82a499 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3777,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3806,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -6898,7 +7208,7 @@ index 86434ec..b82a499 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3343,6 +3813,15 @@ bool InitializeD3D() {
+@@ -3343,6 +3842,15 @@ bool InitializeD3D() {
  }
  
  void CALLBACK OnClientExited(void* context, BOOLEAN isTimeout) {
@@ -6914,7 +7224,7 @@ index 86434ec..b82a499 100644
    Logger::err("The client process has unexpectedly exited, shutting down server as well!");
    gbBridgeRunning = false;
  
-@@ -3371,7 +3850,7 @@ void CALLBACK OnClientExited(void* context, BOOLEAN isTimeout) {
+@@ -3371,7 +3879,7 @@ void CALLBACK OnClientExited(void* context, BOOLEAN isTimeout) {
  }
  
  bool RegisterExitCallback(const uint32_t hProcess) {
@@ -6923,10 +7233,16 @@ index 86434ec..b82a499 100644
    if (!result) {
      DWORD error = GetLastError();
      Logger::err(format_string("RegisterExitCallback() failed with error code %d", error));
-@@ -3483,21 +3962,33 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3483,21 +3991,39 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    Config::init(Config::App::Server);
    GlobalOptions::init();
    Logger::init();
++  // NV-DXVK start: Data/resource tracing is opt-in and independent of color/API wait diagnostics.
++  if (Config::getOption<bool>("server.dataDiagnostics", false)) {
++    const bool ready = l4d2_data::initialize("host", BRIDGE_VERSION, Config::getOption<unsigned>("server.dataSnapshotMs", 5000));
++    Logger::info(ready ? "L4D2 data diagnostics enabled: host" : "L4D2 data diagnostics initialization failed: host");
++  }
++  // NV-DXVK end
 +  if (Config::getOption<bool>("server.apiWaitDiagnostics", false)) {
 +    const bool ready = l4d2_api_wait::initialize(true, "host", Config::getOption<unsigned>("server.apiWaitSnapshotMs", 5000));
 +    Logger::info(ready ? "L4D2 API wait diagnostics enabled: host" : "L4D2 API wait diagnostics failed to initialize: host");
@@ -6960,7 +7276,7 @@ index 86434ec..b82a499 100644
      Logger::info("Launched server with GUID " + gUniqueIdentifier.toString());
    } else {
      Logger::err("Server was invoked with invalid GUID! Unable to establish bridge, exiting...");
-@@ -3554,6 +4045,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3554,6 +4080,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    }
    const SentryShutdownOnExit sentryShutdownOnExit;
  
@@ -6969,7 +7285,7 @@ index 86434ec..b82a499 100644
    // (3) Send ACK to Client. Connection has been established
    Logger::info("Sync request received, sending ACK response...");
    ServerMessage { Commands::Bridge_Ack, (uintptr_t) gpClientMessageChannel->getWorkerThreadId() };
-@@ -3589,12 +4082,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3589,12 +4117,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    bSignalDone.store(true);
    moduleCmdProcessingThread.join();
  
@@ -6985,15 +7301,18 @@ index 86434ec..b82a499 100644
    if (ghModule) {
      // Skip unloading the d3d9.dll for now, since it seems to be doing more harm than good
      // especially with other dependencies loaded by dxvk and threads that may deadlock due
-@@ -3610,6 +4106,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3610,6 +4141,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      hWait = NULL;
    }
  
++  // NV-DXVK start: Optional data/resource tracing.
++  l4d2_data::finish();
++  // NV-DXVK end
 +  l4d2_color::finish();
    Logger::info("Shutdown cleanup successful, exiting now!");
  
    const auto timeEnd = std::chrono::high_resolution_clock::now();
-@@ -3624,4 +4121,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +4159,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;
@@ -7066,7 +7385,7 @@ index 908d93f..c1d6ed7 100644
 \ No newline at end of file
 +endif
 diff --git a/bridge/src/server/module_processing.cpp b/bridge/src/server/module_processing.cpp
-index 33c7d79..7f35f67 100644
+index 33c7d79..ce7fd87 100644
 --- a/bridge/src/server/module_processing.cpp
 +++ b/bridge/src/server/module_processing.cpp
 @@ -1,3 +1,7 @@
@@ -7077,10 +7396,13 @@ index 33c7d79..7f35f67 100644
  #pragma once
  
  #include <windows.h>
-@@ -78,7 +82,10 @@ void processModuleCommandQueue(std::atomic<bool>* const pbSignalEnd) {
+@@ -78,7 +82,13 @@ void processModuleCommandQueue(std::atomic<bool>* const pbSignalEnd) {
    while (RESULT_SUCCESS(ModuleBridge::waitForCommand(
      Commands::Bridge_Any, 0, pbSignalEnd))) {
      const Header rpcHeader = ModuleBridge::pop_front();
++    // NV-DXVK start: Optional data/resource tracing.
++    l4d2_data::Dispatch dataHandler(static_cast<uint16_t>(rpcHeader.command), true);
++    // NV-DXVK end
 +    bridge_exception::CommandScope exceptionContext(bridge_exception::Queue::Module,
 +      static_cast<uint16_t>(rpcHeader.command), rpcHeader.pHandle, "processModuleCommandQueue");
      PULL_U(currentUID);
@@ -7088,7 +7410,7 @@ index 33c7d79..7f35f67 100644
  #if defined(_DEBUG) || defined(DEBUGOPT)
      if (GlobalOptions::getLogServerCommands()) {
        Logger::info("Module Processing: " + toString(rpcHeader.command) + " UID: " + std::to_string(currentUID));
-@@ -117,8 +124,13 @@ void processModuleCommandQueue(std::atomic<bool>* const pbSignalEnd) {
+@@ -117,8 +127,13 @@ void processModuleCommandQueue(std::atomic<bool>* const pbSignalEnd) {
        {
          PULL_U(Adapter);
          PULL_D(Flags);
@@ -7103,7 +7425,7 @@ index 33c7d79..7f35f67 100644
          {
            ModuleServerCommand c(Commands::Bridge_Response, currentUID);
            c.send_data(hresult);
-@@ -249,9 +261,15 @@ void processModuleCommandQueue(std::atomic<bool>* const pbSignalEnd) {
+@@ -249,9 +264,15 @@ void processModuleCommandQueue(std::atomic<bool>* const pbSignalEnd) {
          PULL_U(Adapter);
          PULL(D3DDEVTYPE, DeviceType);
  
@@ -8845,6 +9167,411 @@ index 0000000..7b7a6e2
 +  return hr;
 +}
 +}
+diff --git a/bridge/src/util/data_diagnostics.cpp b/bridge/src/util/data_diagnostics.cpp
+new file mode 100644
+index 0000000..9c75e6c
+--- /dev/null
++++ b/bridge/src/util/data_diagnostics.cpp
+@@ -0,0 +1,322 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#include "data_diagnostics.h"
++#include "util_commands.h"
++#include <algorithm>
++#include <array>
++#include <cstdarg>
++#include <cstdio>
++#include <cstring>
++#include <new>
++
++namespace l4d2_data {
++namespace {
++constexpr size_t kResources = 8192, kCommands = 515;
++const char* const names[] = { "vb", "ib", "volume", "vertex_shader", "pixel_shader", "declaration", "stateblock" };
++struct Access {
++  uint64_t locks = 0, readonly = 0, discard = 0, nooverwrite = 0, partial = 0;
++  uint64_t lockBytes = 0, uploads = 0, uploadBytes = 0, sharedBytes = 0, reservedBytes = 0;
++  uint64_t invalid = 0, failures = 0, reads = 0, readBytes = 0;
++};
++struct Inventory : Access {
++  uint64_t created = 0, released = 0, live = 0, logicalBytes = 0, shadowBytes = 0, peakShadow = 0;
++};
++struct Object : Access {
++  uint64_t bytes = 0, shadow = 0, born = 0, lastLock = 0, died = 0;
++  uint32_t id = 0, usage = 0, pool = 0, format = 0, width = 0, height = 0, depth = 0;
++  Kind kind = Kind::Count;
++};
++struct Command : Wire {
++  uint64_t tx = 0, rx = 0, publishFailures = 0, headerBytes = 0;
++  uint64_t handled = 0, ticks = 0, maxTicks = 0, backendLocks = 0, backendUnlocks = 0, backendFailures = 0, backendBytes = 0;
++};
++struct Report {
++  std::array<Inventory, static_cast<size_t>(Kind::Count)> inventory {};
++  std::array<std::array<Command, kCommands>, 2> commands {};
++  std::array<Object, 2048> retired {};
++  std::array<Object, 128> sampled {};
++  uint32_t retiredCount = 0, sampledCount = 0;
++  uint64_t tempBytes = 0, peakTemp = 0, tempAllocations = 0, tempFreed = 0, overflow = 0, retiredDropped = 0;
++};
++struct Context {
++  SRWLOCK lock = SRWLOCK_INIT, reportLock = SRWLOCK_INIT;
++  HANDLE file = INVALID_HANDLE_VALUE, wake = nullptr;
++  const char* role = nullptr;
++  uint64_t written = 0, limit = 0, discarded = 0, writeFailures = 0, overflow = 0, snapshots = 0;
++  uint64_t tempBytes = 0, peakTemp = 0, tempAllocations = 0, tempFreed = 0, frequency = 1, retiredDropped = 0;
++  uint32_t retiredCount = 0, sampleCursor = 0;
++  std::array<Object, 2048> retired {};
++  Report report;
++  uint32_t interval = 5000, cursor = 0;
++  std::array<Inventory, static_cast<size_t>(Kind::Count)> inventory {};
++  std::array<Object, kResources> objects {};
++  std::array<std::array<Command, kCommands>, 2> commands {};
++};
++Context* context = nullptr; // Process lifetime: wrappers may outlive DLL-detach reporting.
++struct Guard {
++  Guard() { AcquireSRWLockExclusive(&context->lock); }
++  ~Guard() { ReleaseSRWLockExclusive(&context->lock); }
++};
++struct ReportGuard {
++  ReportGuard() { AcquireSRWLockExclusive(&context->reportLock); }
++  ~ReportGuard() { ReleaseSRWLockExclusive(&context->reportLock); }
++};
++uint64_t counter() { LARGE_INTEGER value; QueryPerformanceCounter(&value); return static_cast<uint64_t>(value.QuadPart); }
++size_t commandSlot(uint16_t command) {
++  if (command == 0xffff) { return 512; }
++  if (command == 0xff00) { return 513; }
++  return command < 512 ? command : 514;
++}
++uint16_t commandId(size_t slot) { return static_cast<uint16_t>(slot == 512 ? 0xffff : slot == 513 ? 0xff00 : slot); }
++void line(const char* format, ...) {
++  char buffer[1600];
++  const int prefix = sprintf_s(buffer, "schema=1 role=%s pid=%lu tick_ms=%llu snapshot=%llu ", context->role,
++    GetCurrentProcessId(), GetTickCount64(), context->snapshots);
++  va_list args; va_start(args, format);
++  const int length = vsnprintf_s(buffer + prefix, sizeof(buffer) - prefix - 2, _TRUNCATE, format, args);
++  va_end(args);
++  if (length < 0) { ++context->writeFailures; return; }
++  const auto bytes = static_cast<DWORD>(prefix + length + 1);
++  buffer[bytes - 1] = '\n';
++  // Reserve space for the END record, so a capped file remains self-describing.
++  if (context->written + bytes > context->limit - 2048) { ++context->discarded; return; }
++  DWORD actual = 0;
++  if (!WriteFile(context->file, buffer, bytes, &actual, nullptr) || actual != bytes) { ++context->writeFailures; }
++  context->written += actual;
++}
++void objectLine(const Object& object, const char* event) {
++  line("event=%s kind=%s id=%u logical_bytes=%llu shadow_bytes=%llu usage=%u pool=%u format=%u width=%u height=%u depth=%u age_ms=%llu lock_idle_ms=%llu locks=%llu readonly=%llu discard=%llu nooverwrite=%llu partial=%llu lock_bytes=%llu uploads=%llu upload_bytes=%llu shared_bytes=%llu reserved_bytes=%llu invalid=%llu failures=%llu reads=%llu read_bytes=%llu",
++    event, names[static_cast<size_t>(object.kind)], object.id, object.bytes, object.shadow, object.usage, object.pool,
++    object.format, object.width, object.height, object.depth, (object.died ? object.died : GetTickCount64()) - object.born,
++    (object.died ? object.died : GetTickCount64()) - (object.lastLock ? object.lastLock : object.born), object.locks, object.readonly,
++    object.discard, object.nooverwrite, object.partial, object.lockBytes, object.uploads, object.uploadBytes,
++    object.sharedBytes, object.reservedBytes, object.invalid, object.failures, object.reads, object.readBytes);
++}
++void snapshot(bool final) {
++  auto& report = context->report;
++  {
++    Guard guard;
++    report.inventory = context->inventory; report.commands = context->commands;
++    report.tempBytes = context->tempBytes; report.peakTemp = context->peakTemp;
++    report.tempAllocations = context->tempAllocations; report.tempFreed = context->tempFreed;
++    report.overflow = context->overflow; report.retiredDropped = context->retiredDropped;
++    report.retiredCount = context->retiredCount;
++    std::copy_n(context->retired.begin(), report.retiredCount, report.retired.begin());
++    context->retiredCount = 0; report.sampledCount = 0;
++    for (size_t i = 0; i < kResources && report.sampledCount < report.sampled.size(); ++i) {
++      const auto slot = context->sampleCursor++ % kResources;
++      const auto& object = context->objects[slot];
++      if (object.kind != Kind::Count) { report.sampled[report.sampledCount++] = object; }
++    }
++  }
++  // Formatting and disk I/O do not hold the producers' counter lock.
++  ++context->snapshots;
++  line("event=SNAPSHOT final=%u resource_overflow=%llu temporary_bytes=%llu peak_temporary_bytes=%llu temporary_allocations=%llu temporary_freed=%llu file_discarded=%llu write_failures=%llu retired_dropped=%llu live_sample_limit=128",
++    final, report.overflow, report.tempBytes, report.peakTemp, report.tempAllocations, report.tempFreed, context->discarded, context->writeFailures, report.retiredDropped);
++  for (size_t i = 0; i < report.inventory.size(); ++i) {
++    const auto& value = report.inventory[i];
++    line("event=KIND kind=%s created=%llu released=%llu live=%llu logical_bytes=%llu shadow_bytes=%llu peak_shadow_bytes=%llu locks=%llu readonly=%llu discard=%llu nooverwrite=%llu partial=%llu lock_bytes=%llu uploads=%llu upload_bytes=%llu shared_bytes=%llu reserved_bytes=%llu invalid=%llu failures=%llu reads=%llu read_bytes=%llu",
++      names[i], value.created, value.released, value.live, value.logicalBytes, value.shadowBytes, value.peakShadow,
++      value.locks, value.readonly, value.discard, value.nooverwrite, value.partial, value.lockBytes, value.uploads,
++      value.uploadBytes, value.sharedBytes, value.reservedBytes, value.invalid, value.failures, value.reads, value.readBytes);
++  }
++  for (size_t queue = 0; queue < 2; ++queue) {
++    for (size_t i = 0; i < kCommands; ++i) {
++      const auto& value = report.commands[queue][i];
++      if (!value.tx && !value.rx && !value.publishFailures && !value.handled) { continue; }
++      const auto name = i == 514 ? std::string("UnknownOverflow") : Commands::toString(static_cast<Commands::D3D9Command>(commandId(i)));
++      line("event=COMMAND queue=%s command=%u name=%s tx=%llu rx=%llu data_bytes=%llu blob_bytes=%llu reserved_bytes=%llu header_bytes=%llu serialization_failures=%llu publish_failures=%llu handled=%llu handler_us=%llu max_handler_us=%llu backend_locks=%llu backend_unlocks=%llu backend_failures=%llu backend_bytes=%llu",
++        queue ? "module" : "device", commandId(i), name.c_str(), value.tx, value.rx, value.bytes, value.blobs,
++        value.reserved, value.headerBytes, value.failures, value.publishFailures, value.handled,
++        value.ticks / context->frequency * 1000000 + value.ticks % context->frequency * 1000000 / context->frequency,
++        value.maxTicks / context->frequency * 1000000 + value.maxTicks % context->frequency * 1000000 / context->frequency,
++        value.backendLocks, value.backendUnlocks, value.backendFailures, value.backendBytes);
++    }
++  }
++  for (uint32_t i = 0; i < report.retiredCount; ++i) { objectLine(report.retired[i], "RESOURCE_RELEASE"); }
++  for (uint32_t i = 0; i < report.sampledCount; ++i) { objectLine(report.sampled[i], "RESOURCE_LIVE"); }
++  FlushFileBuffers(context->file);
++}
++DWORD WINAPI consume(void*) {
++  for (;;) {
++    WaitForSingleObject(context->wake, context->interval);
++    ReportGuard reportGuard;
++    if (!enabled.load(std::memory_order_relaxed)) { break; }
++    snapshot(false);
++  }
++  return 0;
++}
++void addLock(Access& value, uint64_t offset, uint64_t bytes, uint64_t total, uint32_t flags, HRESULT result, bool valid, bool partial) {
++  ++value.locks;
++  if (flags & 0x10) { ++value.readonly; }
++  if (flags & 0x2000) { ++value.discard; }
++  if (flags & 0x1000) { ++value.nooverwrite; }
++  if (partial || offset || (total && bytes != total)) { ++value.partial; }
++  if (!valid) { ++value.invalid; }
++  if (FAILED(result)) { ++value.failures; }
++  else if (valid) { value.lockBytes += bytes; }
++}
++void addUpload(Access& value, uint64_t bytes, bool shared, bool reserved) {
++  ++value.uploads; value.uploadBytes += bytes;
++  if (shared) { value.sharedBytes += bytes; }
++  if (reserved) { value.reservedBytes += bytes; }
++}
++}
++bool initialize(const char* role, const char* build, uint32_t intervalMs, const wchar_t* fileName, uint64_t fileLimit) {
++  if (context) { return enabled.load(); }
++  auto* state = new (std::nothrow) Context;
++  if (!state) { return false; }
++  wchar_t path[32768] {};
++  if (!fileName) {
++    const DWORD count = GetModuleFileNameW(nullptr, path, 32768);
++    if (!count || count >= 32768) { delete state; return false; }
++    auto* slash = wcsrchr(path, L'\\');
++    if (!slash) { delete state; return false; }
++    slash[1] = L'\0';
++    wcscat_s(path, std::strcmp(role, "client") == 0 ? L"l4d2-data-client.log" : L"l4d2-data-host.log");
++    fileName = path;
++  }
++  state->file = CreateFileW(fileName, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
++  state->wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
++  if (state->file == INVALID_HANDLE_VALUE || !state->wake) {
++    if (state->file != INVALID_HANDLE_VALUE) { CloseHandle(state->file); }
++    if (state->wake) { CloseHandle(state->wake); }
++    delete state; return false;
++  }
++  state->role = role; state->interval = (std::max)(1000u, intervalMs);
++  state->limit = (std::max)(4096ull, fileLimit);
++  LARGE_INTEGER frequency; QueryPerformanceFrequency(&frequency);
++  state->frequency = static_cast<uint64_t>(frequency.QuadPart);
++  context = state;
++  line("event=CONFIG build=%s bits=%u interval_ms=%u resource_capacity=%zu file_limit=%llu state_bytes=%zu payload_capture=0 counters=cumulative",
++    build, static_cast<unsigned>(sizeof(void*) * 8), state->interval, kResources, state->limit, sizeof(Context));
++  enabled.store(true, std::memory_order_release);
++  const HANDLE thread = CreateThread(nullptr, 0, consume, nullptr, 0, nullptr);
++  if (!thread) {
++    enabled.store(false); context = nullptr; CloseHandle(state->file); CloseHandle(state->wake); delete state; return false;
++  }
++  CloseHandle(thread); return true;
++}
++void finish() {
++  if (!enabled.load()) { return; }
++  ReportGuard reportGuard;
++  { Guard guard; if (!enabled.exchange(false)) { return; } }
++  snapshot(true);
++  char footer[512];
++  const DWORD bytes = static_cast<DWORD>(sprintf_s(footer,
++    "schema=1 event=END role=%s pid=%lu resource_overflow=%llu file_discarded=%llu write_failures=%llu retired_dropped=%llu\n",
++    context->role, GetCurrentProcessId(), context->overflow, context->discarded, context->writeFailures, context->retiredDropped));
++  DWORD actual = 0; WriteFile(context->file, footer, bytes, &actual, nullptr);
++  FlushFileBuffers(context->file); CloseHandle(context->file); context->file = INVALID_HANDLE_VALUE;
++  SetEvent(context->wake);
++}
++void sent(uint16_t command, bool module, const Wire& wire, bool published, uint32_t headerBytes) {
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  Guard guard; if (!enabled.load(std::memory_order_relaxed)) { return; }
++  auto& value = context->commands[module ? 1 : 0][commandSlot(command)];
++  if (published) { ++value.tx; value.headerBytes += headerBytes; } else { ++value.publishFailures; }
++  value.bytes += wire.bytes; value.blobs += wire.blobs; value.reserved += wire.reserved; value.failures += wire.failures;
++}
++void received(uint16_t command, bool module) {
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  ++context->commands[module ? 1 : 0][commandSlot(command)].rx;
++}
++void backend(uint16_t command, bool unlock, uint64_t bytes, HRESULT result) {
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  auto& value = context->commands[0][commandSlot(command)];
++  if (unlock) { ++value.backendUnlocks; } else { ++value.backendLocks; }
++  if (FAILED(result)) { ++value.backendFailures; } else if (!unlock) { value.backendBytes += bytes; }
++}
++Dispatch::Dispatch(uint16_t command, bool module) : m_command(command), m_module(module) {
++  if (enabled.load(std::memory_order_relaxed)) { m_start = counter(); }
++}
++Dispatch::~Dispatch() {
++  if (!m_start || !enabled.load(std::memory_order_relaxed)) { return; }
++  const auto ticks = counter() - m_start;
++  Guard guard;
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  auto& value = context->commands[m_module ? 1 : 0][commandSlot(m_command)];
++  ++value.handled; value.ticks += ticks; value.maxTicks = (std::max)(value.maxTicks, ticks);
++}
++void Resource::open(Kind kind, uint32_t id, uint64_t bytes, uint64_t shadow, uint32_t usage,
++                    uint32_t pool, uint32_t format, uint32_t width, uint32_t height, uint32_t depth) {
++  if (m_kind != Kind::Count || kind == Kind::Count || !enabled.load(std::memory_order_relaxed)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  m_kind = kind; m_bytes = bytes; m_shadow = shadow;
++  auto& value = context->inventory[static_cast<size_t>(kind)];
++  ++value.created; ++value.live; value.logicalBytes += bytes; value.shadowBytes += shadow;
++  value.peakShadow = (std::max)(value.peakShadow, value.shadowBytes);
++  for (size_t i = 0; i < kResources; ++i) {
++    const uint32_t slot = (context->cursor + static_cast<uint32_t>(i)) % kResources;
++    if (context->objects[slot].kind != Kind::Count) { continue; }
++    auto& object = context->objects[slot]; object = Object {};
++    object.kind = kind; object.id = id; object.bytes = bytes; object.shadow = shadow;
++    object.usage = usage; object.pool = pool; object.format = format;
++    object.width = width; object.height = height; object.depth = depth; object.born = GetTickCount64();
++    m_slot = slot + 1; context->cursor = (slot + 1) % kResources; return;
++  }
++  ++context->overflow;
++}
++Resource::~Resource() {
++  if (m_kind == Kind::Count || !enabled.load(std::memory_order_relaxed)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  auto& value = context->inventory[static_cast<size_t>(m_kind)];
++  ++value.released; --value.live; value.logicalBytes -= m_bytes; value.shadowBytes -= m_shadow;
++  if (m_slot) {
++    auto& object = context->objects[m_slot - 1];
++    object.died = GetTickCount64();
++    if (context->retiredCount < context->retired.size()) { context->retired[context->retiredCount++] = object; }
++    else { ++context->retiredDropped; }
++    object.kind = Kind::Count;
++  }
++}
++void Resource::lock(uint64_t offset, uint64_t bytes, uint32_t flags, HRESULT result, bool valid, bool partial) {
++  if (m_kind == Kind::Count || !enabled.load(std::memory_order_relaxed)) { return; }
++  if (m_kind == Kind::Vertex || m_kind == Kind::Index) {
++    valid = valid && offset <= m_bytes && (bytes == 0 || bytes <= m_bytes - offset);
++    if (!bytes && valid) { bytes = m_bytes - offset; }
++  }
++  Guard guard;
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  addLock(context->inventory[static_cast<size_t>(m_kind)], offset, bytes, m_bytes, flags, result, valid, partial);
++  if (m_slot) {
++    auto& object = context->objects[m_slot - 1];
++    addLock(object, offset, bytes, m_bytes, flags, result, valid, partial); object.lastLock = GetTickCount64();
++  }
++}
++void Resource::upload(uint64_t bytes, bool shared, bool reserved) {
++  if (m_kind == Kind::Count || !enabled.load(std::memory_order_relaxed)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  addUpload(context->inventory[static_cast<size_t>(m_kind)], bytes, shared, reserved);
++  if (m_slot) { addUpload(context->objects[m_slot - 1], bytes, shared, reserved); }
++}
++void Resource::read(uint64_t bytes) {
++  if (m_kind == Kind::Count || !enabled.load(std::memory_order_relaxed)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  auto& value = context->inventory[static_cast<size_t>(m_kind)];
++  ++value.reads; value.readBytes += bytes;
++  if (m_slot) { auto& object = context->objects[m_slot - 1]; ++object.reads; object.readBytes += bytes; }
++}
++Temporary::Temporary(uint64_t bytes) {
++  if (!bytes || !enabled.load(std::memory_order_relaxed)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  m_bytes = bytes; context->tempBytes += bytes; ++context->tempAllocations;
++  context->peakTemp = (std::max)(context->peakTemp, context->tempBytes);
++}
++Temporary::~Temporary() {
++  if (!m_bytes || !enabled.load(std::memory_order_relaxed)) { return; }
++  Guard guard;
++  if (!enabled.load(std::memory_order_relaxed)) { return; }
++  context->tempBytes -= m_bytes; ++context->tempFreed;
++}
++}
+diff --git a/bridge/src/util/data_diagnostics.h b/bridge/src/util/data_diagnostics.h
+new file mode 100644
+index 0000000..e8aca95
+--- /dev/null
++++ b/bridge/src/util/data_diagnostics.h
+@@ -0,0 +1,71 @@
++// SPDX-License-Identifier: MIT
++// Copyright (c) 2026 yeyunyyds.
++// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
++#pragma once
++
++#include <windows.h>
++#include <atomic>
++#include <cstdint>
++#include <utility>
++
++namespace l4d2_data {
++inline std::atomic<bool> enabled { false };
++enum class Kind : uint32_t { Vertex, Index, Volume, VertexShader, PixelShader, Declaration, StateBlock, Count };
++bool initialize(const char* role, const char* build, uint32_t intervalMs = 5000,
++                const wchar_t* fileName = nullptr, uint64_t fileLimit = 64ull * 1024ull * 1024ull);
++void finish();
++
++// Counts successful data-queue writes, even if publication subsequently fails.
++// Blob bytes exclude the size prefix, alignment, UID and command header.
++struct Wire {
++  uint64_t bytes = 0, blobs = 0, reserved = 0, failures = 0;
++  void add(uint64_t storage, uint64_t payload, bool success, bool reserve = false) {
++    if (!enabled.load(std::memory_order_relaxed)) { return; }
++    if (success) { bytes += storage; blobs += payload; if (reserve) { reserved += payload; } }
++    else { ++failures; }
++  }
++};
++void sent(uint16_t command, bool module, const Wire& wire, bool published, uint32_t headerBytes);
++void received(uint16_t command, bool module);
++void backend(uint16_t command, bool unlock, uint64_t bytes, HRESULT result);
++
++class Dispatch {
++  uint64_t m_start = 0;
++  uint16_t m_command;
++  bool m_module;
++public:
++  Dispatch(uint16_t command, bool module);
++  ~Dispatch();
++  Dispatch(const Dispatch&) = delete;
++  Dispatch& operator=(const Dispatch&) = delete;
++};
++
++// A token owns diagnostic metadata only. It never owns a COM reference or data pointer.
++class Resource {
++  uint32_t m_slot = 0;
++  Kind m_kind = Kind::Count;
++  uint64_t m_bytes = 0, m_shadow = 0;
++public:
++  Resource() = default;
++  ~Resource();
++  Resource(const Resource&) = delete;
++  Resource& operator=(const Resource&) = delete;
++  void open(Kind kind, uint32_t id, uint64_t bytes, uint64_t shadow, uint32_t usage = 0,
++            uint32_t pool = 0, uint32_t format = 0, uint32_t width = 0, uint32_t height = 0, uint32_t depth = 0);
++  void lock(uint64_t offset, uint64_t bytes, uint32_t flags, HRESULT result, bool valid = true, bool partial = false);
++  void upload(uint64_t bytes, bool shared = false, bool reserved = false);
++  void read(uint64_t bytes);
++};
++
++class Temporary {
++  uint64_t m_bytes = 0;
++public:
++  Temporary() = default;
++  explicit Temporary(uint64_t bytes);
++  ~Temporary();
++  Temporary(const Temporary&) = delete;
++  Temporary& operator=(const Temporary&) = delete;
++  Temporary(Temporary&& other) noexcept : m_bytes(std::exchange(other.m_bytes, 0)) {}
++  Temporary& operator=(Temporary&&) = delete;
++};
++}
 diff --git a/bridge/src/util/device_reset.h b/bridge/src/util/device_reset.h
 new file mode 100644
 index 0000000..8590947
@@ -9481,7 +10208,7 @@ index 869be34..efa9801 100644
      std::ofstream m_fileStream;
  #endif
 diff --git a/bridge/src/util/meson.build b/bridge/src/util/meson.build
-index fb5d556..4519178 100644
+index fb5d556..79d7e32 100644
 --- a/bridge/src/util/meson.build
 +++ b/bridge/src/util/meson.build
 @@ -1,3 +1,7 @@
@@ -9492,22 +10219,24 @@ index fb5d556..4519178 100644
  #############################################################################
  # Copyright (c) 2022-2024, NVIDIA CORPORATION. All rights reserved.
  #
-@@ -21,6 +25,8 @@
+@@ -21,6 +25,9 @@
  #############################################################################
  
  util_src = files([
 +  'color_diagnostics.cpp',
++  'data_diagnostics.cpp',
 +  'exception_diagnostics.cpp',
  	'util_bridgecommand.cpp',
  	'util_filesys.cpp',
  	'util_gdi.cpp',
-@@ -38,6 +44,22 @@ util_src = files([
+@@ -38,6 +45,23 @@ util_src = files([
  ])
  
  util_header = files([
 +  'bridge_control.h',
 +  'config/config_document.h',
 +  'color_diagnostics.h',
++  'data_diagnostics.h',
 +  'device_reset.h',
 +  'exception_diagnostics.h',
 +  'adapter_information.h',
@@ -10503,7 +11232,7 @@ index 4be48da..fb12332 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/util/util_bridgecommand.cpp b/bridge/src/util/util_bridgecommand.cpp
-index a3bed63..4416cb4 100644
+index a3bed63..0d6cd83 100644
 --- a/bridge/src/util/util_bridgecommand.cpp
 +++ b/bridge/src/util/util_bridgecommand.cpp
 @@ -1,3 +1,7 @@
@@ -10544,7 +11273,7 @@ index a3bed63..4416cb4 100644
      if (numRetries >= maxRetries) {
        Logger::err("Max retries reached waiting on the server to process enough data to prevent a overwrite!");
      }
-@@ -119,15 +126,23 @@ DECL_BRIDGE_FUNC(Header, pop_front) {
+@@ -119,15 +126,26 @@ DECL_BRIDGE_FUNC(Header, pop_front) {
    ZoneScoped;
    Result result;
    // No retries, but wait the same amount of time
@@ -10557,6 +11286,9 @@ index a3bed63..4416cb4 100644
      Logger::err("CommandQueue get_response: Failed to retrieve the command response!");
    }
 +  if (RESULT_SUCCESS(result)) {
++    // NV-DXVK start: Optional data/resource tracing.
++    l4d2_data::received(static_cast<uint16_t>(response.command), std::is_same<BridgeId, ::BridgeId::Module>::value);
++    // NV-DXVK end
 +    bridge_exception::recordCommand(false, std::is_same<BridgeId, ::BridgeId::Device>::value ? bridge_exception::Queue::Device : bridge_exception::Queue::Module,
 +                                    static_cast<uint16_t>(response.command), response.pHandle);
 +  }
@@ -10568,7 +11300,7 @@ index a3bed63..4416cb4 100644
    if (getReaderChannel().commands->isEmpty()) {
      return bridge_util::Result::Success;
    }
-@@ -152,7 +167,10 @@ DECL_BRIDGE_FUNC(bridge_util::Result, ensureQueueEmpty) {
+@@ -152,7 +170,10 @@ DECL_BRIDGE_FUNC(bridge_util::Result, ensureQueueEmpty) {
  
  DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Command& command,
                                                        DWORD overrideTimeoutMS,
@@ -10580,7 +11312,7 @@ index a3bed63..4416cb4 100644
    ZoneScoped;
    DWORD peekTimeoutMS = overrideTimeoutMS > 0 ? overrideTimeoutMS : GlobalOptions::getCommandTimeout();
    uint32_t maxAttempts = GlobalOptions::getCommandRetries();
-@@ -169,7 +187,12 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -169,7 +190,12 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
    bool infiniteRetries = false;
    bool bEarlyOut = false;
    uint32_t attemptNum = 0;
@@ -10593,7 +11325,7 @@ index a3bed63..4416cb4 100644
      Result result;
      Header header = getReaderChannel().commands->peek(result, peekTimeoutMS, pbEarlyOutSignal);
  
-@@ -256,7 +279,9 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -256,7 +282,9 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
  DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
                             uintptr_t pHandle,
                             const Commands::Flags commandFlags)
@@ -10604,7 +11336,7 @@ index a3bed63..4416cb4 100644
    , m_handle((uint32_t) (size_t) pHandle)
    , m_commandFlags(commandFlags) {
    // If the assert or exception gets triggered it means that there is more than one Command
-@@ -276,7 +301,11 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
+@@ -276,7 +304,11 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
  #endif
  
  #ifdef REMIX_BRIDGE_CLIENT
@@ -10617,7 +11349,17 @@ index a3bed63..4416cb4 100644
  #endif
  
    assert(!s_pWriterChannel->pbCmdInProgress->load());
-@@ -319,6 +348,16 @@ DECL_COMMAND_FUNC(,~Command) {
+@@ -295,6 +327,9 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
+ #ifdef REMIX_BRIDGE_CLIENT
+       syncDataQueue(1, false);
+       const auto result = s_pWriterChannel->data->push((UINT)s_cmdUID);
++      // NV-DXVK start: Optional data/resource tracing.
++      m_dataWire.add(sizeof(UINT), 0, RESULT_SUCCESS(result));
++      // NV-DXVK end
+ #if defined(_DEBUG) || defined(DEBUGOPT)
+       if (GlobalOptions::getLogAllCommands()) {
+         Logger::info("Pushed UID: " + std::to_string(s_cmdUID));
+@@ -319,6 +354,16 @@ DECL_COMMAND_FUNC(,~Command) {
      // was disabled externally by the server process exit callback.
      do {
        result = s_pWriterChannel->commands->push({ m_command, m_commandFlags, (uint32_t) s_pWriterChannel->data->get_pos(), m_handle });
@@ -10634,7 +11376,30 @@ index a3bed63..4416cb4 100644
  #if defined(_DEBUG) || defined(DEBUGOPT)
        if (GlobalOptions::getLogAllCommands()) {
          Logger::info("Pushed: " + toString(m_command));
-@@ -354,4 +393,4 @@ DECL_COMMAND_FUNC(,~Command) {
+@@ -332,6 +377,10 @@ DECL_COMMAND_FUNC(,~Command) {
+       && BridgeState::getServerState_NoLock() == BridgeState::ProcessState::Running
+ #endif
+     );
++    // NV-DXVK start: Optional data/resource tracing.
++    l4d2_data::sent(static_cast<uint16_t>(m_command), std::is_same<BridgeId, ::BridgeId::Module>::value,
++      m_dataWire, RESULT_SUCCESS(result), sizeof(Header));
++    // NV-DXVK end
+ #ifdef REMIX_BRIDGE_CLIENT
+     if (BridgeState::getServerState_NoLock() >= BridgeState::ProcessState::DoneProcessing) {
+       Logger::warn(format_string("The command %s will not be sent; Server is in the process of or has already shut down. Turning bridge off.", Commands::toString(m_command).c_str()));
+@@ -345,6 +394,11 @@ DECL_COMMAND_FUNC(,~Command) {
+         std::string command = Commands::toString(m_command);
+         Logger::debug(format_string("The command %s took %d retries (%d ms)!", command.c_str(), numRetries, numRetries * GlobalOptions::getCommandTimeout()));
+       }
++  } else if (m_dataWire.bytes || m_dataWire.failures) {
++    // NV-DXVK start: Preserve bytes serialized before Bridge shutdown cancelled publication.
++    l4d2_data::sent(static_cast<uint16_t>(m_command), std::is_same<BridgeId, ::BridgeId::Module>::value,
++      m_dataWire, false, 0);
++    // NV-DXVK end
+   }
+   s_pWriterChannel->pbCmdInProgress->store(false);
+ #ifdef REMIX_BRIDGE_CLIENT
+@@ -354,4 +408,4 @@ DECL_COMMAND_FUNC(,~Command) {
  }
  
  template class Bridge<BridgeId::Module>;
@@ -10642,7 +11407,7 @@ index a3bed63..4416cb4 100644
 \ No newline at end of file
 +template class Bridge<BridgeId::Device>;
 diff --git a/bridge/src/util/util_bridgecommand.h b/bridge/src/util/util_bridgecommand.h
-index a555f8c..1fff8bd 100644
+index a555f8c..086dd6a 100644
 --- a/bridge/src/util/util_bridgecommand.h
 +++ b/bridge/src/util/util_bridgecommand.h
 @@ -1,3 +1,7 @@
@@ -10653,16 +11418,19 @@ index a555f8c..1fff8bd 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -21,6 +25,8 @@
+@@ -21,6 +25,11 @@
   */
  #pragma once
  
 +#include "api_wait_diagnostics.h"
++// NV-DXVK start: Optional transport accounting.
++#include "data_diagnostics.h"
++// NV-DXVK end
 +#include "exception_diagnostics.h"
  #include "config/global_options.h"
  
  #include "util_common.h"
-@@ -202,7 +208,8 @@ public:
+@@ -202,7 +211,8 @@ public:
    // into an unrecoverable state otherwise.
    static bridge_util::Result waitForCommand(const Commands::D3D9Command& command = Commands::Bridge_Any,
                                              DWORD overrideTimeoutMS = 0,
@@ -10672,7 +11440,7 @@ index a555f8c..1fff8bd 100644
    // Waits for a command to appear in the command queue. Upon success the command will be removed from the queue
    // and discarded.
    static bridge_util::Result waitForCommandAndDiscard(const Commands::D3D9Command& command = Commands::Bridge_Any,
-@@ -229,6 +236,7 @@ public:
+@@ -229,10 +239,14 @@ public:
      ~Command();
  
      inline void send_data(const DataT obj) {
@@ -10680,7 +11448,14 @@ index a555f8c..1fff8bd 100644
        ZoneScoped;
        if (gbBridgeRunning) {
          syncDataQueue(1, false);
-@@ -241,6 +249,7 @@ public:
+         const auto result = s_pWriterChannel->data->push(obj);
++        // NV-DXVK start: Optional data/resource tracing.
++        m_dataWire.add(sizeof(DataT), 0, RESULT_SUCCESS(result));
++        // NV-DXVK end
+         if (RESULT_FAILURE(result)) {
+           // For now just log when things go wrong, but could use some robustness improvements
+           Logger::err("DataQueue send_data: Failed to send data!");
+@@ -241,11 +255,15 @@ public:
      }
  
      inline void send_data(const DataT size, const void* obj) {
@@ -10688,7 +11463,15 @@ index a555f8c..1fff8bd 100644
        ZoneScoped;
        if (gbBridgeRunning) {
          size_t memUsed = (obj == nullptr) ? 1 : (align<size_t>(size, sizeof(DataT)) / sizeof(DataT)) + 1;
-@@ -255,6 +264,7 @@ public:
+         syncDataQueue(memUsed, true);
+         const auto result = s_pWriterChannel->data->push(size, obj);
++        // NV-DXVK start: Optional data/resource tracing.
++        m_dataWire.add(memUsed * sizeof(DataT), obj ? size : 0, RESULT_SUCCESS(result));
++        // NV-DXVK end
+         if (RESULT_FAILURE(result)) {
+           // For now just log when things go wrong, but could use some robustness improvements
+           Logger::err("DataQueue send_data: Failed to send data object!");
+@@ -255,11 +273,15 @@ public:
  
      template<typename... Ts>
      inline void send_many(const Ts... objs) {
@@ -10696,7 +11479,15 @@ index a555f8c..1fff8bd 100644
        ZoneScoped;
        if (gbBridgeRunning) {
          size_t count = sizeof...(Ts);
-@@ -268,6 +278,7 @@ public:
+         syncDataQueue(count, false);
+         const auto result = s_pWriterChannel->data->push_many(objs...);
++        // NV-DXVK start: Optional data/resource tracing.
++        m_dataWire.add(count * sizeof(DataT), 0, RESULT_SUCCESS(result));
++        // NV-DXVK end
+         if (RESULT_FAILURE(result)) {
+           // For now just log when things go wrong, but could use some robustness improvements
+           Logger::err("DataQueue send_many: Failed to send multiple m_writerChanneldata items!");
+@@ -268,12 +290,16 @@ public:
      }
  
      inline uint8_t* begin_data_blob(const size_t size) {
@@ -10704,7 +11495,16 @@ index a555f8c..1fff8bd 100644
        ZoneScoped;
        uint8_t* blobPacketPtr = nullptr;
        if (gbBridgeRunning) {
-@@ -283,6 +294,7 @@ public:
+         size_t memUsed = align<size_t>(size, sizeof(DataT)) / sizeof(DataT) + 1;
+         syncDataQueue(memUsed, true);
+         const auto result = s_pWriterChannel->data->begin_blob_push(size, blobPacketPtr);
++        // NV-DXVK start: Optional data/resource tracing.
++        m_dataWire.add(memUsed * sizeof(DataT), size, RESULT_SUCCESS(result), true);
++        // NV-DXVK end
+         if (RESULT_FAILURE(result)) {
+           // For now just log when things go wrong, but could use some robustness improvements
+           Logger::err("DataQueue begin_data_blob: Failed to begin sending a data blob!");
+@@ -283,6 +309,7 @@ public:
      }
  
      inline void end_data_blob() const {
@@ -10712,10 +11512,13 @@ index a555f8c..1fff8bd 100644
        ZoneScoped;
        if (gbBridgeRunning) {
          s_pWriterChannel->data->end_blob_push();
-@@ -328,6 +340,8 @@ public:
+@@ -328,6 +355,11 @@ public:
      }
  
    private:
++    // NV-DXVK start: Optional data/resource tracing.
++    l4d2_data::Wire m_dataWire;
++    // NV-DXVK end
 +    bridge_exception::CommandScope m_exceptionContext;
 +    l4d2_api_wait::Span m_submitTiming { l4d2_api_wait::Metric::Submit };
      const Commands::D3D9Command m_command;

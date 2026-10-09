@@ -4,7 +4,7 @@
 
 # 当前 Bridge 技术架构
 
-本页描述 `codex/development-1.1.2-dev.1` 的现有实现。源码基线为 `102b217`，运行时代码最近修改为 `1f48e48`，对应构建标识 `l4d2-1.2.0-dev.1+14a3039fb72bcf95`。本次文档更新不改变二进制。旧 `v1.2.0-dev.1` Release 附件早于通用设置 API 和 Volume pitch 修复，不能用版本号相同推断功能相同。
+本页描述 `codex/development-1.1.2-dev.1` 的现有实现。源码基线为 `102b217`，运行时代码最近修改为 `1f48e48`，对应构建标识 `l4d2-1.2.0-dev.1+14a3039fb72bcf95`。以上是追踪实验前的基线；当前新增默认关闭的 [数据/资源追踪](DATA-TRACKING.md)，匹配构建标识 `l4d2-1.2.0-dev.1+b9c88d065cd12d29`。渲染、回收和控制 ABI 语义不变。旧 `v1.2.0-dev.1` Release 附件早于通用设置 API 和 Volume pitch 修复，不能用版本号相同推断功能相同。
 
 接口字段、调用示例和错误处理见 [API 参考](API.md)；安装与用户配置见 [README](../README.md) 和 [配置参考](CONFIGURATION.md)。本页的“服务器 / Server / Host”均指本机渲染进程，和 L4D2 联机服务器没有关系。
 

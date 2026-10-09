@@ -132,3 +132,7 @@ Memory Policy 的 keep / lg / drop 仅调用运行时 SetPolicy，点击 `save t
 当前没有开发版新增成本的受控 FPS / 帧时间 / 加载时间 A/B 数据。比较时保持相同 Host、DXVK、地图、MOD、策略及缓存条件，先关闭逐调用日志和各可选诊断，再单独启用需要的诊断；偏色专用安装完成后的配置应当视为诊断已开。配置说明不能替代实际性能测量。
 
 相关实现与验证：[累计更新](CHANGES-SINCE-V1.1.md)、[内存统计](MEMORY-DIAGNOSTICS.md)、[PageBlock 诊断](PAGEBLOCK-DIAGNOSTICS.md)、[GC/drop](PAGEBLOCK-DROP-GC.md)、[异常归因](EXCEPTION-DIAGNOSTICS.md)、[API 等待](API-WAIT-DIAGNOSTICS.md)、[偏色诊断](NETWORK-COLOR-DIAGNOSTICS.md)。
+
+## 数据/资源追踪（新增，默认关闭）
+
+`client.dataDiagnostics=False`、`server.dataDiagnostics=False` 控制两侧独立追踪。`client.dataSnapshotMs=5000`、`server.dataSnapshotMs=5000` 是摘要间隔（最低 1000 ms）。开启后采集 VB/IB/Volume、shader/declaration/StateBlock 存储和访问，以及通用 IPC 命令量/Host 分派时间；有诊断计数锁、后台线程和日志开销。完整重启生效，不在 L4N 菜单中。日志不会保留资源正文，也不触发回收。使用方法、限制和离线分析见 [DATA-TRACKING.md](DATA-TRACKING.md)。
