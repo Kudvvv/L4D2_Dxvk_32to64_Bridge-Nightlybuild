@@ -106,7 +106,7 @@ class HeadDetection(unittest.TestCase):
             if path == detect.UPSTREAM: return {"default_branch":"main"}
             if "/commits/" in path: return {"sha":SHA,"commit":{"committer":{"date":"2026-10-05T00:00:00Z"}}}
             return [release] if path.endswith("page=2") else [{"draft":True,"body":""}]*100
-        with patch.dict(os.environ,{"GITHUB_REPOSITORY":"owner/repo","FORCE_REBUILD":"false","UPSTREAM_COMMIT":""}), patch.object(detect,"api",api), patch.object(detect,"recipe_digest",return_value=RECIPE):
+        with patch.dict(os.environ,{"GITHUB_REPOSITORY":"owner/repo","FORCE_REBUILD":"false","UPSTREAM_COMMIT":"","THINFLEX_TEST":"false"}), patch.object(detect,"api",api), patch.object(detect,"recipe_digest",return_value=RECIPE):
             self.assertEqual(detect.pending(),[])
 
 
