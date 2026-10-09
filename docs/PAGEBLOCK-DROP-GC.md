@@ -1,5 +1,7 @@
 # 实验：PageBlock drop、手动 GC 与 L4N v2 菜单
 
+完整进程/资源架构见 [ARCHITECTURE.md](ARCHITECTURE.md)；控制 ABI v1/v2 的字段、偏移、错误和调用示例见 [API.md](API.md#pageblock-control)。
+
 此功能属于开发实验，**不是已发布的 v1.1.1 补丁内容**。正常推荐配置保持 `learned-aggressive`；省略配置键时的兼容回退仍为 `keep`。不修改 Present、Host 位数选择、DXVK 或正式发布版本号。
 
 当前分支的可选 L4N 插件已扩展为 [常用设置菜单](L4N-BRIDGE-CONTROLS.md)，保持 PageBlock reclaim、capability/safety/learned 分类和三种 GC 语义。此前 [1.1.2-dev.3 residency 实验](PAGEBLOCK-RESIDENCY-EXPERIMENT.md) 和已发布 `v1.2.0-dev.1` 是历史产物，不含本轮常用菜单；下文 `5951831` CI 也属于历史记录。插件在开发包 `optional/L4N/` 中，Bridge 本体不依赖插件。

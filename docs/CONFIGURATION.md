@@ -4,6 +4,8 @@
 
 # 配置逐项说明与性能影响
 
+配置所有权与 Client 安全持久化实现见 [技术架构](ARCHITECTURE.md#configuration-persistence)，接口的分别失败和重启判定见 [API 参考](API.md#general-control)。
+
 本文对应当前实验版 **1.2.0-dev.1**，新增项与仓库 `v1.1.0`（版本 1.1）比较。表中的“随包值”是当前 [config/bridge.conf](../config/bridge.conf) 写明的值；“缺省值”指不写该键时实现采用的值，两者不一定相同。旧实验 ZIP 不随新版本变动；升级保留已有配置，不能用本文的推荐值代替实际安装配置。下载与安装见 [实验发布说明](RELEASE-V1.2.0-dev.1.md)。
 
 运行配置位于游戏的 **`bin/.l4d2bridge/bridge.conf`**。`client.*` 作用于游戏内的 Bridge Client；`server.*` 作用于渲染 Host，不指联机游戏服务器。更改后退出游戏及 Host，再重启；同一个键只保留一份。可选片段需要合并到该文件，不会因为放在旁边就自动生效。`dxvk.conf` 是后端配置，不能与 `bridge.conf` 混用。

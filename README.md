@@ -2,6 +2,8 @@
 
 [中文](#chinese) | [English](#english) · [v1.1.1 补丁说明 / Patch notes](docs/RELEASE-V1.1.1.md) · [v1.1 更新 / v1.1 changes](docs/RELEASE-V1.1.md)
 
+开发者文档 / Developer reference：[当前技术架构](docs/ARCHITECTURE.md) · [API、ABI 与接入示例](docs/API.md)。覆盖当前开发分支的 Client/Host、IPC、资源恢复、配置控制与可选 L4N 插件，已发布附件的功能范围仍以各自发布说明为准。
+
 **当前实验版：1.2.0-dev.1**，累计整合 PageBlock 管理与格式恢复、第二版全屏/窗口切换修复、异常/API/内存诊断和联机偏色诊断。下载与升级见 [实验发布说明](docs/RELEASE-V1.2.0-dev.1.md)，完整变化和验证边界见 [相比 1.1 的累计更新](docs/CHANGES-SINCE-V1.1.md)。源码保留在 `codex/development-1.1.2-dev.1`，以 `v1.2.0-dev.1` GitHub prerelease 分发；最近正式版仍为 v1.1.1，下方保留其日常安装说明。
 
 **Current experimental version: 1.2.0-dev.1.** Integrates PageBlock management/recovery, the second fullscreen/windowed Reset fix, crash/API/memory diagnostics and opt-in network colour diagnostics. See [experimental download and setup](docs/RELEASE-V1.2.0-dev.1.md) and [cumulative changes since 1.1](docs/CHANGES-SINCE-V1.1.md). Source remains on `codex/development-1.1.2-dev.1`; tag `v1.2.0-dev.1` is a GitHub prerelease. The current development branch fixes Volume byte pitches; the reporting user confirms the network colour issue is resolved on x86 Host. Existing Release assets predate this fix. Game-module crash reports remain unresolved. v1.1.1 remains the last official release.

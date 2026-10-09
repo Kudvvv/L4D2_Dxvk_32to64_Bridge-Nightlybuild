@@ -1,5 +1,7 @@
 # L4N Bridge 常用设置
 
+开发接入见 [完整 API 参考](API.md)，进程/资源/配置的技术边界见 [当前架构](ARCHITECTURE.md)。本文描述最终 HUD 行为；控制 ABI 仍提供 runtime Host 等字段，插件按当前菜单要求不显示这些字段。
+
 本页对应 `codex/development-1.1.2-dev.1` 分支新增的常用设置功能，尚不在已经发布的 `v1.2.0-dev.1` 附件中。请使用本次提交的配套 Client、两种 Host 和插件构建。Bridge 本体不依赖 L4N；x86 `L4D2BridgePlugin.dll` 是可选组件，安装到 `bin/neko/plugins/`，需要支持随仓库提供的 SDK v2 的 L4N HUD。
 
 ## 分发规则
