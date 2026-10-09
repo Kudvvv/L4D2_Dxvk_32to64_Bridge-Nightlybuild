@@ -4,9 +4,9 @@
 
 **当前实验版：1.2.0-dev.1**，累计整合 PageBlock 管理与格式恢复、第二版全屏/窗口切换修复、异常/API/内存诊断和联机偏色诊断。下载与升级见 [实验发布说明](docs/RELEASE-V1.2.0-dev.1.md)，完整变化和验证边界见 [相比 1.1 的累计更新](docs/CHANGES-SINCE-V1.1.md)。源码保留在 `codex/development-1.1.2-dev.1`，以 `v1.2.0-dev.1` GitHub prerelease 分发；最近正式版仍为 v1.1.1，下方保留其日常安装说明。
 
-**Current experimental version: 1.2.0-dev.1.** Integrates PageBlock management/recovery, the second fullscreen/windowed Reset fix, crash/API/memory diagnostics and opt-in network colour diagnostics. See [experimental download and setup](docs/RELEASE-V1.2.0-dev.1.md) and [cumulative changes since 1.1](docs/CHANGES-SINCE-V1.1.md). Source remains on `codex/development-1.1.2-dev.1`; tag `v1.2.0-dev.1` is a GitHub prerelease. Network colour and game-module crash reports remain unresolved. v1.1.1 remains the last official release.
+**Current experimental version: 1.2.0-dev.1.** Integrates PageBlock management/recovery, the second fullscreen/windowed Reset fix, crash/API/memory diagnostics and opt-in network colour diagnostics. See [experimental download and setup](docs/RELEASE-V1.2.0-dev.1.md) and [cumulative changes since 1.1](docs/CHANGES-SINCE-V1.1.md). Source remains on `codex/development-1.1.2-dev.1`; tag `v1.2.0-dev.1` is a GitHub prerelease. The current development branch fixes Volume byte pitches; the reporting user confirms the network colour issue is resolved on x86 Host. Existing Release assets predate this fix. Game-module crash reports remain unresolved. v1.1.1 remains the last official release.
 
-**当前分支修复：**[Volume LockBox/UnlockBox 字节 pitch](docs/VOLUME-PITCH-FIX.md) 修复 3D 纹理写入及上传步长；保持原有传输协议与后端。此修复不在旧 `v1.2.0-dev.1` Release 附件中，联机蓝绿偏色的实际改善仍需测试。
+**当前分支修复：**[Volume LockBox/UnlockBox 字节 pitch](docs/VOLUME-PITCH-FIX.md) 修复 3D 纹理写入及上传步长；保持原有传输协议与后端。此修复不在旧 `v1.2.0-dev.1` Release 附件中。反馈用户已确认联机蓝绿偏色消失；本轮 x86 Host 日志确认字节步长正确、采样上传摘要一致。
 
 **L4N 分发约定：**以后 GitHub Release 的 L4N 插件单独提供 ZIP，Bridge 完整包和升级补丁不内置插件 DLL；ZIP 专用分支的实验下载包可继续包含可选插件。
 

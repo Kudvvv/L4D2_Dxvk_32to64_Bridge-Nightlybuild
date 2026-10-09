@@ -6,7 +6,7 @@
 
 比较基线是仓库 `v1.1.0` tag，包内 VERSION 为 `1.1`。当前整合实验版定为 **1.2.0-dev.1**，累计包含 1.1.1、原 1.1.2-dev.1/dev.2/dev.3、第二版全屏切换修复和联机偏色诊断。最近正式发布仍为 1.1.1；新版本作为 GitHub prerelease 分发，见 [实验发布说明](RELEASE-V1.2.0-dev.1.md)。
 
-已发布 Release 的 Bridge ID 为 `l4d2-1.2.0-dev.1+b39cbd5e1a902ace`，Bridge patch 与最后一次 dev.3 偏色诊断构建相同，版本、默认 x86 配置和发布说明已统一。它包含此前通过作者实机切屏测试的修复，偏色诊断仍待目标用户实验；不能把此前构建的实机结果视为整个新包已经完成实机验收。
+已发布 Release 的 Bridge ID 为 `l4d2-1.2.0-dev.1+b39cbd5e1a902ace`，Bridge patch 与最后一次 dev.3 偏色诊断构建相同，版本、默认 x86 配置和发布说明已统一。它包含此前通过作者实机切屏测试的修复，当时尚无偏色修复反馈；后续 Volume 修复的实机记录见下文，不能把此前构建的实机结果视为整个新包已经完成实机验收。
 
 当前开发分支另外包含 L4N 常用设置及 [Volume 字节 pitch 修复](VOLUME-PITCH-FIX.md)，由 ZIP 专用分支提供实验构建；既有 Release 附件保留原构建。
 
@@ -27,8 +27,8 @@
 | 崩溃归因 | 记录真实模块/RVA、异常码、寄存器、故障线程栈和命令上下文；保存并刷新独立 crash_reports；区分本地异常和对端退出，移除通用 SEH 模态断言 | 独立异常/退出测试通过；不是任意崩溃的恢复补丁 |
 | 内存与 GC 诊断 | Client VA 分 PRIVATE/MAPPED/IMAGE/OTHER，新增 VB/IB 分配释放/峰值；GC 自动采样前后状态；细分 no-backing、KEEP、unclassified、unsupported、recovery gap、锁/传输等原因 | 作者日志证实实际 VA/backing 释放；未给 VB/IB 增加回收 |
 | API/IPC 等待诊断 | 默认关闭，区分 API、Host 处理、响应等待、队列满、锁竞争及上传本地阶段，配套分析器 | 已实现与测试；属于定位工具，没有加载提速保证 |
-| Volume LockBox/UnlockBox 修复（当前分支） | API 返回字节行距/层距；上传按字节步长读取，保留四字段 block-count 协议；锁缓冲区自动释放，拒绝非法 box/溢出布局 | 新增 x86/x64 回归：整块、32 个单层、partial box、DXT、Host padding；偏色实机待验证 |
-| 联机蓝绿偏色诊断 | 两端关联纹理创建参数/真实 HRESULT、布局和上传摘要、关键纹理绑定、shader、sRGB、雾、GammaRamp、状态块/Reset；异步限量日志和分析器 | 三件套编译、独立测试通过；目标用户实机结果待反馈，视觉问题仍待实机确认 |
+| Volume LockBox/UnlockBox 修复（当前分支） | API 返回字节行距/层距；上传按字节步长读取，保留四字段 block-count 协议；锁缓冲区自动释放，拒绝非法 box/溢出布局 | 原生 x86/x64 回归通过；反馈用户 x86 Host 实机确认偏色解决，2112 次 lock pitch 正确、22 组采样上传匹配 |
+| 联机蓝绿偏色诊断 | 两端关联纹理创建参数/真实 HRESULT、布局和上传摘要、关键纹理绑定、shader、sRGB、雾、GammaRamp、状态块/Reset；异步限量日志和分析器 | 三件套编译、独立测试通过；后续日志定位 Volume 布局缺陷，修复后反馈用户确认偏色解决 |
 | 构建与升级 | 三件套使用同批版本+patch hash，握手防止混用；提供 SHA256 清单、ZIP 专用分支与偏色实验备份安装脚本，保留现有后端/配置/DB | 架构/哈希/匿名回下载已核对；安装脚本做过 PowerShell Linux 文件夹验证 |
 
 ### PageBlock 实机结果能证明什么
@@ -54,7 +54,6 @@
 ## 尚未解决的问题
 
 - **游戏模块中的崩溃反馈**：已有异常归因，仍需现场证据排查桥的接口、内存、资源寿命与传输实现；没有针对这些反馈的已确认修复结论。
-- **联机蓝绿偏色**：当前分支已修复日志证实的 Volume LockBox byte pitch/UnlockBox 源步长错误；修复不在旧 Release 附件中，视觉根因及修复效果仍待本地→服务器实机对比。
 - **连续过图挂起、其他用户进图加载崩溃**：已有诊断及 Reset 加固；全局队列修复计划未实现，没有针对这些反馈的完整实机修复结论。
 - **Steam Overlay 输入**：完整 Shift+Tab/输入支持仍未解决，相关实验默认关闭。
 - **小 buffer/hot backing、通用资源恢复、加载提速**：尚未实现；没有新增受控 FPS、加载时间或系统 RAM 基准。
@@ -69,4 +68,4 @@ VB/IB 本轮完成的是分配/释放字节数、次数、当前存活字节及�
 
 32 位游戏到 x86/x64 Host 的架构、learned-aggressive 基础策略、ReShade Home 基础输入路径、ATI1/ATI2 上传、可选 mem1，以及 CreateTexture 零尺寸拒绝/失败 wrapper 清理均已有于 1.1。此次新增的是相应管理、恢复、切屏寿命修正和诊断，不能将已有功能重复计成新优化。
 
-1.2.0-dev.1 统一项目与二进制版本、发布说明及随包 Host 配置；Bridge patch 与最后一次 dev.3 偏色构建相同，旧上传产物保留原 build ID。
+已发布的 1.2.0-dev.1 Release 统一项目与二进制版本、发布说明及随包 Host 配置，其 Bridge patch 与最后一次 dev.3 偏色构建相同。后续开发分支继续加入常用设置与 Volume 修复；旧上传产物保留原 build ID。

@@ -10,7 +10,7 @@
 
 目标用户提供的同次 Client/Host 日志中，22 个 32×32×32 X8R8G8B8 MANAGED Volume 创建成功；2112 次 32×32×1、非 READONLY 锁定返回 `RowPitch=32, SlicePitch=32`。D3D9 要求这两个字段表示字节间距，正确紧凑值为 `128, 4096`。旧 UnlockBox 又用错误间距读取源地址，重叠上传行/层。两个相关 parent 后续确实绑定为纹理。
 
-创建成功、参数匹配或收到 4096 字节不能证明内容正确：游戏首先按返回的 pitch 写入，桥随后必须按同一字节布局读取。日志证明接口缺陷，尚不能证明它是蓝绿偏色的全部原因；用户未明确确认原测试中本地/服务器画面对比。
+创建成功、参数匹配或收到 4096 字节不能证明内容正确：游戏首先按返回的 pitch 写入，桥随后必须按同一字节布局读取。修复前日志证明了接口缺陷，当时尚无明确的视觉对比结论。修复后反馈用户确认问题已解决，见下方实机回归记录。
 
 ## 实现
 
@@ -31,10 +31,24 @@ API/控制 ABI、Host 位数选择、GC、ReShade、游戏 shader 与 DXVK backe
 
 现有 color 测试验证合法单层 Volume 可记录且受限流，不扩大普通 Surface 日志。Windows workflow 保留 PageBlock、Reset、控制 ABI/L4N、ATI 等回归并构建 x86 Client、x86/x64 Host、x86 L4N 插件。实际构建结果以包内 BUILD-INFO.json 和对应 Actions 为准；测试不替代真实 GPU/L4D2 验收。
 
+## 实机回归记录
+
+反馈用户安装 ZIP 构建 `1f48e48` 后反馈“问题解决”，并提交同次 `bridge32.log`、`bridge-host32.log` 和两端 color 日志。将这位用户的联机蓝绿偏色反馈记为已解决。
+
+- Client/Host build 均为 `l4d2-1.2.0-dev.1+14a3039fb72bcf95`，实际使用 x86 Host，会话为 `3be196cc-a4fa-43c7-a517-47ba2f320a9c`。
+- 22 个 Volume 创建请求参数匹配，无 Volume 创建失败；2112 次 32×32×1 X8R8G8B8 lock 全部返回 `RowPitch=128, SlicePitch=4096`，与预期及分配大小一致，pitch 错误为零。
+- 22 组限频采样 Volume 上传按 UID/resource_id 配对，各上传的 4096 字节完整进入摘要，两端内容摘要一致、布局有效，Host Lock/Unlock HRESULT 均为 S_OK。
+- 19207 个配对 2D 创建请求参数一致；全部 3207 组配对采样上传的 payload/hash 无差异。
+- Host 正常退出并记录 END/LIMITS，队列、文件、状态表及上传表丢弃计数均为零。所提交 Client color 日志未含 END/LIMITS，不能据此确认 Client 最终排空或零丢弃；已捕获的匹配样本和用户画面反馈仍支持本轮结论。
+
+本轮仍有 12 个顶层 1×1 DXT 创建 INVALIDCALL，反馈用户同时确认画面正常；本次修复没有依赖消除这些报错、启用 fallback 或修改渲染状态。视觉结果来自用户反馈，日志验证修复后的 API 布局和采样传输；不宣称检查了全部上传、所有 GPU/Host 位数或所有偏色来源。
+
+此次只同步验证文档，Bridge/插件源码、既有二进制与 ZIP 保持原构建，无重新编译或重新打包。
+
 ## 升级与实机检查
 
 已有安装使用此次三件套补丁，完全退出游戏和 Host 后一并更新 `bin/dxvk_d3d9.dll`、`bin/.l4d2bridge/L4D2Bridge32.exe`、`bin/.l4d2bridge/L4D2Bridge64.exe`。补丁不带运行 bridge.conf 或后端 DLL，保留当前 DXVK/ReShade、配置和 retention DB。用户日志中的自选 DXVK 3.1 可以继续保留；完整包仍提供项目固定的 DXVK 2.6.1，不要求为此修复更换后端。
 
 可选 L4N 仍为 common-settings-2；此次 Bridge 更新不会改变插件菜单。未来 Release 的插件单独打 ZIP，当前 ZIP 下载分支可以包含 optional 插件。
 
-实际检查：同一运行进入本地，返回菜单，再进入服务器，明确记录两阶段是否正常/蓝绿。若需日志，沿用 [偏色诊断说明](NETWORK-COLOR-DIAGNOSTICS.md) 的同次两端日志；应看到 32×32×1 的 API pitch 为 128/4096、布局有效，并核对采样上传摘要和画面。仍需验证切屏、过图及现有 GC 使用后的渲染正常。
+实际检查：同一运行进入本地，返回菜单，再进入服务器，明确记录两阶段是否正常/蓝绿。若需日志，沿用 [偏色诊断说明](NETWORK-COLOR-DIAGNOSTICS.md) 的同次两端日志；应看到 32×32×1 的 API pitch 为 128/4096、布局有效，并核对采样上传摘要和画面。上述本轮结果已确认反馈用户的偏色问题解决；切屏、过图、现有 GC 及其他硬件/Host 位数的验收按各自实际测试记录。

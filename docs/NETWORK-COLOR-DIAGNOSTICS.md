@@ -4,7 +4,7 @@
 
 # 联机蓝绿偏色：一次运行诊断包
 
-本实验基于当前开发分支，保留已通过实机的 Reset 第二版及 PageBlock recovery，实现用户同意的修订方案。保留原始 CreateTexture HRESULT；没有启用小尺寸 DXT fallback，也不 replay D3D9 state。尚未确认该用户偏色的根因。
+本实验基于当前开发分支，保留已通过实机的 Reset 第二版及 PageBlock recovery，实现用户同意的修订方案。保留原始 CreateTexture HRESULT；没有启用小尺寸 DXT fallback，也不 replay D3D9 state。后续开发分支修复了 Volume 字节 pitch/上传步长；反馈用户在修复构建中确认偏色问题已解决，详见 [实机回归记录](VOLUME-PITCH-FIX.md#实机回归记录)。
 
 当前整合实验版为 [1.2.0-dev.1](RELEASE-V1.2.0-dev.1.md)。普通安装不启用本诊断；下述专用脚本仅在需要复现偏色时主动运行。本页末尾保留旧 dev.3 诊断 ZIP 的编译/下载记录。
 
@@ -49,7 +49,7 @@ Host 按默认 5 秒窗口汇总：sRGB 写入/采样、雾开关/颜色/起止/
 
 日志确认了独立的 Volume 布局缺陷：旧 Client 将 block 行/列数量作为 D3DLOCKED_BOX 的字节 pitch，并按错误步长读取上传源。目标用户同次两端日志中，2112 次 32×32×1 X8R8G8B8 锁定均返回 32/32，正确紧凑布局是 128/4096；其中两个 parent Volume 后续确实绑定为纹理。当前开发分支已修正 LockBox/UnlockBox，并提供 [Volume 修复说明](VOLUME-PITCH-FIX.md)。此修复不在既有 `v1.2.0-dev.1` Release 附件或旧 dev.3 ZIP 中，必须更新匹配的 Client/两种 Host。
 
-修复后的诊断继续记录 CLIENT_VOLUME_LOCK 的实际/预期 pitch；合法的单层 Volume 上传也进入原有 5 秒 limiter，便于两端摘要核对。DXT Volume 的 Host 日志记录 box 像素宽高，传输仍使用 block 数。正常安装的诊断保持关闭。尚未获得修复后的本地→服务器画面对比，不能宣称这一缺陷就是偏色的全部原因。未匹配的限频上传仍不代表 IPC 丢失。
+修复后的诊断继续记录 CLIENT_VOLUME_LOCK 的实际/预期 pitch；合法的单层 Volume 上传也进入原有 5 秒 limiter，便于两端摘要核对。DXT Volume 的 Host 日志记录 box 像素宽高，传输仍使用 block 数。正常安装的诊断保持关闭。反馈用户使用 `l4d2-1.2.0-dev.1+14a3039fb72bcf95` 后确认问题解决：本轮 x86 会话的 2112 次 Volume Lock pitch 正确，22 组采样 Volume 上传两端摘要一致，Host Lock/Unlock 均成功。该反馈支持本次缺陷修复对这一用户的偏色故障有效；不扩展为所有设备/所有偏色反馈的结论。未匹配的限频上传仍不代表 IPC 丢失。
 
 顶层 1×1 DXT INVALIDCALL 与合法 mip 链的 1×1 层不同，详见 [方案审查](NETWORK-COLOR-EXPERIMENT-REVIEW.md)。若创建失败消失或某些状态看似正常，仍不能自动推断视觉根因。
 
