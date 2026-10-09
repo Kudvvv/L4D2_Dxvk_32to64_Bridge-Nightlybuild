@@ -12,6 +12,7 @@ namespace {
 namespace general = l4d2_bridge_control;
 class BridgePlugin final : public IL4NPlugin {
   std::string m_menu, m_status;
+  general::Host m_selectedHost = general::Host::Unknown;
   struct Controls { general::Invoke settings = nullptr; l4d2_control::Invoke pageBlocks = nullptr; };
   static const char* callback(void* userData);
   static const char* policyName(l4d2_control::Policy policy) {
@@ -24,6 +25,11 @@ class BridgePlugin final : public IL4NPlugin {
   }
   static const char* hostName(general::Host host) {
     return host == general::Host::X86 ? "x86" : host == general::Host::X64 ? "x64" : "unavailable";
+  }
+  static const char* policyLabel(l4d2_control::Policy policy) {
+    return policy == l4d2_control::Policy::LearnedAggressive ? "lg"
+      : policy == l4d2_control::Policy::Keep ? "keep"
+      : policy == l4d2_control::Policy::Drop ? "drop" : "unknown";
   }
   static Controls findControls() {
     // Use already loaded modules. Never load another D3D9 runtime into the game.
@@ -95,24 +101,6 @@ class BridgePlugin final : public IL4NPlugin {
   }
   const char* status(const Controls& controls) {
     std::string rows;
-    general::Response settings;
-    const auto settingsResult = query(controls.settings, general::Operation::GetStatus, 0, settings);
-    if (SUCCEEDED(settingsResult)) {
-      rows += info(std::string("Runtime Host: ") + hostName(settings.runtimeHost));
-      if (SUCCEEDED(settings.queryResult)) {
-        rows += info(std::string("Configured Host: ") + hostName(settings.configuredHost));
-        rows += info(std::string("Configured Memory Policy: ") + policyName(settings.configuredPolicy));
-        rows += info(std::string("ReShade Presenter: ") + (settings.presenterConfigured ? "Enabled" : "Disabled"));
-        rows += info(std::string("Restart Required: ") + (settings.restartRequired ? "Yes" : "No"));
-        if (settings.restartRequired) { rows += info("Saved settings apply on next full L4D2 restart"); }
-      } else {
-        rows += info("Configured Host / ReShade Presenter / Restart Required: unavailable");
-        rows += info("Failed to read configuration: " + error(settings.queryResult));
-      }
-    } else {
-      rows += info("Runtime Host / Configured Host / ReShade Presenter / Restart Required: unavailable");
-      rows += info(controls.settings ? "Settings status failed: " + error(settingsResult) : "Older Bridge: persistent settings unavailable");
-    }
     l4d2_control::DetailedResponse extended; bool detailed = false;
     const auto hr = pageBlocks(controls.pageBlocks, l4d2_control::Operation::Stats, 0, extended, detailed);
     if (FAILED(hr)) { return page("Status", rows + info("PageBlock status failed: " + error(hr))); }
@@ -151,22 +139,67 @@ class BridgePlugin final : public IL4NPlugin {
     sprintf_s(text, "Drained: %llu; waits: %llu; wait time: %.3f ms", response.transfersDrained, response.drainWaitCount, response.drainWaitTimeMs); rows += info(text);
     return page("PageBlock GC Result", rows);
   }
-  const char* setPolicy(const Controls& controls, uint32_t value) {
-    if (!controls.settings) {
-      l4d2_control::DetailedResponse response; bool detailed = false;
-      const auto hr = pageBlocks(controls.pageBlocks, l4d2_control::Operation::SetPolicy, value, response, detailed);
-      if (FAILED(hr)) { return failed("Runtime policy failed: " + error(hr)); }
-      m_status = std::string("Runtime policy changed to ") + policyName(response.base.policy) + "; older Bridge: config not saved";
-      return page("Memory Policy Result", info(m_status) + info("Session only; persistence unavailable on this Bridge"));
+  std::string policyRows(const Controls& controls) {
+    general::Response settings;
+    if (controls.settings) {
+      const auto hr = query(controls.settings, general::Operation::GetMemoryPolicy, 0, settings);
+      if (SUCCEEDED(hr) && SUCCEEDED(settings.runtimeResult)) {
+        const bool configured = SUCCEEDED(settings.queryResult) && settings.runtimePolicy == settings.configuredPolicy;
+        auto rows = info(std::string(u8"当前策略: ") + policyLabel(settings.runtimePolicy) + (configured ? " (configure)" : " (runtime)"));
+        if (FAILED(settings.queryResult)) { rows += info("Configuration unavailable: " + error(settings.queryResult)); }
+        return rows;
+      }
     }
+    l4d2_control::DetailedResponse response; bool detailed = false;
+    const auto hr = pageBlocks(controls.pageBlocks, l4d2_control::Operation::Stats, 0, response, detailed);
+    auto rows = SUCCEEDED(hr) ? info(std::string(u8"当前策略: ") + policyLabel(response.base.policy) + " (runtime)")
+      : info("Current policy unavailable: " + error(hr));
+    rows += info(controls.settings ? "Configuration status unavailable" : "Older Bridge: configuration save unavailable");
+    return rows;
+  }
+  static std::string policySave(const Controls& controls) {
+    return controls.settings ? item("save to configure", 13) : info("save to configure [unavailable]");
+  }
+  const char* setPolicy(const Controls& controls, uint32_t value) {
+    l4d2_control::DetailedResponse response; bool detailed = false;
+    const auto hr = pageBlocks(controls.pageBlocks, l4d2_control::Operation::SetPolicy, value, response, detailed);
+    if (FAILED(hr)) { return failed("Runtime policy failed: " + error(hr)); }
+    m_status = std::string("Runtime policy changed to ") + policyLabel(response.base.policy) + "; configuration unchanged";
+    return page("Memory Policy Result", policyRows(controls) + info(m_status) + policySave(controls));
+  }
+  const char* savePolicy(const Controls& controls) {
+    if (!controls.settings) { return failed("Configuration save unavailable on this Bridge"); }
+    l4d2_control::DetailedResponse runtime; bool detailed = false;
+    const auto statsResult = pageBlocks(controls.pageBlocks, l4d2_control::Operation::Stats, 0, runtime, detailed);
+    if (FAILED(statsResult)) { return failed("Cannot save current runtime policy: " + error(statsResult)); }
     general::Response response;
-    const auto hr = query(controls.settings, general::Operation::SetMemoryPolicy, value, response);
+    // The existing ABI reasserts this same runtime value before saving it.
+    const auto hr = query(controls.settings, general::Operation::SetMemoryPolicy, static_cast<uint32_t>(runtime.base.policy), response);
     if (FAILED(hr)) { return failed("Memory policy request failed: " + error(hr)); }
-    const auto runtime = SUCCEEDED(response.runtimeResult) ? std::string("Runtime policy changed to ") + policyName(response.runtimePolicy)
-      : "Runtime policy failed: " + error(response.runtimeResult);
+    const auto checked = SUCCEEDED(response.runtimeResult) ? std::string("Runtime policy: ") + policyLabel(response.runtimePolicy)
+      : "Runtime policy confirmation failed: " + error(response.runtimeResult);
     const auto saved = response.configWriteSucceeded ? std::string("Config saved successfully") : "Warning: failed to persist configuration: " + error(response.configResult);
-    m_status = runtime + "; " + saved;
-    return page("Memory Policy Result", info(runtime) + info(saved));
+    m_status = checked + "; " + saved;
+    return page("Memory Policy Save Result", policyRows(controls) + info(checked) + info(saved));
+  }
+  std::string hostRows(const Controls& controls, bool resetSelection = false) {
+    general::Response response;
+    const auto hr = query(controls.settings, general::Operation::GetHostMode, 0, response);
+    const bool available = SUCCEEDED(hr) && SUCCEEDED(response.queryResult);
+    if (resetSelection) { m_selectedHost = available ? response.configuredHost : general::Host::Unknown; }
+    return available ? info(std::string("Configured Host: ") + hostName(response.configuredHost))
+      : info("Configured Host unavailable: " + error(FAILED(hr) ? hr : response.queryResult));
+  }
+  const char* selectHost(const Controls& controls, general::Host host) {
+    if (!controls.settings) { return failed("Host configuration unavailable on this Bridge"); }
+    m_selectedHost = host;
+    m_status = std::string("Selected Host: ") + hostName(host) + "; configuration unchanged";
+    return page("Host Selection", hostRows(controls) + info(m_status)
+      + info("Save configuration; restart L4D2 to apply") + item("Save", 42));
+  }
+  const char* saveHost(const Controls& controls) {
+    if (m_selectedHost != general::Host::X86 && m_selectedHost != general::Host::X64) { return failed("Select a Host before saving"); }
+    return setPersistent(controls, general::Operation::SetHostMode, static_cast<uint32_t>(m_selectedHost));
   }
   const char* setPersistent(const Controls& controls, general::Operation operation, uint32_t value) {
     if (!controls.settings) { return failed("Persistent Host / ReShade settings unavailable on this Bridge"); }
@@ -180,6 +213,7 @@ class BridgePlugin final : public IL4NPlugin {
       : std::string("ReShade Presenter ") + (value ? "enabled." : "disabled.");
     m_status += " Restart L4D2 to apply.";
     std::string rows = info(m_status);
+    if (operation == general::Operation::SetHostMode) { rows += hostRows(controls); }
     if (operation == general::Operation::SetReShadePresenter && value && response.configuredHost == general::Host::X86) {
       rows += info("Note: validated ReShade combination is x64 Host + Vulkan ReShade 6.0.1.");
     }
@@ -189,7 +223,7 @@ class BridgePlugin final : public IL4NPlugin {
 public:
   unsigned int GetInterfaceVersion() override { return 2; }
   const char* GetName() override { return "L4D2 Bridge Controls"; }
-  const char* GetVersion() override { return "common-settings-1"; }
+  const char* GetVersion() override { return "common-settings-2"; }
   const char* RequestHudMenu(bool requestTitle) override {
     if (requestTitle) { return "L4D2 Bridge"; }
     auto rows = item("Status", 1) + item("GC", 2) + item("Memory Policy", 3) + item("ReShade Presenter", 4) + item("Host", 5);
@@ -203,26 +237,29 @@ public:
     if (action == 1) { return status(controls); }
     if (action == 2) { return page("GC", item("Learned", 20) + item("Aggressive", 21) + item("Force", 22)); }
     if (action == 3) {
-      const auto note = controls.settings ? "Changes runtime policy and saves configuration" : "Older Bridge: session only; configuration is not saved";
-      return page("Memory Policy", info(note) + item("keep", 10) + item("learned-aggressive", 11) + item("drop [experimental]", 12));
+      return page("Memory Policy", policyRows(controls) + item("keep", 10) + item("lg", 11)
+        + item("drop [experimental]", 12) + policySave(controls));
     }
     if (action == 4 || action == 5) {
       if (!controls.settings) { return page(action == 4 ? "ReShade Presenter" : "Host", info("Unavailable: this Bridge has no persistent settings API")); }
+      if (action == 5) {
+        return page("Host", hostRows(controls, true) + item("x86 Host", 40) + item("x64 Host", 41) + item("Save", 42));
+      }
       general::Response response;
-      const auto hr = query(controls.settings, action == 4 ? general::Operation::GetReShadePresenter : general::Operation::GetHostMode, 0, response);
+      const auto hr = query(controls.settings, general::Operation::GetReShadePresenter, 0, response);
       std::string rows = info("Save configuration; restart L4D2 to apply");
       if (FAILED(hr) || FAILED(response.queryResult)) { rows += info("Current configuration unavailable: " + error(FAILED(hr) ? hr : response.queryResult)); }
       else {
-        rows += info(action == 4 ? std::string("Configured: ") + (response.presenterConfigured ? "Enabled" : "Disabled")
-          : std::string("Runtime Host: ") + hostName(response.runtimeHost) + "; configured: " + hostName(response.configuredHost));
+        rows += info(std::string("Configured: ") + (response.presenterConfigured ? "Enabled" : "Disabled"));
       }
-      if (action == 4) { return page("ReShade Presenter", rows + info("Controls Bridge Presenter/input support; does not install ReShade") + item("Enable", 30) + item("Disable", 31)); }
-      return page("Host", rows + item("x86 Host", 40) + item("x64 Host", 41));
+      return page("ReShade Presenter", rows + info("Controls Bridge Presenter/input support; does not install ReShade") + item("Enable", 30) + item("Disable", 31));
     }
     if (action >= 10 && action <= 12) { return setPolicy(controls, static_cast<uint32_t>(action - 10)); }
+    if (action == 13) { return savePolicy(controls); }
     if (action >= 20 && action <= 22) { return gc(controls, static_cast<uint32_t>(action - 20)); }
     if (action == 30 || action == 31) { return setPersistent(controls, general::Operation::SetReShadePresenter, action == 30 ? 1u : 0u); }
-    if (action == 40 || action == 41) { return setPersistent(controls, general::Operation::SetHostMode, static_cast<uint32_t>(action == 40 ? general::Host::X86 : general::Host::X64)); }
+    if (action == 40 || action == 41) { return selectHost(controls, action == 40 ? general::Host::X86 : general::Host::X64); }
+    if (action == 42) { return saveHost(controls); }
     return failed("Invalid control action");
   }
 };

@@ -11,6 +11,6 @@ New-Item -ItemType Directory -Force $output | Out-Null
 Push-Location $output
 try {
   # Keep the supplied SDK verbatim; unused parameters inside that header are expected.
-  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /wd4100 /LD "/I$source/bridge/src/util" "$repoRoot/plugins/l4n/L4D2BridgePlugin.cpp" /link /OUT:L4D2BridgePlugin.dll
+  & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /utf-8 /wd4100 /LD "/I$source/bridge/src/util" "$repoRoot/plugins/l4n/L4D2BridgePlugin.cpp" /link /OUT:L4D2BridgePlugin.dll
   if ($LASTEXITCODE -ne 0) { throw 'L4N v2 plugin build failed' }
 } finally { Pop-Location }

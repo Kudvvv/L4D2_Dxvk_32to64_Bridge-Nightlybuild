@@ -9,7 +9,7 @@
 1. 退出游戏与桥，备份客户端和两种 Host。
 2. 使用 `l4d2-bridge-pageblock-drop-experiment` 构建产物，将 `bin` 合并进游戏目录。三个桥文件必须配套更新；保留现有 DXVK/mem1、ReShade 和 `bridge.conf`。
 3. 可选菜单插件为 x86 `bin/neko/plugins/L4D2BridgePlugin.dll`。在支持此 SDK v2 的 L4N HUD 插件菜单内选择 **L4D2 Bridge**。插件只使用提供的 `IL4NPlugin`、`GetInterfaceVersion()=2`、`GetL4NPluginInstance` 和 `RequestHudMenu(bool)`；没有 Source 控制台命令、L4N 内部 hook 或自实现 GC。
-4. 根菜单固定为 Status、GC、Memory Policy、ReShade Presenter、Host。GC 子菜单提供 Learned / Aggressive / Force。新通用 API 下 Memory Policy 即时调用原 SetPolicy 并由 Client 保存配置，分别报告运行/保存的结果；旧 Bridge 回退仍只影响当前会话。Host 和 Presenter 只保存，下次完整启动生效。进入 drop 不自动清理已有 backing，需要另选 GC Aggressive/Force。
+4. 根菜单固定为 Status、GC、Memory Policy、ReShade Presenter、Host。Status 仅显示 PageBlock；GC 子菜单提供 Learned / Aggressive / Force。Memory Policy 的 keep / lg / drop 仅改变 runtime，底部 `save to configure` 才由 Client 保存当前策略。Host 只显示配置值，选择后点击 Save；Host 和 Presenter 保存后下次完整启动生效。旧 Bridge 回退仍只影响当前会话，保存不可用。进入 drop 不自动清理已有 backing，需要另选 GC Aggressive/Force。
 5. 若需启动即启用 drop，手动合并 `PAGEBLOCK-DROP.conf`：
 
 ```ini
@@ -65,7 +65,7 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 
 插件枚举当前已加载模块，查找命名导出，不主动 LoadLibrary 一个 D3D9 runtime。HUD menu 的 callback/user_data 指针按 SDK KeyValues 格式生成。失败显示 HRESULT；GC 返回统计子菜单。插件不持有 D3D9 资源引用，不操作资源内存。未来其他 UI 可复用同一控制 ABI。
 
-菜单返回由 L4N HUD 自身管理，不再生成插件自己的 `Back` 项。SDK 的非空 callback 返回值代表进入子菜单，不能用“再次返回根菜单”模拟退回上一级。`experimental-2` 及后续版本中说明/统计文字回调返回 nullptr，点击不会新增层级或执行 Bridge 操作；统计在重新进入 Status 时重新查询，不再用递归 Refresh。策略结果页返回 Memory Policy，GC 结果页返回 GC，Status 返回 L4D2 Bridge。策略菜单不显示会因旧页面缓存而过期的 Current 标签，当前值可在 Status 中查询。
+菜单返回由 L4N HUD 自身管理，不再生成插件自己的 `Back` 项。SDK 的非空 callback 返回值代表进入子菜单，不能用“再次返回根菜单”模拟退回上一级。说明/统计文字回调返回 nullptr，点击不会新增层级或执行 Bridge 操作；统计在重新进入 Status 时重新查询，不再用递归 Refresh。`common-settings-2` 策略菜单首行显示当前 runtime/configure 来源，选择和保存结果页也重新查询。已打开的父页面由 HUD 缓存，退回后需要重新进入菜单刷新；结果页只提供保存，不递归列出其他选择。GC 结果页返回 GC，Status 返回 L4D2 Bridge。
 
 导航修正不属于下文历史 `5951831` 产物。本轮实际 Windows DLL 的 x64 Wine mock 回归包括 100 轮父菜单导航与 v1/v2 fallback；x86 编译通过但本地未执行。该检查不能替代真实 L4N HUD 验证。根菜单明确显示 `Last action result`，是上次 GC/动作的静态结果，不是实时残余；Stats 需重新进入获取新快照。
 

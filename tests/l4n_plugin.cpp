@@ -13,10 +13,10 @@
 namespace general = l4d2_bridge_control;
 static l4d2_control::Request last;
 static l4d2_control::Policy policy = l4d2_control::Policy::LearnedAggressive;
-static unsigned int calls = 0, settingsCalls = 0, runtimeSets = 0;
+static unsigned int calls = 0, settingsCalls = 0, runtimeSets = 0, configWrites = 0;
 static uint64_t blocks = 10;
 static bool failRequest = false, legacyOnly = false, runtimeFailure = false;
-static HRESULT configError = S_OK;
+static HRESULT configError = S_OK, readError = S_OK;
 static l4d2_settings::Target configured;
 extern "C" HRESULT WINAPI L4D2BridgePageBlockControl(const l4d2_control::Request* request, l4d2_control::Response* response) {
   ++calls; last = *request;
@@ -49,8 +49,9 @@ extern "C" HRESULT WINAPI L4D2BridgeControl(const general::Request* request, gen
 }
 static void initializeSettings() {
   configured.host = general::Host::X86; configured.policy = policy;
-  settings().read = [](l4d2_settings::Target& target) { target = configured; return S_OK; };
+  settings().read = [](l4d2_settings::Target& target) { target = configured; return readError; };
   settings().write = [](const l4d2_settings::Updates& updates) {
+    ++configWrites;
     if (FAILED(configError)) { return configError; }
     for (const auto& entry : updates) {
       if (entry.first == "client.testX86Server") { configured.host = entry.second == "True" ? general::Host::X86 : general::Host::X64; }
@@ -98,6 +99,23 @@ static void rootOrder(const std::string& menu) {
   }
   assert(menu.find("\"Back\"") == std::string::npos);
 }
+static void pageBlockOnly(const std::string& page) {
+  for (const auto* label : { "Runtime Host", "Configured Host", "ReShade Presenter", "Restart Required", "Configured Memory Policy", "persistent settings" }) {
+    assert(page.find(label) == std::string::npos);
+  }
+}
+#ifndef L4D2_TEST_NO_API
+static void policyOrder(const std::string& page) {
+  size_t previous = page.find(u8"当前策略:");
+  assert(previous != std::string::npos);
+  for (const auto* label : { "keep", "lg", "drop [experimental]" }) {
+    const auto next = page.find(std::string("\"") + label + "\"");
+    assert(next != std::string::npos && next > previous); previous = next;
+  }
+  const auto save = page.find("\"save to configure");
+  assert(save > previous && save != std::string::npos);
+}
+#endif
 int wmain(int argc, wchar_t** argv) {
   assert(argc == 2);
 #ifdef L4D2_TEST_GENERAL
@@ -106,14 +124,19 @@ int wmain(int argc, wchar_t** argv) {
   const auto module = LoadLibraryW(argv[1]); assert(module);
   const auto get = reinterpret_cast<GetL4NPluginInstanceFunc>(GetProcAddress(module, "GetL4NPluginInstance")); assert(get);
   auto* plugin = get(); assert(plugin && plugin->GetInterfaceVersion() == 2);
+  assert(std::string(plugin->GetVersion()) == "common-settings-2");
   assert(std::string(plugin->RequestHudMenu(true)) == "L4D2 Bridge");
   MenuHost host(plugin->RequestHudMenu(false)); rootOrder(host.page());
-  host.select("Status"); assert(host.pages.size() == 2);
+  host.select("Status"); assert(host.pages.size() == 2); pageBlockOnly(host.page());
+  assert(settingsCalls == 0);
 #ifdef L4D2_TEST_NO_API
-  assert(host.page().find("unavailable") != std::string::npos);
+  assert(host.page().find("PageBlock status failed") != std::string::npos);
   host.back(); host.select("Host"); assert(host.page().find("Unavailable") != std::string::npos); host.back();
   host.select("ReShade Presenter"); assert(host.page().find("Unavailable") != std::string::npos); host.back();
-  host.select("Memory Policy"); host.select("keep"); assert(host.page().find("failed") != std::string::npos);
+  host.select("Memory Policy");
+  assert(host.page().find("Current policy unavailable") != std::string::npos);
+  host.select("save to configure [unavailable]"); assert(host.pages.size() == 2);
+  host.select("keep"); assert(host.page().find("failed") != std::string::npos);
   host.back(); host.back(); host.select("GC"); host.select("Force"); assert(host.page().find("failed") != std::string::npos);
   puts("PASS: absent Bridge exports safely degrade without loading a runtime"); return 0;
 #else
@@ -126,14 +149,27 @@ int wmain(int argc, wchar_t** argv) {
   }
   assert(host.page().find("\"Refresh\"") == std::string::npos && host.page().find("\"Back\"") == std::string::npos);
   host.back(); blocks = 11; host.select("Status"); assert(host.page().find("Blocks: 11") != std::string::npos); host.back(); blocks = 10;
-  const char* policies[] = { "keep", "learned-aggressive", "drop [experimental]" };
+  const char* policies[] = { "keep", "lg", "drop [experimental]" };
+  const char* policyLabels[] = { "keep", "lg", "drop" };
   for (uint32_t i = 0; i < 3; ++i) {
-    host.select("Memory Policy"); assert(host.pages.size() == 2); host.select(policies[i]);
+    const auto writesBefore = configWrites, setsBefore = runtimeSets;
+    const auto configuredBefore = configured.policy;
+    host.select("Memory Policy"); assert(host.pages.size() == 2); policyOrder(host.page());
+    host.select(policies[i]);
     assert(host.pages.size() == 3 && policy == static_cast<l4d2_control::Policy>(i));
+    assert(configWrites == writesBefore && runtimeSets == setsBefore + 1 && configured.policy == configuredBefore);
+    assert(host.page().find("configuration unchanged") != std::string::npos);
 #ifdef L4D2_TEST_GENERAL
-    assert(configured.policy == policy && host.page().find("Config saved successfully") != std::string::npos);
+    const auto source = configured.policy == policy ? " (configure)" : " (runtime)";
+    assert(host.page().find(std::string(u8"当前策略: ") + policyLabels[i] + source) != std::string::npos);
+    host.select("save to configure");
+    assert(host.pages.size() == 4 && configured.policy == policy && configWrites == writesBefore + 1);
+    assert(host.page().find("Config saved successfully") != std::string::npos);
+    assert(host.page().find(std::string(u8"当前策略: ") + policyLabels[i] + " (configure)") != std::string::npos);
+    host.back();
 #else
-    assert(last.operation == l4d2_control::Operation::SetPolicy && last.value == i && host.page().find("config not saved") != std::string::npos);
+    assert(host.page().find(std::string(u8"当前策略: ") + policyLabels[i] + " (runtime)") != std::string::npos);
+    host.select("save to configure [unavailable]"); assert(host.pages.size() == 3);
 #endif
     host.back(); host.back();
   }
@@ -149,41 +185,93 @@ int wmain(int argc, wchar_t** argv) {
     host.back(); host.back();
   }
 #ifdef L4D2_TEST_GENERAL
+  // Save uses the live runtime policy, including changes after the menu was opened.
+  host.select("Memory Policy"); host.select("keep");
+  assert(configured.policy == l4d2_control::Policy::Drop);
+  policy = l4d2_control::Policy::LearnedAggressive;
+  host.select("save to configure"); assert(configured.policy == policy);
+  assert(host.page().find(u8"当前策略: lg (configure)") != std::string::npos);
+  host.back(); host.back(); host.back();
+  host.select("Memory Policy");
+  assert(host.page().find(u8"当前策略: lg (configure)") != std::string::npos); host.back();
+
   const auto setsBeforeHost = runtimeSets;
-  host.select("Host"); host.select("x64 Host");
-  assert(host.page().find("Host set to x64. Restart L4D2 to apply.") != std::string::npos); host.back(); host.back();
-  host.select("Status"); assert(host.page().find("Runtime Host: x86") != std::string::npos && host.page().find("Configured Host: x64") != std::string::npos && host.page().find("Restart Required: Yes") != std::string::npos); host.back();
-  host.select("Host"); host.select("x86 Host"); host.back(); host.back();
-  host.select("Status"); assert(host.page().find("Restart Required: No") != std::string::npos); host.back();
-  assert(runtimeSets == setsBeforeHost);
+  auto writesBefore = configWrites;
+  host.select("Host");
+  assert(host.page().find("Configured Host: x86") != std::string::npos && host.page().find("Runtime Host") == std::string::npos);
+  assert(host.page().find("\"x86 Host\"") < host.page().find("\"x64 Host\"") && host.page().find("\"x64 Host\"") < host.page().find("\"Save\""));
+  host.select("x64 Host");
+  assert(configured.host == general::Host::X86 && configWrites == writesBefore && runtimeSets == setsBeforeHost);
+  assert(host.page().find("Selected Host: x64; configuration unchanged") != std::string::npos);
+  assert(host.page().find("Configured Host: x86") != std::string::npos);
+  host.select("Save");
+  assert(configured.host == general::Host::X64 && configWrites == writesBefore + 1);
+  assert(host.page().find("Host set to x64. Restart L4D2 to apply.") != std::string::npos);
+  assert(host.page().find("Configured Host: x64") != std::string::npos && host.page().find("Runtime Host") == std::string::npos);
+  host.back(); host.back(); host.back();
+  host.select("Host"); assert(host.page().find("Configured Host: x64") != std::string::npos);
+  host.select("x86 Host"); host.select("Save"); host.back(); host.back(); host.back();
+  assert(configured.host == general::Host::X86 && runtimeSets == setsBeforeHost);
+  general::Request statusRequest; general::Response statusResponse;
+  assert(SUCCEEDED(settings().invoke(&statusRequest,&statusResponse)) && statusResponse.runtimeHost == general::Host::X86);
+  // Leaving an unsaved choice discards it when Host is entered again.
+  writesBefore = configWrites;
+  host.select("Host"); host.select("x64 Host"); host.back(); host.back();
+  host.select("Host"); host.select("Save");
+  assert(configured.host == general::Host::X86 && configWrites == writesBefore + 1); host.back(); host.back();
+
   host.select("ReShade Presenter"); host.select("Enable");
   assert(host.page().find("ReShade Presenter enabled. Restart L4D2 to apply.") != std::string::npos && host.page().find("x64 Host + Vulkan ReShade 6.0.1") != std::string::npos); host.back(); host.back();
-  host.select("Status"); assert(host.page().find("ReShade Presenter: Enabled") != std::string::npos && host.page().find("Restart Required: Yes") != std::string::npos); host.back();
-  host.select("ReShade Presenter"); host.select("Disable"); host.back(); host.back();
+  host.select("Status"); pageBlockOnly(host.page()); host.back();
+  host.select("ReShade Presenter"); assert(host.page().find("Configured: Enabled") != std::string::npos);
+  host.select("Disable"); host.back(); host.back();
   assert(configured.host == general::Host::X86 && runtimeSets == setsBeforeHost);
+
   configError = E_ACCESSDENIED;
   host.select("Memory Policy"); host.select("keep");
-  assert(host.page().find("Runtime policy changed to keep") != std::string::npos && host.page().find("Warning: failed to persist") != std::string::npos && host.page().find("denied") != std::string::npos); host.back(); host.back();
-  host.select("Host"); host.select("x64 Host"); assert(host.page().find("Failed to persist") != std::string::npos && configured.host == general::Host::X86); host.back(); host.back();
+  assert(host.page().find("Runtime policy changed to keep") != std::string::npos && configured.policy == l4d2_control::Policy::LearnedAggressive);
+  host.select("save to configure");
+  assert(host.page().find("Warning: failed to persist") != std::string::npos && host.page().find("denied") != std::string::npos);
+  assert(host.page().find(u8"当前策略: keep (runtime)") != std::string::npos);
+  host.back(); host.back(); host.back();
+  host.select("Host"); host.select("x64 Host"); host.select("Save");
+  assert(host.page().find("Failed to persist") != std::string::npos && configured.host == general::Host::X86); host.back(); host.back(); host.back();
   configError = S_OK; runtimeFailure = true;
+  writesBefore = configWrites;
   host.select("Memory Policy"); host.select("drop [experimental]");
-  assert(host.page().find("Runtime policy failed:") != std::string::npos && host.page().find("Config saved successfully") != std::string::npos);
-  assert(policy == l4d2_control::Policy::Keep && configured.policy == l4d2_control::Policy::Drop); host.back(); host.back(); runtimeFailure = false;
+  assert(host.page().find("Runtime policy failed:") != std::string::npos && configWrites == writesBefore);
+  assert(policy == l4d2_control::Policy::Keep && configured.policy == l4d2_control::Policy::LearnedAggressive); host.back();
+  host.select("save to configure");
+  assert(host.page().find("Runtime policy confirmation failed:") != std::string::npos && host.page().find("Config saved successfully") != std::string::npos);
+  assert(configured.policy == l4d2_control::Policy::Keep); host.back(); host.back(); runtimeFailure = false;
+
+  host.select("Memory Policy"); writesBefore = configWrites; failRequest = true;
+  host.select("save to configure");
+  assert(host.page().find("Cannot save current runtime policy") != std::string::npos && configWrites == writesBefore);
+  host.back(); host.back(); failRequest = false;
+  readError = E_ACCESSDENIED;
+  policy = l4d2_control::Policy::Drop;
+  host.select("Memory Policy");
+  assert(host.page().find(u8"当前策略: drop (runtime)") != std::string::npos && host.page().find("Configuration unavailable") != std::string::npos); host.back();
+  host.select("Host"); assert(host.page().find("Configured Host unavailable") != std::string::npos);
+  host.select("Save"); assert(host.page().find("Select a Host before saving") != std::string::npos); host.back(); host.back();
+  readError = S_OK;
 #else
   host.select("Host"); assert(host.page().find("Unavailable") != std::string::npos); host.back();
   host.select("ReShade Presenter"); assert(host.page().find("Unavailable") != std::string::npos); host.back();
 #endif
   for (unsigned int i = 0; i < 100; ++i) {
-    host.select("Status"); assert(host.pages.size() == 2); host.back();
+    host.select("Status"); assert(host.pages.size() == 2); pageBlockOnly(host.page()); host.back();
     host.select("Memory Policy"); host.select("drop [experimental]"); assert(host.pages.size() == 3); host.back(); host.back();
     host.select("GC"); host.select("Learned"); assert(host.pages.size() == 3); host.back(); host.back();
   }
   legacyOnly = true;
   host.select("Status"); assert(host.page().find("Blocks: 10") != std::string::npos && host.page().find("Tracked:") == std::string::npos); host.back();
+  host.select("Memory Policy"); host.select("keep"); assert(policy == l4d2_control::Policy::Keep); host.back(); host.back();
   host.select("GC"); host.select("Aggressive"); assert(last.version == l4d2_control::kVersion && last.value == 1); host.back(); host.back(); legacyOnly = false;
   failRequest = true; host.select("GC"); host.select("Force"); assert(host.pages.size() == 3 && host.page().find("Bridge Request Failed") != std::string::npos); host.back(); host.back();
   rootOrder(plugin->RequestHudMenu(false));
-  puts("PASS: exact common menu order, GC mapping, fresh status, policy results, restart-only settings, v1/v2 fallback and bounded SDK v2 navigation");
+  puts("PASS: PageBlock-only Status, runtime-only policy choices, explicit live policy/Host save, fresh configured values, unchanged GC/Presenter and v1/v2 fallback");
   return 0;
 #endif
 }

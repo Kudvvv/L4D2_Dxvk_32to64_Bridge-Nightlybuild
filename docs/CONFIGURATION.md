@@ -12,9 +12,9 @@
 
 可选 x86 L4N SDK v2 插件可通过 [常用设置菜单](L4N-BRIDGE-CONTROLS.md) 减少手工编辑。Bridge 本体不依赖插件；插件只查询状态和发送控制请求，由游戏内 `dxvk_d3d9.dll` 复用实际 Config 路径安全保存。
 
-Memory Policy 立即调用运行时 SetPolicy 并保存 `client.pageBlockRetentionPolicy`，分别报告两步结果。Host 与 ReShade Presenter 只保存目标配置，下次完整启动生效；不能运行时切换 Host，Presenter 菜单不负责安装 ReShade。Status 区分运行 Host 和已保存 Host。当前验证的 ReShade 组合仍是 x64 Host + Vulkan ReShade 6.0.1，启用 Presenter 不自动修改 Host。菜单没有测试/诊断选项；旧 Bridge 下新增持久化菜单不可用，原 Stats/GC/会话策略仍可用。
+Memory Policy 的 keep / lg / drop 仅调用运行时 SetPolicy，点击 `save to configure` 才保存当前 runtime 策略到 `client.pageBlockRetentionPolicy`。运行与配置相同时首行标记 configure，否则显示 runtime。Host 只显示配置值，选择 x86/x64 后点击 Save 才写入；Host 与 ReShade Presenter 下次完整启动生效，不能运行时切换 Host，Presenter 菜单不负责安装 ReShade。Status 仅显示 PageBlock。当前验证的 ReShade 组合仍是 x64 Host + Vulkan ReShade 6.0.1，启用 Presenter 不自动修改 Host。菜单没有测试/诊断选项；旧 Bridge 下保存不可用，原 Stats/GC/会话策略仍可用。
 
-本功能尚不在既有 `v1.2.0-dev.1` 发布附件中；请使用当前提交的配套构建。普通手工修改配置仍按上文完整重启，只有新控制接口的 Memory Policy 同时执行即时修改。
+本功能尚不在既有 `v1.2.0-dev.1` 发布附件中；上一轮 ZIP 分支的常用设置 Client/Host 可直接搭配 `common-settings-2` 插件。普通手工修改配置仍按上文完整重启；插件策略选项即时生效，保存为独立动作。
 
 ## 后端、进程与呈现
 

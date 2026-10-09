@@ -18,43 +18,55 @@ L4D2 Bridge
 │  ├─ Aggressive
 │  └─ Force
 ├─ Memory Policy
+│  ├─ 当前策略: keep / lg / drop (configure 或 runtime)
 │  ├─ keep
-│  ├─ learned-aggressive
-│  └─ drop [experimental]
+│  ├─ lg
+│  ├─ drop [experimental]
+│  └─ save to configure
 ├─ ReShade Presenter
 │  ├─ Enable
 │  └─ Disable
 └─ Host
+   ├─ Configured Host: x86 / x64
    ├─ x86 Host
-   └─ x64 Host
+   ├─ x64 Host
+   └─ Save
 ```
 
 | 菜单 | 立即生效 | 保存配置 | 需要完整重启 |
 |---|---|---|---|
-| Status | 每次进入重新查询 | 否 | 显示当前是否需要 |
+| Status | 每次进入重新查询 PageBlock | 否 | 否 |
 | GC | 执行原 learned/aggressive/force GC | 否 | 否 |
-| Memory Policy | 调用原 runtime SetPolicy | 是 | 两项均成功时不需要 |
+| Memory Policy: keep / lg / drop | 调用原 runtime SetPolicy | 否 | 否 |
+| Memory Policy: save to configure | 确认当前 runtime 值 | 是 | 否 |
 | ReShade Presenter | 不重建当前 Presenter | 是 | 是 |
-| Host | 不更换当前 Host | 是 | 是 |
+| Host: x86 / x64 | 仅暂存选择 | 否 | 否 |
+| Host: Save | 不更换当前 Host | 是 | 是 |
 
 菜单不包含测试/诊断开关。PageBlock coverage 和 GC 结果是现有功能的状态信息。说明文字的 callback 返回 nullptr，不能意外打开新页面；返回导航由 L4N HUD 处理。根菜单的 `Last action result` 只表示上一次动作结果。Status、Host、Presenter 当前值在每次进入时重新查询。
 
-Status 区分 `Runtime Host` 与 `Configured Host`。前者在 Host 握手成功后查询实际进程架构，后者重新读取持久配置。运行 x86 时选择 x64，只会变成 `Runtime Host: x86 / Configured Host: x64 / Restart Required: Yes`。无法查询架构或配置时显示 unavailable，不猜测目标已经应用。Memory Policy 显示运行策略，同时显示已保存的策略；ReShade Presenter 显示已保存的目标状态。
+Status 仅显示 PageBlock 的策略、blocks、locked/transferring、映射 VA、backing、drop/remap/reconstruction 与 coverage；不显示 Host、Presenter、配置目标或重启状态，也不调用通用设置查询。Host 页只显示 `Configured Host`，不显示运行 Host。Presenter 的已保存目标状态仍在其自身菜单中显示。
 
 ## Memory Policy
 
-菜单先执行原 PageBlock SetPolicy，再独立保存 `client.pageBlockRetentionPolicy`。两步都尝试，返回各自 HRESULT：
+`common-settings-2` 插件将修改和保存分开。首行显示 `当前策略: keep / lg / drop`：运行策略与配置值相同则标记 `(configure)`，不同则显示运行策略并标记 `(runtime)`。配置读取失败或旧 Bridge 没有通用 API 时，只显示已成功查询的 runtime 值；不会把缺省响应误当成配置值。`lg` 是 `learned-aggressive` 的菜单缩写，配置键的完整值不变。
 
-- 两项成功：运行策略已改变，配置已保存。
-- 运行成功、写入失败：运行策略已改变，明确提示保存失败及错误；下次启动仍按原配置。
-- 运行失败、写入成功：明确提示运行失败，配置已保存；下次启动才采用目标策略。
+keep、lg、drop 三项仅调用旧 PageBlock `SetPolicy`，当前会话立即生效，文件保持原样。结果页提供底部的 `save to configure`。保存先重新查询实时 runtime 策略，再通过 Client 的既有通用 `SetMemoryPolicy` 写入 `client.pageBlockRetentionPolicy`；保存使用即时查询值，不使用打开菜单时的快照。该既有接口会重新确认同一个 runtime 值，本次没有改变 Bridge 控制 ABI 或 Client/Host 实现。若 runtime 查询失败，不尝试写配置。
+
+保存操作分别报告运行确认与持久化结果：
+
+- 两项成功：当前运行策略已确认，配置已保存，首行更新为 `(configure)`。
+- 运行确认成功、写入失败：当前策略仍只用于会话，明确提示保存失败及错误；下次启动仍按原配置。
+- 运行确认失败、写入成功：分别报告确认失败和保存成功，不把结果统称为成功。
 - 两项失败：分别报告原因。
 
 运行中选择 drop 不会自动清空 backing，也不会放宽现有 capability/safety/recovery 检查。GC 算法、等待与回收语义均未改变。旧 `L4D2BridgePageBlockControl::SetPolicy` 仍是 session only；只有新通用控制会额外保存。
 
 ## Host 和 ReShade Presenter
 
-Host 选择保持现有规则：x86 写 `forceX64Server=True`、`client.testX86Server=True`；x64 写 `forceX64Server=True`、`client.testX86Server=False`。两者都不能使用 `forceX64Server=False` 模拟切换。不杀进程、不 reconnect、不 Reset、不搬迁资源；退出整个游戏后重新启动才应用。
+Host 每次进入重新读取配置，首行显示 `Configured Host`。点击 x86/x64 仅暂存选择，选择结果页底部有 Save；点击 Save 才由 Client 持久化，并重新读取、显示新的配置值。离开而未保存的选择在再次进入 Host 时丢弃。保存规则保持现有实现：x86 写 `forceX64Server=True`、`client.testX86Server=True`；x64 写 `forceX64Server=True`、`client.testX86Server=False`。两者都不能使用 `forceX64Server=False` 模拟切换。不杀进程、不 reconnect、不 Reset、不搬迁资源；退出整个游戏后重新启动才应用。
+
+SDK v2 的非空回调返回值会打开结果子页，不能原地替换已经打开的父菜单。选择结果页可直接保存，保存结果显示重新读取的值；若返回到先前缓存的页面，需要退出并重新进入对应菜单以刷新。说明行继续返回 nullptr，不新增层级；结果页不递归提供其他选择。
 
 Presenter Enable 保存以下九项：
 
@@ -72,7 +84,7 @@ client.DirectInput.forward.keyboardPolicy = 0
 
 Disable 只保存 `server.presenterWindow=False`、`client.hookMessagePump=False`、`client.overrideCustomWinHooks=False`，其余配置保留。Enable/Disable 都只修改 Bridge Presenter/输入支持，不安装、卸载或重载 ReShade 本体，也不改 Host 选择。当前已验证的 ReShade 组合仍是 **x64 Host + Vulkan ReShade 6.0.1**；x86 配置允许启用，只显示非阻塞提示。
 
-Client 保存启动时的九项 Presenter 配置，并在查询时与磁盘目标比较；或目标 Host 与真实运行 Host 不同时，显示需要重启。Memory Policy 的运行与保存成功不会单独产生重启提示。恢复全部启动值后不继续显示过期提示；关闭 Presenter 不会回滚用户其他设置。
+Client 的通用状态仍保存启动时的 Presenter 配置、真实 Host 架构与重启判定，供控制 ABI 使用；精简后的插件不在 Status 显示这些字段。Host 和 Presenter 的保存结果继续明确提示完整重启。关闭 Presenter 不会回滚用户其他设置。
 
 ## 控制接口与向后兼容
 
@@ -97,6 +109,6 @@ Client 内部序列化读写。用同目录 `bridge.conf.tmp` 的 CREATE_NEW 防
 
 ## 验证与实机检查
 
-自动测试包含：新/旧/缺失控制导出的 SDK v2 菜单回调、严格菜单顺序和 GC 映射、说明文字不新增层级、100 轮导航、新鲜 Status、三种策略及部分失败、Host 目标与运行值分离、Presenter 九项启用和三项关闭、restart 判定、配置文本保留/重复键/换行/Unicode、实际 Config 路径与缓存隔离、写入和替换失败、Host 拒绝写配置、旧 ABI 大小和边界。Windows 脚本为 `scripts/test_pageblock_gc.ps1`；构建保留 x86 插件。
+自动测试包含：新/旧/缺失控制导出的 SDK v2 菜单回调、严格菜单顺序和 GC 映射、Status 仅查询 PageBlock、说明文字不新增层级、100 轮导航、新鲜状态、策略 configure/runtime 来源、三种选择不写配置、保存实时策略及部分失败、Host 暂存/保存/放弃选择、保存后重新读取配置、Presenter 行为、配置读失败和旧 Bridge 保存不可用。既有 Client 测试继续覆盖 Presenter 配套键、restart 判定、配置文本保留/重复键/换行/Unicode、实际 Config 路径与缓存隔离、写入和替换失败、Host 拒绝写配置、旧 ABI 大小和边界。Windows 脚本为 `scripts/test_pageblock_gc.ps1`；构建保留 x86 插件。
 
 仍需真实 L4D2 + L4N 检查 HUD 布局/文字容量、保存失败提示、操作后返回导航、完整重启后的 Host/Presenter 应用，以及 x64 Vulkan ReShade 6.0.1 与用户配置组合。原生 mock/unit 检查不代替游戏和 GPU 验证。

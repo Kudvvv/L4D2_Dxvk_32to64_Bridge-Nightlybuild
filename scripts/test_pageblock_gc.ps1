@@ -43,7 +43,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "Unicode Config path $arch tests failed: $LASTEXITCODE" }
   if ($arch -eq 'x86') {
     foreach ($mode in @('modern', 'legacy', 'missing')) {
-      $compileArgs = @('/nologo', '/std:c++17', '/EHsc', '/W4', '/WX', '/wd4100', "/I$source/bridge/src/util", "/I$source/bridge/src/client", "$repoRoot/tests/l4n_plugin.cpp", "/Fe:l4n-plugin-$mode.exe")
+      $compileArgs = @('/nologo', '/std:c++17', '/EHsc', '/W4', '/WX', '/utf-8', '/wd4100', "/I$source/bridge/src/util", "/I$source/bridge/src/client", "$repoRoot/tests/l4n_plugin.cpp", "/Fe:l4n-plugin-$mode.exe")
       if ($mode -eq 'modern') { $compileArgs += '/DL4D2_TEST_GENERAL' }
       if ($mode -eq 'missing') { $compileArgs += '/DL4D2_TEST_NO_API' }
       $compileArgs += '/link'
