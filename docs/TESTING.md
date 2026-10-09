@@ -1,4 +1,4 @@
-> **v1.1 状态：**普通用户先看 [README](../README.md)。下文保留早期诊断验收方法；现在 x64/x86 gameplay、learned retention 和 x64 ReShade Home 已有实机证据，详见 [验证记录](V1.1-VALIDATION.md)。推荐配置关闭逐调用/详细 PageBlock/参考 readback 诊断。早期“仍待验证”描述不取代 v1.1 的限定验证结论。
+> **v1.2.0 状态：**普通用户先看 [README](../README.md) 和 [正式发布说明](RELEASE-V1.2.0.md)。下文的设备验收和已知项保留早期记录；其“仍待验证”描述不取代后续切屏/偏色实机结果。
 
 # v1.0.1 构建与设备验收
 
@@ -12,10 +12,10 @@ Windows 10/11 x64，Visual Studio 2022（安装 MSVC v142 / 14.29 的 x86/x64 �
 
 ```powershell
 python -m pip install meson==1.3.2 ninja==1.11.1.1
-./scripts/build_bridge.ps1 -DxvkDll C:/dxvk-2.6.1/x64/d3d9.dll
+./scripts/build_bridge.ps1 -DxvkDll C:/dxvk-2.6.1/x64/d3d9.dll -Dxvk32Dll C:/dxvk-2.6.1/x32/d3d9.dll
 ```
 
-构建脚本接受 DXVK 官方发布包中的 x64/d3d9.dll。第一版 CI 使用已在 B580 上实测的 v2.6.1；已安装用户也可下载客户端更新包保留自己的兼容后端。构建脚本使用固定上游 Bridge 提交，只初始化 Detours 子模块；不构建 RTX 渲染器。输出完整包 dist/l4d2-bridge 和客户端更新包 dist/l4d2-client-only。重新打包前请保留或移走旧输出；脚本拒绝覆盖。也可以手动运行 Build L4D2 D3D9 Bridge 工作流获取 artifact。
+构建脚本需要 DXVK 官方发布包中的 x64 和 x32/d3d9.dll，使用固定上游 Bridge 提交，只初始化 Detours 子模块；不构建 RTX 渲染器。输出完整包 `dist/l4d2-bridge` 和匹配三件套补丁 `dist/l4d2-bridge-patch`，均有版本、架构、哈希和构建记录校验。正式版可选插件另输出 `dist/l4d2-bridge-l4n`，不放入本体/补丁。重新打包前保留或移走旧输出；脚本拒绝覆盖。也可以手动运行 Build L4D2 D3D9 Bridge 工作流获取 artifact，未修改插件时关闭 build_l4n 并复用既有通过测试的 DLL。
 
 ## 建立基线
 

@@ -4,7 +4,7 @@
 
 此功能属于开发实验，**不是已发布的 v1.1.1 补丁内容**。正常推荐配置保持 `learned-aggressive`；省略配置键时的兼容回退仍为 `keep`。不修改 Present、Host 位数选择、DXVK 或正式发布版本号。
 
-当前分支的可选 L4N 插件已扩展为 [常用设置菜单](L4N-BRIDGE-CONTROLS.md)，保持 PageBlock reclaim、capability/safety/learned 分类和三种 GC 语义。此前 [1.1.2-dev.3 residency 实验](PAGEBLOCK-RESIDENCY-EXPERIMENT.md) 和已发布 `v1.2.0-dev.1` 是历史产物，不含本轮常用菜单；下文 `5951831` CI 也属于历史记录。插件在开发包 `optional/L4N/` 中，Bridge 本体不依赖插件。
+v1.2.0 的可选 L4N 插件已扩展为 [常用设置菜单](L4N-BRIDGE-CONTROLS.md)，保持 PageBlock reclaim、capability/safety/learned 分类和三种 GC 语义。正式 Release 的插件单独提供 ZIP，安装到 `bin/neko/plugins/`；Bridge 本体不依赖插件。此前 [1.1.2-dev.3 residency 实验](PAGEBLOCK-RESIDENCY-EXPERIMENT.md)、`v1.2.0-dev.1` 和下文 `5951831` CI 均为历史记录，不代表最新菜单和构件。
 
 ## 安装和使用
 

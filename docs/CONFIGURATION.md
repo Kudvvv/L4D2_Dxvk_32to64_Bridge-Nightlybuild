@@ -6,17 +6,17 @@
 
 配置所有权与 Client 安全持久化实现见 [技术架构](ARCHITECTURE.md#configuration-persistence)，接口的分别失败和重启判定见 [API 参考](API.md#general-control)。
 
-本文对应当前实验版 **1.2.0-dev.1**，新增项与仓库 `v1.1.0`（版本 1.1）比较。表中的“随包值”是当前 [config/bridge.conf](../config/bridge.conf) 写明的值；“缺省值”指不写该键时实现采用的值，两者不一定相同。旧实验 ZIP 不随新版本变动；升级保留已有配置，不能用本文的推荐值代替实际安装配置。下载与安装见 [实验发布说明](RELEASE-V1.2.0-dev.1.md)。
+本文对应正式版 **1.2.0**，新增项与仓库 `v1.1.0`（版本 1.1）比较。表中的“随包值”是当前 [config/bridge.conf](../config/bridge.conf) 写明的值；“缺省值”指不写该键时实现采用的值，两者不一定相同。旧实验 ZIP 保持原样；升级保留已有配置，不能用本文的推荐值代替实际安装配置。下载与安装见 [正式发布说明](RELEASE-V1.2.0.md)。
 
 运行配置位于游戏的 **`bin/.l4d2bridge/bridge.conf`**。`client.*` 作用于游戏内的 Bridge Client；`server.*` 作用于渲染 Host，不指联机游戏服务器。更改后退出游戏及 Host，再重启；同一个键只保留一份。可选片段需要合并到该文件，不会因为放在旁边就自动生效。`dxvk.conf` 是后端配置，不能与 `bridge.conf` 混用。
 
-## L4N 常用设置（当前分支新增）
+## L4N 常用设置
 
 可选 x86 L4N SDK v2 插件可通过 [常用设置菜单](L4N-BRIDGE-CONTROLS.md) 减少手工编辑。Bridge 本体不依赖插件；插件只查询状态和发送控制请求，由游戏内 `dxvk_d3d9.dll` 复用实际 Config 路径安全保存。
 
 Memory Policy 的 keep / lg / drop 仅调用运行时 SetPolicy，点击 `save to configure` 才保存当前 runtime 策略到 `client.pageBlockRetentionPolicy`。运行与配置相同时首行标记 configure，否则显示 runtime。Host 只显示配置值，选择 x86/x64 后点击 Save 才写入；Host 与 ReShade Presenter 下次完整启动生效，不能运行时切换 Host，Presenter 菜单不负责安装 ReShade。Status 仅显示 PageBlock。当前验证的 ReShade 组合仍是 x64 Host + Vulkan ReShade 6.0.1，启用 Presenter 不自动修改 Host。菜单没有测试/诊断选项；旧 Bridge 下保存不可用，原 Stats/GC/会话策略仍可用。
 
-本功能尚不在既有 `v1.2.0-dev.1` 发布附件中；上一轮 ZIP 分支的常用设置 Client/Host 可直接搭配 `common-settings-2` 插件。普通手工修改配置仍按上文完整重启；插件策略选项即时生效，保存为独立动作。
+v1.2.0 正式版包含通用设置 API，L4N 插件单独提供 ZIP。旧 `v1.2.0-dev.1` 附件不包含该 API。普通手工修改配置仍按上文完整重启；插件策略选项即时生效，保存为独立动作。
 
 ## 后端、进程与呈现
 

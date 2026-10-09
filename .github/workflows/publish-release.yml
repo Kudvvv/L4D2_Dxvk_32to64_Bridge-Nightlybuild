@@ -11,6 +11,10 @@ on:
       version:
         description: Release version without the v prefix
         required: true
+      l4n_build_run_id:
+        description: Prior successful run with unchanged L4N source/ABI (empty uses this build's separate plugin artifact)
+        required: false
+        default: ''
 permissions:
   actions: read
   contents: write
@@ -22,47 +26,11 @@ jobs:
       GH_REPO: ${{ github.repository }}
       BUILD_RUN_ID: ${{ inputs.build_run_id }}
       RELEASE_VERSION: ${{ inputs.version }}
+      L4N_BUILD_RUN_ID: ${{ inputs.l4n_build_run_id }}
     steps:
-      - name: Verify build and draft, download exact artifacts and upload
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import hashlib, json, os, pathlib, re, subprocess, zipfile
-          version = os.environ['RELEASE_VERSION']
-          run_id = os.environ['BUILD_RUN_ID']
-          assert re.fullmatch(r'\d+\.\d+\.\d+', version), 'Invalid version'
-          assert run_id.isdigit(), 'Invalid build run ID'
-          def api(path):
-              return json.loads(subprocess.check_output(['gh', 'api', path]))
-          repo = os.environ['GH_REPO']
-          run = api(f'repos/{repo}/actions/runs/{run_id}')
-          assert run['conclusion'] == 'success', 'Build did not pass'
-          assert run['name'] == 'Build L4D2 D3D9 Bridge', 'Unexpected build workflow'
-          releases = api(f'repos/{repo}/releases?per_page=100')
-          drafts = [r for r in releases if r['tag_name'] == f'v{version}']
-          assert len(drafts) == 1, 'Missing or ambiguous release draft'
-          release = drafts[0]
-          assert release['draft'], 'Release must be a draft'
-          assert release['target_commitish'] == run['head_sha'], 'Draft does not target tested commit'
-          artifacts = api(f'repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100')['artifacts']
-          files = []
-          for name in (f'l4d2-bridge-patch-v{version}', f'l4d2-bridge-v{version}'):
-              matches = [a for a in artifacts if a['name'] == name and not a['expired']]
-              assert len(matches) == 1, f'Missing or ambiguous artifact: {name}'
-              path = pathlib.Path(name + '.zip')
-              with path.open('wb') as output:
-                  subprocess.run(['gh', 'api', matches[0]['archive_download_url']], stdout=output, check=True)
-              with zipfile.ZipFile(path) as archive:
-                  assert archive.testzip() is None, 'Corrupt archive'
-                  assert archive.read('VERSION').decode().strip() == version, 'Artifact version mismatch'
-                  for binary, expected in json.loads(archive.read('SHA256.json')).items():
-                      assert hashlib.sha256(archive.read(binary)).hexdigest() == expected, f'Binary checksum mismatch: {binary}'
-              files.append(path)
-          sums = pathlib.Path('SHA256SUMS.txt')
-          sums.write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in files))
-          subprocess.run(['gh', 'release', 'upload', f'v{version}', *map(str, files), str(sums), '--clobber'], check=True)
-          uploaded = api(f"repos/{repo}/releases/{release['id']}")['assets']
-          for path in [*files, sums]:
-              assert any(a['name'] == path.name and a['size'] == path.stat().st_size for a in uploaded), 'Asset verification failed'
-          subprocess.run(['gh', 'release', 'edit', f'v{version}', '--draft=false', '--latest'], check=True)
-          PY
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify tested packages, optional plugin provenance and release draft before publishing
+        run: python scripts/publish_release.py

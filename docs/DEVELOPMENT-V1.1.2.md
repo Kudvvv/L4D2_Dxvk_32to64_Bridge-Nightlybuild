@@ -4,6 +4,8 @@
 
 # 1.1.2-dev.1：崩溃归因与设备重置加固
 
+**历史开发记录。** 当前正式版为 [v1.2.0](RELEASE-V1.2.0.md)，已整合后续 Volume 偏色与切屏修复、常用设置和数据诊断。以下版本、下载及待验证描述只代表当时状态。
+
 本页记录 dev.1 的历史实现与当时验证，最近正式发布仍为 v1.1.1。当前累计状态见 [相比 1.1 的更新](CHANGES-SINCE-V1.1.md)：后续已完成作者 x86 GC 与第二版切屏实机测试，偏色与 studiorender 仍在排查；不能据此宣称连续过图卡死或加载崩溃已经修复。
 
 **后续实验：**累计整合版本现定为 **1.2.0-dev.1**，包含 [residency 与格式恢复](PAGEBLOCK-RESIDENCY-EXPERIMENT.md)、[切屏第二版](FULLSCREEN-WINDOW-RESET.md) 和 [偏色诊断](NETWORK-COLOR-DIAGNOSTICS.md)。当前分支名保留不变，以 GitHub prerelease 分发，安装见 [新实验发布说明](RELEASE-V1.2.0-dev.1.md)；下文 dev.1 下载地址、构建结果和历史验证不代表最新包。

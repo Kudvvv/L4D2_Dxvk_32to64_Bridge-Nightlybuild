@@ -4,7 +4,7 @@
 
 # Volume LockBox / UnlockBox 字节布局修复
 
-当前 `codex/development-1.1.2-dev.1` 修复 Bridge 自身的 3D Volume CPU 写入/上传缺陷。它是正常接口行为的修正，默认生效，无需启用诊断。既有 `v1.2.0-dev.1` Release 和历史 ZIP 没有被覆盖。
+v1.2.0 正式版已将 Bridge 自身的 3D Volume CPU 写入/上传修复合入 main。它是正常接口行为的修正，默认生效，无需启用诊断。下文保留修复开发期间的原始实机 build 标识；旧 `v1.2.0-dev.1` Release 和历史 ZIP 没有被覆盖。
 
 ## 已确认的缺陷
 

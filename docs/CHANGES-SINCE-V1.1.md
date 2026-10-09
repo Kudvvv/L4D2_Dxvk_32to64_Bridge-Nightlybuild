@@ -4,11 +4,9 @@
 
 # 相比 1.1 的累计更新
 
-比较基线是仓库 `v1.1.0` tag，包内 VERSION 为 `1.1`。当前整合实验版定为 **1.2.0-dev.1**，累计包含 1.1.1、原 1.1.2-dev.1/dev.2/dev.3、第二版全屏切换修复和联机偏色诊断。最近正式发布仍为 1.1.1；新版本作为 GitHub prerelease 分发，见 [实验发布说明](RELEASE-V1.2.0-dev.1.md)。
+比较基线是仓库 `v1.1.0` tag，包内 VERSION 为 `1.1`。当前正式版是 **v1.2.0**，已合入 main，累计整合 1.1.1、1.1.2 开发系列、后续切屏/Volume 修复、L4N 常用设置和数据诊断。发布说明见 [v1.2.0](RELEASE-V1.2.0.md)，简明历史见 [LDBREADME](../LDBREADME.md)。
 
-已发布 Release 的 Bridge ID 为 `l4d2-1.2.0-dev.1+b39cbd5e1a902ace`，Bridge patch 与最后一次 dev.3 偏色诊断构建相同，版本、默认 x86 配置和发布说明已统一。它包含此前通过作者实机切屏测试的修复，当时尚无偏色修复反馈；后续 Volume 修复的实机记录见下文，不能把此前构建的实机结果视为整个新包已经完成实机验收。
-
-当前开发分支另外包含 L4N 常用设置及 [Volume 字节 pitch 修复](VOLUME-PITCH-FIX.md)，由 ZIP 专用分支提供实验构建；既有 Release 附件保留原构建。
+正式版 Bridge ID 为 `l4d2-1.2.0+b5a6e83f77e1549f`。下文实机记录保留各次原始 build 标识；发布只更改版本和打包，没有另改渲染代码。历史 `v1.2.0-dev.1` 附件保持原样，不能据相近版本号推断含有全部后续修复。
 
 ## 已实现的变化
 
@@ -23,9 +21,9 @@
 | PageBlock 管理统一 | 自动 learned、实验 drop、LGC/AGC/FGC 共用 capability、安全、策略和实际 reclaim；释放前确认恢复能力及上传/Host ACK | 独立回归测试及作者 x86 实机 GC 证据 |
 | 新增实验 drop 与三种手动 GC | LGC 尊重 learned/KEEP；AGC 忽略 learned 历史但保留安全检查；FGC 可等待已知 Bridge-owned 工作完成；drop 在合格上传后立即释放 Client backing | 保留实验性质，需主动选择；作者实机验证 AGC/FGC，未确认 Drop 卡顿已解决 |
 | 扩展当前内容恢复 | 补齐 Q8W8V8U8、ATI1/ATI2，覆盖符合条件的 2D mip、cube face mip、独立 surface；ATI 使用原始 BC4/BC5 块并区分 API/storage pitch；修正 offscreen Usage 描述 | 新格式解除映射后的恢复用例通过独立 mock；实机证实新格式被回收，未触发其实际 CPU 回读 |
-| L4N HUD 控制完善 | 可选菜单查询 Stats、切换策略、运行 GC；Bridge 控制 ABI v2 提供细分覆盖/跳过原因并兼容旧 v1；修正父菜单返回，标明上次动作结果 | 已编译、mock 导航验证；作者使用 HUD 提供 GC/Stats 实机结果 |
+| L4N HUD 控制完善 | 可选常用设置菜单；Status 仅显示 PageBlock，策略选择与保存分离，Host/Presenter 保存后重启；新增独立通用控制 ABI，保留 PageBlock v1/v2 | 已编译、mock 导航验证；作者使用 HUD 提供 GC/Stats 实机结果 |
 | 崩溃归因 | 记录真实模块/RVA、异常码、寄存器、故障线程栈和命令上下文；保存并刷新独立 crash_reports；区分本地异常和对端退出，移除通用 SEH 模态断言 | 独立异常/退出测试通过；不是任意崩溃的恢复补丁 |
-| 内存与 GC 诊断 | Client VA 分 PRIVATE/MAPPED/IMAGE/OTHER，新增 VB/IB 分配释放/峰值；GC 自动采样前后状态；细分 no-backing、KEEP、unclassified、unsupported、recovery gap、锁/传输等原因 | 作者日志证实实际 VA/backing 释放；未给 VB/IB 增加回收 |
+| 数据/资源与内存诊断 | Client VA 分 PRIVATE/MAPPED/IMAGE/OTHER；追踪 VB/IB、Volume、shader/declaration/StateBlock、命令流量、动态锁分布与状态同值；GC 自动采样前后状态；细分 no-backing、KEEP、unclassified、unsupported、recovery gap、锁/传输等原因 | 作者日志证实实际 VA/backing 释放；未给 VB/IB 增加回收 |
 | API/IPC 等待诊断 | 默认关闭，区分 API、Host 处理、响应等待、队列满、锁竞争及上传本地阶段，配套分析器 | 已实现与测试；属于定位工具，没有加载提速保证 |
 | Volume LockBox/UnlockBox 修复（当前分支） | API 返回字节行距/层距；上传按字节步长读取，保留四字段 block-count 协议；锁缓冲区自动释放，拒绝非法 box/溢出布局 | 原生 x86/x64 回归通过；反馈用户 x86 Host 实机确认偏色解决，2112 次 lock pitch 正确、22 组采样上传匹配 |
 | 联机蓝绿偏色诊断 | 两端关联纹理创建参数/真实 HRESULT、布局和上传摘要、关键纹理绑定、shader、sRGB、雾、GammaRamp、状态块/Reset；异步限量日志和分析器 | 三件套编译、独立测试通过；后续日志定位 Volume 布局缺陷，修复后反馈用户确认偏色解决 |
@@ -39,11 +37,11 @@
 
 截图中的 `recovery gap=0` 指当时被扫描的资源没有落入该项缺失恢复分类，**不是所有 D3D9 资源/访问路径已完全覆盖**。RT/depth、DEFAULT/MSAA/backbuffer 等仍保守排除；VB/IB/Volume 和游戏模型/声音内存没有被纳入本轮 GC。VA、section backing 和物理 RAM 是不同指标，上述数值不能改写成同时省下的系统 RAM。
 
-### 最新实验包
+### 当前正式包
 
-[下载 1.2.0-dev.1 实验发布](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/releases/tag/v1.2.0-dev.1)：已有安装选三件套补丁 ZIP，首次安装选完整 ZIP。普通配置保持可选诊断关闭；需要偏色复现时才运行专用安装脚本，见 [偏色说明](NETWORK-COLOR-DIAGNOSTICS.md)。旧 dev.3 ZIP 保留在原专用分支，不覆盖历史产物。
+[下载 v1.2.0](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/releases/tag/v1.2.0)：已有安装选三件套补丁，首次安装选完整包。可选 L4N 插件单独 ZIP 分发；本体不依赖它。普通配置保持详细诊断关闭，不运行主动开启偏色诊断的安装脚本。
 
-三件套使用统一新版本标识；验证结果以包内 BUILD-INFO.json 及对应 Windows Actions 运行记录为准。已确认的 dev.3 云端回归包括 x64 Wine 执行和 x86 严格编译；云端/CI 不能替代 L4D2/GPU 验收。源码推送当前开发分支，标签用于实验 prerelease，不合并 main、不将其设为最新正式版。
+匹配构件的来源、版本、patch hash 和 SHA256 记录在包内 BUILD-INFO.json 与 SHA256.json；原生 CI 通过后发布，不替代不同 GPU/MOD 组合的实机检查。
 
 ### 默认 Host 与升级配置
 
@@ -51,21 +49,21 @@
 
 现有三件套升级 ZIP 和偏色安装脚本保留用户的运行配置，不会自动将已有 x64 设置切换为 x86。1.2.0-dev.1 完整包带当前 x86 默认配置，旧 ZIP 的参考配置没有被重写。现有实现省略 `client.testX86Server` 时仍使用旧的 x64 兼容回退，因此应保留显式的 Host 选择键。
 
-## 尚未解决的问题
+## 已知使用限制
 
-- **游戏模块中的崩溃反馈**：已有异常归因，仍需现场证据排查桥的接口、内存、资源寿命与传输实现；没有针对这些反馈的已确认修复结论。
-- **连续过图挂起、其他用户进图加载崩溃**：已有诊断及 Reset 加固；全局队列修复计划未实现，没有针对这些反馈的完整实机修复结论。
-- **Steam Overlay 输入**：完整 Shift+Tab/输入支持仍未解决，相关实验默认关闭。
-- **小 buffer/hot backing、通用资源恢复、加载提速**：尚未实现；没有新增受控 FPS、加载时间或系统 RAM 基准。
+- **Steam Overlay / Shift+Tab**：完整叠加层和输入支持仍未解决，相关实验默认关闭。
+- **IPC 故障**：超时或会话断开不提供自动重连，需要完整退出并重启。
+- **选择性回收**：仅处理符合能力/安全检查的资源；drop 是默认未选的实验策略，反复恢复可能停顿。
+- **Host 位数**：x86 有地址空间限制，x64 内存占用随后端和负载变化。
 
 ## 职责边界与统计范围
 
 桥负责 D3D9 接口、桥接资源、跨进程传输与呈现，以及这些实现引起的问题。Source 私有对象、贴花任务队列、模型池和游戏逻辑属于游戏内部，不纳入桥的实现或修复计划。故障出现在游戏模块时仍应检查桥是否是上游诱因，随后只修复职责范围内的缺陷。
 
-VB/IB 本轮完成的是分配/释放字节数、次数、当前存活字节及峰值统计。创建、引用与销毁沿用原有逻辑，没有新增 VB/IB 回收、生命周期管理优化，也没有将它们纳入 PageBlock GC。
+VB/IB 完成的是分配/释放、shadow 候选容量、动态 Lock 大小分布及本地状态同值诊断和契约测试。创建、引用与销毁沿用原有逻辑，没有新增 VB/IB 回收、生命周期管理优化，也没有将它们纳入 PageBlock GC。
 
 ## 1.1 已有、此次不重复计为新增
 
 32 位游戏到 x86/x64 Host 的架构、learned-aggressive 基础策略、ReShade Home 基础输入路径、ATI1/ATI2 上传、可选 mem1，以及 CreateTexture 零尺寸拒绝/失败 wrapper 清理均已有于 1.1。此次新增的是相应管理、恢复、切屏寿命修正和诊断，不能将已有功能重复计成新优化。
 
-已发布的 1.2.0-dev.1 Release 统一项目与二进制版本、发布说明及随包 Host 配置，其 Bridge patch 与最后一次 dev.3 偏色构建相同。后续开发分支继续加入常用设置与 Volume 修复；旧上传产物保留原 build ID。
+正式版 1.2.0 将当前累计实现合入 main；开发版 Release 和旧 ZIP 保留各自原构件。

@@ -5,6 +5,22 @@
 
 # 更新记录 / Changelog
 
+当前正式版为 **v1.2.0**；以下开发版条目保留当时状态，不代表正式版现状。简明记录见 [LDBREADME](LDBREADME.md)。
+
+## 1.2.0（正式发布 / Stable）
+
+- 将当前开发分支累计成果合入 main，统一 Client、x86/x64 Host 与包内 VERSION 为 1.2.0。
+- 修复全屏/窗口切换的隐式资源和 getter 引用不平衡、Device 最终释放后的成员访问；加固 Reset/ResetEx 真实结果、失败缓存和重试处理。
+- 修复 Volume LockBox/UnlockBox 字节行距、层距和上传偏移导致的联机蓝绿偏色，增加布局校验与缓冲所有权管理。
+- 统一 PageBlock 管理，增加 Learned/Aggressive/Force GC 和主动选择的实验 drop，扩展 Q8W8V8U8、ATI1/ATI2 与符合条件的子资源恢复。
+- 完整包默认 x86 Host + learned-aggressive，保留 x64；升级保留运行配置、后端、ReShade 与 retention DB。
+- 提供可选 L4N 常用设置、兼容旧 PageBlock ABI 的通用控制接口、Client 安全配置持久化；策略运行修改与保存分离，Host/Presenter 保存后重启应用。
+- 增加异常、内存、API/IPC、偏色和数据/资源诊断、分析器及契约测试，详细诊断默认关闭。
+- Release 提供完整包、三件套补丁和独立 L4N 插件 ZIP；本次复用未修改的已测试插件 DLL，保留其原构建来源。
+- Steam Overlay/Shift+Tab 仍未解决。安装、验证与其他使用限制见 [正式发布说明](docs/RELEASE-V1.2.0.md)。
+
+Stable v1.2.0 integrates the confirmed Reset/Volume fixes, expanded selective recovery, optional L4N settings and opt-in diagnostics. Full installation defaults to x86 Host; matched updates preserve configuration and backends. L4N is a separate optional asset. Steam Overlay/Shift+Tab remains unfixed.
+
 ## 1.2.0-dev.1（实验发布 / Prerelease）
 
 - 将原 1.1.2 开发系列及后续切屏/偏色诊断整合为 1.2.0-dev.1；推送当前 `codex/development-1.1.2-dev.1` 分支，以 `v1.2.0-dev.1` 发布实验 prerelease。最近正式版仍为 1.1.1。

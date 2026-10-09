@@ -34,15 +34,12 @@ try {
     Invoke-Checked 'powershell.exe' @('-NoProfile', '-Command', $buildCommand)
   }
 } finally { Pop-Location }
-$packager = if ($projectVersion.Contains('-dev')) { 'package_development.py' } else { 'package_release.py' }
+$packager = 'package_development.py'
 $packageArgs = @("$PSScriptRoot/$packager", '--source', $source, '--dxvk', $dxvkPath)
 if ($Dxvk32Dll) { $packageArgs += @('--dxvk-x86', (Resolve-Path $Dxvk32Dll).Path) }
 if ($PatchOnly) {
-  if (!$projectVersion.Contains('-dev')) { throw 'PatchOnly requires a development version' }
   $packageArgs += '--patch-only'
 }
-if ($projectVersion.Contains('-dev')) {
-  $plugin = Join-Path $repoRoot '.deps/l4n-plugin/L4D2BridgePlugin.dll'
-  if (Test-Path $plugin) { $packageArgs += @('--plugin', $plugin) }
-}
+$plugin = Join-Path $repoRoot '.deps/l4n-plugin/L4D2BridgePlugin.dll'
+if (Test-Path $plugin) { $packageArgs += @('--plugin', $plugin) }
 Invoke-Checked 'python' $packageArgs

@@ -4,14 +4,22 @@
 import hashlib
 import importlib.util
 import json
+from argparse import Namespace
 from pathlib import Path
+import struct
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 spec = importlib.util.spec_from_file_location('separate_l4n_release', Path(__file__).parents[1] / 'scripts/separate_l4n_release.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+
+import sys
+sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
+import package_development
+import publish_release
 
 
 class ReleasePackaging(unittest.TestCase):
@@ -65,6 +73,105 @@ class ReleasePackaging(unittest.TestCase):
             path = self.package(root, 'full.zip', None)
             output = module.separate([path], root / 'release', '1.2.0-dev.1')
             self.assertEqual(len(output), 1)
+
+
+class StablePackaging(unittest.TestCase):
+    def prepare(self, directory):
+        root = Path(directory)
+        for name, value in {'VERSION': '1.2.0\n', 'README.md': 'release', 'CHANGELOG.md': 'history',
+                            'LDBREADME.md': 'versions', 'LICENSE': 'MIT', 'THIRD_PARTY.md': 'credits',
+                            'config/bridge.conf': 'client.testX86Server=True\nclient.dataDiagnostics=False\n',
+                            'patches/l4d2-bridge.patch': 'patch fixture',
+                            'docs/RELEASE-V1.2.0.md': 'stable guide', 'docs/L4N-BRIDGE-CONTROLS.md': 'controls',
+                            'licenses/DXVK-LICENSE.txt': 'backend license',
+                            'scripts/install_color_diagnostics.ps1': 'installer',
+                            'scripts/analyze_api_wait.py': '', 'scripts/analyze_color_diagnostics.py': '',
+                            'scripts/analyze_data_diagnostics.py': '',
+                            'source/bridge/LICENSE-MIT': 'upstream license',
+                            'source/bridge/ThirdPartyLicenses.txt': 'upstream credits'}.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(value)
+        build_id = 'l4d2-1.2.0+' + hashlib.sha256(b'patch fixture').hexdigest()[:16]
+
+        def binary(name, architecture, identity=build_id):
+            data = bytearray(256)
+            data[:2] = b'MZ'
+            struct.pack_into('<I', data, 60, 64)
+            data[64:68] = b'PE\0\0'
+            struct.pack_into('<H', data, 68, architecture)
+            struct.pack_into('<H', data, 86, 0x20)
+            data.extend(identity.encode())
+            path = root / name
+            path.write_bytes(data)
+            return path
+
+        return root, Namespace(source=root / 'source', client=binary('client.dll', 0x14c),
+                               host32=binary('host32.exe', 0x14c), host64=binary('host64.exe', 0x8664),
+                               dxvk=binary('dxvk64.dll', 0x8664), dxvk_x86=binary('dxvk32.dll', 0x14c),
+                               plugin=binary('plugin.dll', 0x14c), build_info=None, output=root / 'out', patch_only=False)
+
+    def run_package(self, root, args):
+        with mock.patch.object(package_development, 'ROOT', root), mock.patch.object(
+                package_development.subprocess, 'check_output', return_value='a' * 40):
+            package_development.package(args)
+
+    def files(self, path):
+        return {str(item.relative_to(path)).replace('\\', '/'): item.read_bytes()
+                for item in path.rglob('*') if item.is_file()}
+
+    def test_stable_core_is_matched_and_plugin_is_independent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, args = self.prepare(directory)
+            self.run_package(root, args)
+            for name, kind in [('l4d2-bridge', 'full'), ('l4d2-bridge-patch', 'matched-update')]:
+                files = self.files(args.output / name)
+                receipt = publish_release.verify_core(files, '1.2.0', 'a' * 40, kind)
+                self.assertFalse(receipt['optional_plugin'])
+                self.assertFalse(any(item.endswith('L4D2BridgePlugin.dll') for item in files))
+                self.assertIn('LDBREADME.md', files)
+                self.assertIn('docs/RELEASE-V1.2.0.md', files)
+            plugin = self.files(args.output / 'l4d2-bridge-l4n')
+            self.assertEqual([name for name in plugin if name.startswith('bin/')],
+                             ['bin/neko/plugins/L4D2BridgePlugin.dll'])
+            self.assertNotIn('bin/.l4d2bridge/bridge.conf', self.files(args.output / 'l4d2-bridge-patch'))
+
+    def test_bad_identity_fails_before_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, args = self.prepare(directory)
+            args.client.write_bytes(args.client.read_bytes().replace(b'l4d2-1.2.0+', b'l4d2-1.1.0+'))
+            with self.assertRaisesRegex(ValueError, 'identity'):
+                self.run_package(root, args)
+            self.assertFalse(args.output.exists())
+
+    def test_publication_rejects_wrong_source_and_embedded_plugin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, args = self.prepare(directory)
+            self.run_package(root, args)
+            files = self.files(args.output / 'l4d2-bridge-patch')
+            with self.assertRaisesRegex(ValueError, 'source'):
+                publish_release.verify_core(files, '1.2.0', 'b' * 40, 'matched-update')
+            files['optional/L4N/L4D2BridgePlugin.dll'] = b'unexpected'
+            with self.assertRaisesRegex(ValueError, 'separate'):
+                publish_release.verify_core(files, '1.2.0', 'a' * 40, 'matched-update')
+
+    def test_archive_checksum_failure_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'bad.zip'
+            with zipfile.ZipFile(path, 'w') as archive:
+                archive.writestr('bin/dxvk_d3d9.dll', b'changed')
+                archive.writestr('SHA256.json', json.dumps({'bin/dxvk_d3d9.dll': hashlib.sha256(b'original').hexdigest()}))
+            with self.assertRaisesRegex(ValueError, 'checksum'):
+                publish_release.read_package(path)
+
+    def test_existing_outputs_are_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, args = self.prepare(directory)
+            self.run_package(root, args)
+            before = self.files(args.output)
+            with self.assertRaises(FileExistsError):
+                self.run_package(root, args)
+            self.assertEqual(before, self.files(args.output))
 
 
 if __name__ == '__main__':

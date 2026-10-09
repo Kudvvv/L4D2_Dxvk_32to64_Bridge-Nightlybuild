@@ -4,6 +4,9 @@
 
 # 1.2.0-dev.1 实验发布
 
+> 历史 prerelease 记录。当前正式版见 [v1.2.0](RELEASE-V1.2.0.md)；本页与旧附件保持当时版本内容。
+
+
 本版将此前开发工作整合为 **1.2.0-dev.1**，以 GitHub **prerelease** 发布。源码分支仍为 `codex/development-1.1.2-dev.1`，标签为 `v1.2.0-dev.1`；最近正式版仍为 v1.1.1。Bridge ID 为 `l4d2-1.2.0-dev.1+b39cbd5e1a902ace`。
 
 ## 下载选择
