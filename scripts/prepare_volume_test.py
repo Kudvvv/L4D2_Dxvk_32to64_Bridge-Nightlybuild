@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 
 
-def prepare(source, output, negative_control=False, copy_reference=False):
+def prepare(source, output, negative_control=False, copy_reference=False, payload_negative_control=False):
     path = source / "bridge/src/client/d3d9_volume.cpp"
     text = path.read_text(encoding="utf-8")
     start = text.index("HRESULT Direct3DVolume9_LSS::LockBox(")
@@ -16,6 +16,11 @@ def prepare(source, output, negative_control=False, copy_reference=False):
         if methods.count(needle) != 1:
             raise ValueError("Cannot create the old-pitch negative control")
         methods = methods.replace(needle, "pending.RowPitch = static_cast<INT>(rowStride);")
+    if payload_negative_control:
+        needle = "  if (size > (std::numeric_limits<uint32_t>::max)() - 4u) { return false; }\n"
+        if methods.count(needle) != 1:
+            raise ValueError("Cannot create the missing-payload-bound negative control")
+        methods = methods.replace(needle, "")
     if copy_reference:
         needle = "      memcpy(blobPacketPtr, lockedVolume.pBits, totalSize);"
         if methods.count(needle) != 1:
@@ -49,6 +54,8 @@ if __name__ == "__main__":
     parser.add_argument("output", type=Path)
     control = parser.add_mutually_exclusive_group()
     control.add_argument("--negative-control", action="store_true")
+    control.add_argument("--payload-negative-control", action="store_true")
     control.add_argument("--copy-reference", action="store_true")
     args = parser.parse_args()
-    prepare(args.source, args.output, args.negative_control, args.copy_reference)
+    prepare(args.source, args.output, args.negative_control, args.copy_reference,
+            args.payload_negative_control)

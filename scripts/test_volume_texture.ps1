@@ -71,6 +71,13 @@ if ($CompileArchitecture) {
     if ($LASTEXITCODE -ne 0) { throw 'Negative control compilation failed' }
     & (Join-Path $testDir "volume-$CompileArchitecture-negative.exe")
     if ($LASTEXITCODE -eq 0) { throw 'Regression test failed to detect the old RowPitch bug' }
+    # Removing only the wire-size guard must fail before any huge allocation occurs.
+    python "$PSScriptRoot/prepare_volume_test.py" $source "$testDir/volume_methods.h" --payload-negative-control
+    if ($LASTEXITCODE -ne 0) { throw 'Payload negative control extraction failed' }
+    & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /DSEND_ALL_LOCK_DATA_AT_ONCE "/I$testDir" "$repoRoot/tests/volume_texture.cpp" "/Fe:volume-$CompileArchitecture-payload-negative.exe"
+    if ($LASTEXITCODE -ne 0) { throw 'Payload negative control compilation failed' }
+    & (Join-Path $testDir "volume-$CompileArchitecture-payload-negative.exe")
+    if ($LASTEXITCODE -eq 0) { throw 'Regression test failed to detect the missing wire-size guard' }
     python "$PSScriptRoot/prepare_volume_test.py" $source "$testDir/volume_methods.h"
     if ($LASTEXITCODE -ne 0) { throw 'Failed to restore actual volume methods' }
   } finally { Pop-Location }

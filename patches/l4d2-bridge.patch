@@ -1110,7 +1110,7 @@ index fa70ec36b48d3e72070851f10cbe0b7e6ae3e3f2..cd72463a61c58b15102aa23a9d135974
      : LockableBuffer((IDirect3DVertexBuffer9*)nullptr, pDevice, desc) {
    }
 diff --git a/bridge/src/client/d3d9_volume.cpp b/bridge/src/client/d3d9_volume.cpp
-index 11704cf11f84124439968a5f0e1bdb84382bdf91..227a52a847f78a680879d11e9c4a5edb4a7669f3 100644
+index 11704cf11f84124439968a5f0e1bdb84382bdf91..ec5b689d13dcaa2a37cd56b43ad386ada2401c61 100644
 --- a/bridge/src/client/d3d9_volume.cpp
 +++ b/bridge/src/client/d3d9_volume.cpp
 @@ -21,6 +21,9 @@
@@ -1148,7 +1148,7 @@ index 11704cf11f84124439968a5f0e1bdb84382bdf91..227a52a847f78a680879d11e9c4a5edb
    // Do nothing on lock on server side for now, all logic happens on unlock!
    return S_OK;
  }
-@@ -127,17 +133,33 @@ HRESULT Direct3DVolume9_LSS::UnlockBox() {
+@@ -127,17 +133,35 @@ HRESULT Direct3DVolume9_LSS::UnlockBox() {
  
  bool Direct3DVolume9_LSS::lock(D3DLOCKED_BOX& lockedVolume, const D3DBOX* const pBox, const DWORD flags) {
    const D3DBOX box = resolveLockInfoBox(pBox, m_desc);
@@ -1177,6 +1177,8 @@ index 11704cf11f84124439968a5f0e1bdb84382bdf91..227a52a847f78a680879d11e9c4a5edb
 +  const size_t slicePitch = columnStride * rowPitch;
 +  if (depth > (std::numeric_limits<size_t>::max)() / slicePitch) { return false; }
 +  const size_t size = depth * slicePitch;
++  // The wire length is uint32_t; leave room for DWORD alignment and its header.
++  if (size > (std::numeric_limits<uint32_t>::max)() - 4u) { return false; }
 +  // NV-DXVK start: Allocation and queue growth both leave the output untouched on failure.
 +  auto data = std::unique_ptr<uint8_t[]>(new uint8_t[size]);
 +  // D3DLOCKED_BOX exposes byte strides, including for block-compressed data.
@@ -1190,7 +1192,7 @@ index 11704cf11f84124439968a5f0e1bdb84382bdf91..227a52a847f78a680879d11e9c4a5edb
    return true;
  }
  
-@@ -146,7 +168,9 @@ void Direct3DVolume9_LSS::unlock() {
+@@ -146,7 +170,9 @@ void Direct3DVolume9_LSS::unlock() {
    if (m_lockInfoQueue.empty()) {
      return;
    }
@@ -1201,7 +1203,7 @@ index 11704cf11f84124439968a5f0e1bdb84382bdf91..227a52a847f78a680879d11e9c4a5edb
    m_lockInfoQueue.pop();
  
    // Prep command send
-@@ -154,8 +178,9 @@ void Direct3DVolume9_LSS::unlock() {
+@@ -154,8 +180,9 @@ void Direct3DVolume9_LSS::unlock() {
    const auto& box = lockInfo.box;
    const auto [width, height, depth] = getBoxDimensions(box);
    const auto bytesPerPixel = bridge_util::getBytesFromFormat(m_desc.Format);
@@ -1213,7 +1215,7 @@ index 11704cf11f84124439968a5f0e1bdb84382bdf91..227a52a847f78a680879d11e9c4a5edb
  
    // Now send the box dimensions and surface handle
    if ((lockInfo.flags & D3DLOCK_READONLY) == 0) {
-@@ -165,27 +190,28 @@ void Direct3DVolume9_LSS::unlock() {
+@@ -165,27 +192,28 @@ void Direct3DVolume9_LSS::unlock() {
      c.send_data(lockInfo.flags);
  
      // Now push actual bytes
@@ -1774,7 +1776,7 @@ index 0000000000000000000000000000000000000000..2d99dd46410aa137a04a6e357b7f476e
 +
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726de67a03d 100644
+index 86434ece9002c1e05dea9af65efa97568dc450b9..485d0f813317873362ed6fcf63b1db029f85b444 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -1912,7 +1914,42 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -787,12 +835,15 @@ void ProcessDeviceCommandQueue() {
+@@ -648,6 +696,8 @@ void ProcessDeviceCommandQueue() {
+         const auto hresult = pD3DDevice->GetSwapChain(iSwapChain, &pSwapChain);
+         assert(SUCCEEDED(hresult));
+         assert(pSwapChain != nullptr);
++        // This read-only validation owns only the temporary query reference.
++        if (pSwapChain) { pSwapChain->Release(); }
+         break;
+       }
+       case IDirect3DDevice9Ex_GetNumberOfSwapChains:
+@@ -669,10 +719,10 @@ void ProcessDeviceCommandQueue() {
+           done = true;
+         }
+
+-        //Release implicit swapchain
++        // Release only a temporary reference returned by the query.
+         IDirect3DSwapChain9* pSwapChain = nullptr;
+         pD3DDevice->GetSwapChain(0, &pSwapChain);
+-        pSwapChain->Release();
++        if (pSwapChain) { pSwapChain->Release(); }
+
+         const auto hresult = pD3DDevice->Reset(&PresentationParameters);
+         assert(SUCCEEDED(hresult));
+@@ -694,10 +744,10 @@ void ProcessDeviceCommandQueue() {
+           done = true;
+         }
+
+-        //Release implicit swapchain
++        // Release only a temporary reference returned by the query.
+         IDirect3DSwapChain9* pSwapChain = nullptr;
+         pD3DDevice->GetSwapChain(0, &pSwapChain);
+-        pSwapChain->Release();
++        if (pSwapChain) { pSwapChain->Release(); }
+
+         const auto hresult = ((IDirect3DDevice9Ex*) pD3DDevice)->ResetEx(&PresentationParameters, pFullscreenDisplayMode);
+         assert(SUCCEEDED(hresult));
+@@ -787,12 +837,15 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -1930,7 +1967,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -807,12 +858,17 @@ void ProcessDeviceCommandQueue() {
+@@ -807,12 +860,17 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -1950,7 +1987,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -825,12 +881,17 @@ void ProcessDeviceCommandQueue() {
+@@ -825,12 +883,17 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -1970,7 +2007,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -842,12 +903,17 @@ void ProcessDeviceCommandQueue() {
+@@ -842,12 +905,17 @@ void ProcessDeviceCommandQueue() {
          PULL_D(FVF);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -1990,7 +2027,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -859,12 +925,17 @@ void ProcessDeviceCommandQueue() {
+@@ -859,12 +927,17 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -2010,7 +2047,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -878,12 +949,17 @@ void ProcessDeviceCommandQueue() {
+@@ -878,12 +951,17 @@ void ProcessDeviceCommandQueue() {
          PULL_D(MultisampleQuality);
          PULL(BOOL, Lockable);
          PULL_HND(pHandle);
@@ -2030,7 +2067,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -897,12 +973,17 @@ void ProcessDeviceCommandQueue() {
+@@ -897,12 +975,17 @@ void ProcessDeviceCommandQueue() {
          PULL_D(MultisampleQuality);
          PULL(BOOL, Discard);
          PULL_HND(pHandle);
@@ -2050,7 +2087,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -1001,12 +1082,17 @@ void ProcessDeviceCommandQueue() {
+@@ -1001,12 +1084,17 @@ void ProcessDeviceCommandQueue() {
          PULL(D3DFORMAT, Format);
          PULL(D3DPOOL, Pool);
          PULL_HND(pHandle);
@@ -2070,7 +2107,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
        }
-@@ -2578,6 +2664,61 @@ void ProcessDeviceCommandQueue() {
+@@ -2578,6 +2666,61 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RECT, pRect);
          PULL_D(Flags);
          const auto pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
@@ -2132,7 +2169,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          // Now lock the rect so we can copy the data into it
          D3DLOCKED_RECT lockedRect;
          auto hresult = pSurface->LockRect(OUT & lockedRect, IN pRect, IN Flags);
-@@ -2585,8 +2726,6 @@ void ProcessDeviceCommandQueue() {
+@@ -2585,8 +2728,6 @@ void ProcessDeviceCommandQueue() {
          // Copy the data over
          const uint32_t width = pRect->right - pRect->left;
          const uint32_t height = pRect->bottom - pRect->top;
@@ -2141,7 +2178,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
          const D3DFORMAT format = (D3DFORMAT) dFormat;
          const size_t rowSize = bridge_util::calcRowSize(width, format);
          void* pData = nullptr;
-@@ -3268,7 +3407,16 @@ bool InitializeD3D() {
+@@ -3268,7 +3409,16 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -2159,7 +2196,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
      if (ghModule) {
        Logger::info("Non-RTX standard d3d9vk_x64.dll loaded");
      } else {
-@@ -3285,6 +3433,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3435,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -2170,7 +2207,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3463,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3465,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -2181,7 +2218,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3488,12 +3644,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3488,12 +3646,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    ExceptionHandler::get().init();
  
    // Identify yourself
@@ -2200,7 +2237,7 @@ index 86434ece9002c1e05dea9af65efa97568dc450b9..2615ffaf6d0c03de4a384ec9be562726
  #endif
  
    BRIDGE_ASSERT_LOG((argCount >= 2), "Command line argument count received to launch server is not as expected");
-@@ -3624,4 +3783,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +3785,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;

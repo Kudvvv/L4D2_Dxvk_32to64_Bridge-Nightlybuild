@@ -21,7 +21,7 @@
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 namespace allocation {
 bool failArray = false, failScalar = false, failQueueGrowth = false;
-size_t liveArrays = 0, scalarFailures = 0;
+size_t liveArrays = 0, scalarFailures = 0, arrayAttempts = 0;
 }
 // Exercise the real new[] and std::queue allocation sites without changing production code.
 void* operator new(size_t size) {
@@ -32,6 +32,7 @@ void* operator new(size_t size) {
 void operator delete(void* memory) noexcept { std::free(memory); }
 void operator delete(void* memory, size_t) noexcept { std::free(memory); }
 void* operator new[](size_t size) {
+  ++allocation::arrayAttempts;
   if (allocation::failArray) { throw std::bad_alloc(); }
   if (auto* memory = std::malloc(size ? size : 1)) {
     ++allocation::liveArrays;
@@ -175,6 +176,33 @@ D3DLOCKED_BOX sentinelOutput() {
 void requireEmptyOutput(const D3DLOCKED_BOX& output) {
   require(!output.pBits && output.RowPitch == 0 && output.SlicePitch == 0,
     "failed lock published or retained an output pointer");
+}
+void testPayloadBounds() {
+  const auto baseline = allocation::liveArrays;
+  struct Case { UINT width, height, depth; bool fitsWire; };
+  for (const auto item : {
+    // Four-byte pixels: largest aligned payload with header space, then one pixel over.
+    Case{1, 1, 0x3ffffffeu, true}, Case{1, 1, 0x3fffffffu, false},
+    // Each API pitch fits INT, but the complete volume reaches or exceeds 4 GiB.
+    Case{32768, 8192, 4, false}, Case{32768, 8192, 5, false}}) {
+    Direct3DVolume9_LSS volume(D3DFMT_A8R8G8B8, item.width, item.height, item.depth);
+    auto locked = sentinelOutput();
+    const auto previousAttempts = allocation::arrayAttempts;
+    // Never allocate the huge buffer, even when testing the unfixed implementation.
+    allocation::failArray = true;
+    const auto result = volume.LockBox(&locked, nullptr, 0);
+    allocation::failArray = false;
+    if (item.fitsWire) {
+      require(result == E_OUTOFMEMORY && allocation::arrayAttempts == previousAttempts + 1,
+        "representable payload was rejected before the allocation fault");
+    } else {
+      require(result == E_FAIL && allocation::arrayAttempts == previousAttempts,
+        "oversized wire payload reached allocation instead of being rejected");
+    }
+    requireEmptyOutput(locked);
+    require(volume.pendingLocks() == 0 && allocation::liveArrays == baseline,
+      "payload boundary failure changed lock ownership");
+  }
 }
 void testAllocationFailuresAndDestruction() {
   const auto baseline = allocation::liveArrays;
@@ -324,10 +352,11 @@ int main(int argc, char** argv) {
     rejected = sentinelOutput();
     require(normal.LockBox(&rejected, &invalid, 0) == E_FAIL, "invalid box HRESULT changed");
     requireEmptyOutput(rejected);
+    testPayloadBounds();
     testAllocationFailuresAndDestruction();
     testTransportExceptions();
     require(allocation::liveArrays == 0, "volume test leaked temporary buffers");
-    std::puts("PASS: actual volume LockBox/UnlockBox and owning lock records; byte pitches, LUT contents, compressed/partial/tiny volumes, readonly, wire fields, allocation/queue/transport failures and locked destruction");
+    std::puts("PASS: actual volume LockBox/UnlockBox and owning lock records; byte pitches, LUT contents, compressed/partial/tiny volumes, readonly, wire fields and payload bounds, allocation/queue/transport failures and locked destruction");
     return 0;
   } catch (const std::exception& e) { std::fprintf(stderr,"%s\n",e.what()); return 1; }
 }

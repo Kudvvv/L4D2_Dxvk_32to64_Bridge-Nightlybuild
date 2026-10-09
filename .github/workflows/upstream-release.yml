@@ -84,6 +84,9 @@ jobs:
       - name: Test resource creation cleanup and buffer lock bounds
         shell: powershell
         run: ./scripts/test_resource_lifecycle.ps1
+      - name: Test Host swapchain query and Reset temporary references
+        shell: powershell
+        run: ./scripts/test_device_reset_lifetime.ps1
       - name: Test ATI texture transfer bounds (x86 and x64)
         shell: powershell
         run: ./scripts/test_ati_texture_layout.ps1
