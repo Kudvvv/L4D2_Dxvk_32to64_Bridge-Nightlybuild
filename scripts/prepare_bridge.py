@@ -6,6 +6,7 @@
 import argparse
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -16,6 +17,19 @@ REMOTE = "https://github.com/NVIDIAGameWorks/dxvk-remix.git"
 
 def run(*args, cwd=None, env=None):
     subprocess.run(args, cwd=cwd, env=env, check=True)
+
+
+def _render_patch():
+    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", version):
+        raise ValueError("VERSION must use major.minor or major.minor.patch")
+    original = (ROOT / "patches" / "l4d2-bridge.patch").read_bytes()
+    rendered, count = re.subn(
+        rb'(?m)^(\+[ \t]+Logger::info\("Project version: )1\.0\.0("\);\r?)$',
+        lambda match: match[1] + version.encode("ascii") + match[2], original)
+    if count != 2:
+        raise RuntimeError("Expected both project version log lines; checkout preserved")
+    return rendered
 
 
 def _check_index(source, base, expected):
@@ -53,6 +67,7 @@ def _matches_tree(source, tree, env):
 
 
 def prepare(source, commit=COMMIT):
+    rendered_patch = _render_patch()
     if not source.exists():
         source.parent.mkdir(parents=True, exist_ok=True)
         run("git", "init", str(source))
@@ -64,8 +79,11 @@ def prepare(source, commit=COMMIT):
         ["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
     if head != commit:
         raise RuntimeError(f"Expected upstream {commit}, found {head}; checkout preserved")
-    patch = ROOT / "patches" / "l4d2-bridge.patch"
     with tempfile.TemporaryDirectory(prefix="l4d2-bridge-index-") as directory:
+        # Validate and apply precisely the same rendered bytes. Reused sources
+        # from another project version fail the existing exact-tree checks.
+        patch = Path(directory) / "l4d2-bridge.patch"
+        patch.write_bytes(rendered_patch)
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(directory) / "index"))
         run("git", "read-tree", head, cwd=source, env=env)
         run("git", "apply", "--cached", str(patch), cwd=source, env=env)
@@ -75,9 +93,9 @@ def prepare(source, commit=COMMIT):
         already_applied = _matches_tree(source, expected, env)
         if not already_applied and not _matches_tree(source, head, env):
             raise RuntimeError("Upstream checkout contains unexpected changes; checkout preserved")
-    if not already_applied:
-        run("git", "apply", "--check", str(patch), cwd=source)
-        run("git", "apply", str(patch), cwd=source)
+        if not already_applied:
+            run("git", "apply", "--check", str(patch), cwd=source)
+            run("git", "apply", str(patch), cwd=source)
     run("git", "submodule", "update", "--init", "--depth=1",
         "submodules/Detours", cwd=source)
     print(f"Prepared {source}; RTX renderer and NVIDIA GPU SDK submodules are not fetched")
