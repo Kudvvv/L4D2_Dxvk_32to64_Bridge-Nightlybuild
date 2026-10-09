@@ -92,6 +92,12 @@ int main(int argc, char**) {
     observe(2, State::Render, D3DRS_FOGCOLOR, 0x00aabbccu, S_OK);
     observe(2, State::Render, D3DRS_FOGCOLOR, 0x00ffffffu, D3DERR_INVALIDCALL);
     require(due(2) && !due(2), "snapshot limiter ignored interval");
+    if (!capped) {
+      Digest volumeDigest; volumeDigest.add(payload.data(), 4096);
+      upload(701, 700, "VolumeUploadBackend", 77, 22, 32, 32, 1, 128, 4096, volumeDigest, S_OK, S_OK, true);
+      upload(701, 700, "VolumeUploadBackend", 78, 22, 32, 32, 1, 128, 4096, volumeDigest, S_OK, S_OK, true);
+      upload(703, 702, "SurfaceUploadBackend", 79, 22, 32, 32, 1, 128, 0, volumeDigest, S_OK, S_OK, true);
+    }
     std::vector<std::thread> writers;
     for (unsigned i = 0; i < 4; ++i) {
       writers.emplace_back([i, capped]() {
@@ -105,6 +111,10 @@ int main(int argc, char**) {
     require(log.find("event=CONFIG") != std::string::npos && log.find("event=LIMITS") != std::string::npos, "log header/footer missing");
     if (capped) { require(log.size() <= 4608 && log.find("file_discarded=0") == std::string::npos, "file cap failed or saturation not exercised"); }
     else {
+      const auto volume = log.find("event=UPLOAD api=VolumeUploadBackend");
+      require(volume != std::string::npos && log.find("event=UPLOAD api=VolumeUploadBackend", volume + 1) == std::string::npos
+        && log.find("event=UPLOAD api=SurfaceUploadBackend") == std::string::npos,
+        "valid single-slice Volume upload missing, limiter broken or surface logging widened");
       require(log.find("requested_levels=0") != std::string::npos && log.find("shared_present=1") != std::string::npos
         && log.find("block_bytes=16") != std::string::npos && log.find("fallback=0") != std::string::npos, "texture evidence missing");
       require(log.find("calls=3 changes=1 failures=1") != std::string::npos && log.find("queue_dropped=0") != std::string::npos,

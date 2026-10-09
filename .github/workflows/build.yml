@@ -76,6 +76,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Color log analysis tests failed' }
       - name: Test independent L4N Release packaging
         run: python -m unittest discover -s tests -p test_release_packaging.py
+      - name: Test Volume byte pitches and partial uploads on x86 and x64
+        shell: powershell
+        run: ./scripts/test_volume_layout.ps1
       - name: Package experimental PageBlock controls
         run: python scripts/package_pageblock_experiment.py
       - name: Test x86 diagnostics and shadow eviction

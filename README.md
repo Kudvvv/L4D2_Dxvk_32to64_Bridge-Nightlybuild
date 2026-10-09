@@ -6,6 +6,8 @@
 
 **Current experimental version: 1.2.0-dev.1.** Integrates PageBlock management/recovery, the second fullscreen/windowed Reset fix, crash/API/memory diagnostics and opt-in network colour diagnostics. See [experimental download and setup](docs/RELEASE-V1.2.0-dev.1.md) and [cumulative changes since 1.1](docs/CHANGES-SINCE-V1.1.md). Source remains on `codex/development-1.1.2-dev.1`; tag `v1.2.0-dev.1` is a GitHub prerelease. Network colour and game-module crash reports remain unresolved. v1.1.1 remains the last official release.
 
+**当前分支修复：**[Volume LockBox/UnlockBox 字节 pitch](docs/VOLUME-PITCH-FIX.md) 修复 3D 纹理写入及上传步长；保持原有传输协议与后端。此修复不在旧 `v1.2.0-dev.1` Release 附件中，联机蓝绿偏色的实际改善仍需测试。
+
 **L4N 分发约定：**以后 GitHub Release 的 L4N 插件单独提供 ZIP，Bridge 完整包和升级补丁不内置插件 DLL；ZIP 专用分支的实验下载包可继续包含可选插件。
 
 **当前分支新增（尚未重新发布）：**可选 [L4N 常用设置菜单](docs/L4N-BRIDGE-CONTROLS.md)：Status → GC → Memory Policy → ReShade Presenter → Host。Status 仅显示 PageBlock；Memory Policy 选择即时生效，点击 `save to configure` 才保存；Host 仅显示配置值，选择后点击 Save，完整重启生效；Presenter 保存后完整重启生效。插件不直接编辑配置。`common-settings-2` 仅需更新插件，可复用上一轮常用设置 Client/Host；上面的 `v1.2.0-dev.1` 已发布附件不包含通用设置 API。

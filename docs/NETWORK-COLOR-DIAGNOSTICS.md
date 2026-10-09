@@ -47,7 +47,9 @@ Host 按默认 5 秒窗口汇总：sRGB 写入/采样、雾开关/颜色/起止/
 
 上传最多摘要前 65536 字节，payload_bytes 与 hashed_bytes 分开记录。每个资源重要上传默认每 5 秒至多一条，布局/Lock/Unlock 异常可立即记录。共享 heap 在本轮没有做逐字节两端核对。状态摘要是采样证据，可能遗漏短暂中间状态；摘要相同也不能证明所有颜色相关状态完全相同。资源别名/参数表和关键绑定表也有固定数量上限。
 
-本轮发现独立的 volume API 布局问题：现有 Client 把 block 行/列数量写入 D3DLOCKED_BOX RowPitch/SlicePitch，而 API 要求字节间距。以 32×32×32 RGBA 为例，当前返回 32/32，紧凑布局应为 128/4096。上传源地址也沿用这些字段。它能够破坏 3D 内容，但目前没有该用户 colour-LUT 绑定与实机内容证据，不能据此宣称已找到偏色根因。本包记录 CLIENT_VOLUME_LOCK 的实际/预期 pitch 和上传摘要，保留该行为，以免混合诊断与另一项未经实机确认的修复。
+日志确认了独立的 Volume 布局缺陷：旧 Client 将 block 行/列数量作为 D3DLOCKED_BOX 的字节 pitch，并按错误步长读取上传源。目标用户同次两端日志中，2112 次 32×32×1 X8R8G8B8 锁定均返回 32/32，正确紧凑布局是 128/4096；其中两个 parent Volume 后续确实绑定为纹理。当前开发分支已修正 LockBox/UnlockBox，并提供 [Volume 修复说明](VOLUME-PITCH-FIX.md)。此修复不在既有 `v1.2.0-dev.1` Release 附件或旧 dev.3 ZIP 中，必须更新匹配的 Client/两种 Host。
+
+修复后的诊断继续记录 CLIENT_VOLUME_LOCK 的实际/预期 pitch；合法的单层 Volume 上传也进入原有 5 秒 limiter，便于两端摘要核对。DXT Volume 的 Host 日志记录 box 像素宽高，传输仍使用 block 数。正常安装的诊断保持关闭。尚未获得修复后的本地→服务器画面对比，不能宣称这一缺陷就是偏色的全部原因。未匹配的限频上传仍不代表 IPC 丢失。
 
 顶层 1×1 DXT INVALIDCALL 与合法 mip 链的 1×1 层不同，详见 [方案审查](NETWORK-COLOR-EXPERIMENT-REVIEW.md)。若创建失败消失或某些状态看似正常，仍不能自动推断视觉根因。
 
