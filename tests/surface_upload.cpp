@@ -23,6 +23,7 @@ struct Logger { static void err(const std::string&) {} };
 #pragma warning(push)
 #pragma warning(disable: 4505) // Other static format helpers are unused in this isolated harness.
 #pragma warning(disable: 4063) // Legal FourCC extensions are outside the SDK D3DFORMAT enum.
+#pragma warning(disable: 4702) // Upstream format helper retains a fallback return after throw.
 #include "surface_format.h"
 #pragma warning(pop)
 #include "ati_texture_layout.h"
