@@ -108,7 +108,10 @@ jobs:
         run: ./scripts/test_host_diagnostics.ps1 -Platform x86
       - name: Load the official x86 DXVK DLL in a native x86 process
         shell: powershell
-        run: ./scripts/test_x86_backend.ps1
+        run: |
+          if ('${{ github.event_name == 'workflow_dispatch' && !inputs.build_l4n }}' -eq 'true') {
+            ./scripts/test_x86_backend.ps1 -DllPath .deps/dxvk-2.6.1/x32/d3d9.dll
+          } else { ./scripts/test_x86_backend.ps1 }
       - name: Test native x86 and x64 adapter identifiers and Shader capability transport
         shell: powershell
         run: ./scripts/test_adapter_information.ps1

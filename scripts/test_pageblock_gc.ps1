@@ -5,7 +5,9 @@ param([ValidateSet('', 'x86', 'x64')][string]$Platform = '', [switch]$SkipPlugin
 $ErrorActionPreference = 'Stop'
 if (!$Platform) {
   foreach ($arch in @('x86', 'x64')) {
-    & powershell.exe -NoProfile -File $PSCommandPath -Platform $arch -SkipPluginTests:$SkipPluginTests
+    $childArgs = @('-NoProfile', '-File', $PSCommandPath, '-Platform', $arch)
+    if ($SkipPluginTests) { $childArgs += '-SkipPluginTests' }
+    & powershell.exe @childArgs
     if ($LASTEXITCODE -ne 0) { throw "PageBlock $arch test process failed" }
   }
   exit 0
