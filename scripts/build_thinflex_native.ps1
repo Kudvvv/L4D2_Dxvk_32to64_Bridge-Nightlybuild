@@ -43,8 +43,33 @@ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
     $installation = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     if ($LASTEXITCODE -ne 0 -or -not $installation) { throw "MSVC x64 build tools were not found." }
     $vcvars = Join-Path $installation "VC/Auxiliary/Build/vcvarsall.bat"
-    $environment = & $env:ComSpec /d /s /c "`"`"$vcvars`" x64 >nul && set`""
-    if ($LASTEXITCODE -ne 0) { throw "Could not initialize MSVC x64 environment." }
+    # Supply cmd's raw command line directly. PowerShell 5.1 and 7 quote native
+    # arguments differently, and can double the leading quote around Program Files.
+    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processInfo.FileName = $env:ComSpec
+    $processInfo.Arguments = '/d /u /s /c ""' + $vcvars + '" x64 >nul && set"'
+    $processInfo.UseShellExecute = $false
+    $processInfo.CreateNoWindow = $true
+    $processInfo.RedirectStandardOutput = $true
+    $processInfo.RedirectStandardError = $true
+    $processInfo.StandardOutputEncoding = [Text.Encoding]::Unicode
+    $processInfo.StandardErrorEncoding = [Text.Encoding]::Unicode
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $processInfo
+    try {
+        [void]$process.Start()
+        $outputTask = $process.StandardOutput.ReadToEndAsync()
+        $errorTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $environmentOutput = $outputTask.GetAwaiter().GetResult()
+        $environmentError = $errorTask.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) {
+            throw "Could not initialize MSVC x64 environment (exit $($process.ExitCode)): $environmentError"
+        }
+        $environment = $environmentOutput -split '\r?\n'
+    } finally {
+        $process.Dispose()
+    }
     foreach ($line in $environment) {
         $separator = $line.IndexOf('=')
         if ($separator -gt 0) {
