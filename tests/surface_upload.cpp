@@ -108,7 +108,7 @@ void* countedCopy(void* target, const void* source, size_t bytes) {
 #define memcpy countedCopy
 #endif
 #pragma warning(push)
-#pragma warning(disable: 4267) // Existing production size_t dimensions call uint32_t format helpers.
+#pragma warning(disable: 4244 4267) // Existing production size_t dimensions call uint32_t format helpers.
 #include "surface_methods.h"
 #pragma warning(pop)
 #ifndef SURFACE_COPY_BENCHMARK
