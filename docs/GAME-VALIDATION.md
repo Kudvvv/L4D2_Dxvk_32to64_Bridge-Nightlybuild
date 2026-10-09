@@ -20,7 +20,7 @@
 | 稳定性 | 至少游戏 30 分钟后正常退出 | 无崩溃，Host 正常退出；内存趋势有记录 | 两侧日志及进程 CSV |
 | 回退 | 同时恢复备份的客户端与 Host | 能正常进入同一场景 | 回退版本和结果 |
 
-升级已有安装使用 `l4d2-bridge-update-*` ZIP，合并到游戏根目录，同时更新 `bin/d3d9.dll` 和 `bin/.l4d2bridge` 中的 Host。默认移除 `-vulkan`。需要该启动项时自行把客户端改名为 `dxvk_d3d9.dll`，文件仍留在 `bin`。更新包不含 bridge.conf、DXVK 后端、ReShade 或 DB。首次安装使用完整包；完整包会替换配置与后端，覆盖前备份。
+安装与升级均使用唯一的完整 ZIP，先解压到临时目录。已有用户先从临时目录移除包内 `bin/.l4d2bridge/bridge.conf`，避免覆盖游戏中的配置；自行修改过后端时也从临时目录移除对应后端 DLL。备份后合并到游戏根目录，同时更新 `bin/d3d9.dll` 和 `bin/.l4d2bridge` 中的 Host。默认移除 `-vulkan`；需要该启动项时自行把客户端改名为 `dxvk_d3d9.dll`，文件仍留在 `bin`。包内 `tools/thinflex` 仅提供修复工具，不自动应用引擎补丁。完整安装步骤见 [README](../README.md)。
 
 ## 采样
 

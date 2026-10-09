@@ -14,6 +14,8 @@ class Preparation(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
+        self.version_file = self.root / "VERSION"
+        self.version_file.write_text("1.0.0\n", encoding="utf-8", newline="\n")
         self.source = self.root / "source"
         self.source.mkdir()
         self.git("init", "-q")
@@ -26,12 +28,17 @@ class Preparation(unittest.TestCase):
         (self.source / "patched.cpp").write_text(self.original, encoding="utf-8", newline="\n")
         (self.source / "unrelated.cpp").write_text("unchanged\n", encoding="utf-8", newline="\n")
         (self.source / "removed.cpp").write_text("obsolete\n", encoding="utf-8", newline="\n")
+        self.log_sources = [self.source / "client.cpp", self.source / "host.cpp"]
+        for log_source in self.log_sources:
+            log_source.write_text('  Logger::info("Upstream version");\n', encoding="utf-8", newline="\n")
         self.git("add", ".")
         self.git("commit", "-qm", "upstream")
         self.commit = self.git("rev-parse", "HEAD").decode().strip()
         (self.source / "patched.cpp").write_text(self.patched, encoding="utf-8", newline="\n")
         (self.source / "new.h").write_text("expected new header\n", encoding="utf-8", newline="\n")
         (self.source / "removed.cpp").unlink()
+        for log_source in self.log_sources:
+            log_source.write_text('  Logger::info("Project version: 1.0.0");\n', encoding="utf-8", newline="\n")
         self.git("add", ".")
         (self.root / "patches").mkdir()
         self.patch_file = self.root / "patches" / "l4d2-bridge.patch"
@@ -102,6 +109,33 @@ class Preparation(unittest.TestCase):
         self.assertEqual(applied, self.snapshot())
         self.assertEqual(index, (self.source / ".git" / "index").read_bytes())
         self.assertEqual(2, self.submodule_updates)
+
+    def test_project_version_is_rendered_and_same_version_reuses_checkout(self):
+        self.version_file.write_text("1.0.6\n", encoding="utf-8", newline="\n")
+        original_patch = self.patch_file.read_bytes()
+        self.prepare()
+        for log_source in self.log_sources:
+            self.assertEqual('  Logger::info("Project version: 1.0.6");\n', log_source.read_text())
+        applied = self.snapshot()
+        self.prepare()
+        self.assertEqual(applied, self.snapshot())
+        self.assertEqual(original_patch, self.patch_file.read_bytes())
+        self.assertEqual(2, self.submodule_updates)
+
+    def test_changed_project_version_preserves_old_applied_checkout(self):
+        self.prepare()
+        self.version_file.write_text("1.0.6\n", encoding="utf-8", newline="\n")
+        self.assert_preserved_rejection()
+
+    def test_invalid_project_version_is_rejected_before_source_changes(self):
+        for version in ("", "v1.0.6", "1.0.6.1", "1.0\n.6", '1.0.6\"); other(); //'):
+            with self.subTest(version=version):
+                self.version_file.write_text(version, encoding="utf-8", newline="\n")
+                before = self.snapshot()
+                with self.assertRaisesRegex(ValueError, "VERSION must use"):
+                    self.prepare()
+                self.assertEqual(before, self.snapshot())
+                self.assertEqual(0, self.submodule_updates)
 
     def test_rejects_extra_tracked_change_after_patch(self):
         self.prepare()

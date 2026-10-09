@@ -18,5 +18,4 @@ def classify(commit, date, recipe, run_id, attempt):
     return {"group": "nightly", "kind": "nightly", "distance": None,
             "date": date[:10], "release_tag": identifier,
             "archive": "l4d2-bridge-" + identifier + ".zip",
-            "update_archive": "l4d2-bridge-update-" + identifier + ".zip",
             "title": identifier}

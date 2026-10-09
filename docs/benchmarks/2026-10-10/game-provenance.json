@@ -550,5 +550,5 @@
     "This does not test combat, repeated map transitions, long sessions, other GPUs or other players.",
     "The minimum ten-frame tail rule is only a sparse-sample warning threshold, not proof of statistical reliability."
   ],
-  "game_results_csv_sha256": "e2a58d298ccb6840013840717904ec36c647d7e0d803cfe116c4d336bfd574a8"
+  "game_results_csv_sha256": "4f992f771e999b02dfb3a7cf9c1bef6e10f60bcd96b7a3fa70c07fed71094e01"
 }

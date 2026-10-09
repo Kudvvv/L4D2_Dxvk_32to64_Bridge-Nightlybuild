@@ -1,8 +1,23 @@
-项目版本从 **v1.0** 起，重大更新递增次版本号，小改动递增补丁号；当前版本见 [VERSION](VERSION)，维护者设置见 [版本规则](docs/VERSIONING.md)。
-
 # L4D2 Bridge Nightly
 
 **简体中文** | [English](README.en.md)
+
+## 下载与安装（先看这里）
+
+**[前往 Releases 下载完整包](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**。每次发布只提供一个 `l4d2-bridge-*.zip`，另附 `.sha256` 校验文件；不再区分 update 包，也不用另下载 ThinFlex 工具。
+
+1. **退出游戏和 Bridge Host，备份现有文件。** 将完整 ZIP 解压到临时目录。
+2. **已有用户先保留配置：** 从临时解压目录移除包内 `bin/.l4d2bridge/bridge.conf`，保留游戏里正在使用的配置。若自行修改过后端，同样从临时目录移除 `bin/.l4d2bridge/d3d9vk_x64.dll`，避免覆盖。首次安装跳过此步；已有 `dxvk.conf`、ReShade 和 DB 不在包内，不受覆盖。
+3. **安装 Bridge：** 将准备好的内容合并到游戏根目录（`left4dead2.exe` 所在目录），同时更新客户端和 Host。客户端位于 `bin/d3d9.dll`；配套 x64 Host、后端和配置位于 `bin/.l4d2bridge`。默认移除 `-vulkan` 启动项。
+4. **需要 ThinFlex 崩溃修复：** 工具已在包内 `tools/thinflex/ThinFlexPatch.exe`，无需安装 Python。按 [工具说明](docs/THINFLEX-TEST-README.txt) 或包内 `tools/thinflex/README.txt` 生成副本、校验并备份安装。**仅解压完整包不会自动修改 `studiorender.dll`。** 已安装并验证有效的 ThinFlex 修复可保留，无需重复应用。
+
+ThinFlex 修复已收到用户复测有效反馈，仍限定于说明中精确匹配的原始 DLL；其他版本会拒绝处理。游戏更新后应重新核对，不能覆盖未知版本。
+
+如需 `-vulkan`，把客户端 `d3d9.dll` 改名为 `dxvk_d3d9.dll`，文件仍留在游戏 `bin`。从旧版切换到默认加载方式时，先备份旧 `bin/dxvk_d3d9.dll` 并移除 `-vulkan`。两种方式共用 `bin/.l4d2bridge`。
+
+回退 Bridge 时同时恢复配对的客户端和 Host；ThinFlex 的恢复步骤见工具说明。卸载时移除本包安装的文件并恢复备份。
+
+[性能实测](docs/PERFORMANCE-2026-10-10.md) 记录三组同场景对照与适用范围；更多验证步骤见 [游戏验收与性能基线](docs/GAME-VALIDATION.md)。
 
 基于 [NVIDIA dxvk-remix Bridge](https://github.com/NVIDIAGameWorks/dxvk-remix)，沿用 [L4D2 原项目](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge) 的补丁，自动构建适用于 32 位《求生之路 2》的 x86 客户端与 x64 Host。
 
@@ -21,6 +36,8 @@
 
 ## 自动与手动构建
 
+项目版本从 **v1.0** 起，重大更新递增次版本号，小改动递增补丁号；当前版本见 [VERSION](VERSION)，维护者设置见 [版本规则](docs/VERSIONING.md)。
+
 每小时第 23 分钟检查上游默认分支（当前为 `main`）。发现未发布的提交后构建；相同提交已发布时跳过。GitHub 调度可能延迟。
 
 在 **Actions → Build latest upstream Bridge → Run workflow** 中：
@@ -28,24 +45,11 @@
 - `upstream_commit` 留空跟随最新代码；填写完整 40 位 SHA 可指定提交。
 - 勾选 `force_rebuild` 可强制编译并创建新的独立版本；已有版本和附件保留，默认关闭。
 - 勾选 `validation_only` 仅构建、测试和运行 A/B 基准，保存结果供检查，跳过发布。
+- 手动勾选 `thinflex_test` 标记为性能优化与 ThinFlex 修复测试版（Pre-release，不设为 Latest）。所有构建均提供内含 `tools/thinflex` 的单一完整包；是否应用引擎修复由玩家按说明操作。
 
 去重同时检查上游提交和构建输入指纹；补丁、后端配置、脚本或测试更新会触发新构建。版本名为 `nightly-YYYYMMDD-上游短SHA-r输入指纹-b运行ID.重试号`，日期采用上游提交日期（UTC）。强制重建和重新运行均产生独立版本；旧附件不覆盖。Release 说明及包内 `UPSTREAM.json` 记录完整提交、输入指纹和构建实例。补丁冲突、编译或测试失败时不发布。
 
 复用本地源码目录时，构建脚本核对完整补丁和暂存区，拒绝混入额外源码修改并保留现场。发布中断后重跑失败的发布作业，会分页查找尚未发布的草稿，校验已有附件的内容，只上传缺失附件；内容冲突时停止，已有附件不覆盖。
-
-## 下载与安装
-
-从 [Releases](https://github.com/Kudvvv/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases) 下载 ZIP。安装包仅包含运行文件、简短说明及许可证，旁附 `.sha256` 校验文件。
-
-首次安装使用完整 ZIP：退出游戏，备份原文件，将包内内容合并到游戏根目录（`left4dead2.exe` 所在目录）。`d3d9.dll` 放在 `bin` 目录，Host、配置及后端仍放在 `bin/.l4d2bridge`。默认不使用 `-vulkan` 启动项。完整包包含配置和后端，覆盖会替换原文件。
-
-如果要使用 `-vulkan`，请自行把客户端 `d3d9.dll` 改名为 `dxvk_d3d9.dll`，文件仍留在游戏 `bin`。从旧版升级且改用默认加载方式时，先备份旧 `bin/dxvk_d3d9.dll`，移除 `-vulkan`，再安装新版。两种方式都使用同一个 `bin/.l4d2bridge`。
-
-升级已有安装优先使用 `l4d2-bridge-update-*` ZIP，它同时更新客户端与 Host，保留现有配置、DXVK、ReShade 和 DB。回退时同时恢复配对的客户端和 Host。卸载时移除本包安装的文件并恢复备份。
-
-[游戏验收与性能基线](docs/GAME-VALIDATION.md) 提供画面对比、连续换图、稳定性测试及进程采样工具。[2026-10-10 性能实测](docs/PERFORMANCE-2026-10-10.md) 记录同一 L4N 回放场景的配对结果、原始数据哈希及适用范围；不能外推为所有地图或硬件的提升保证。
-
-自动测试验证编译和诊断逻辑，不代表已完成游戏实测。
 
 ## License
 

@@ -19,15 +19,12 @@ class Publishing(unittest.TestCase):
         self.addCleanup(os.chdir, Path.cwd())
         os.chdir(directory.name)
         Path("assets").mkdir()
-        for name in ("full.zip", "update.zip"):
-            path = Path("assets") / name
-            path.write_bytes(b"archive " + name.encode("ascii"))
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            Path(str(path) + ".sha256").write_text(f"{digest}  {name}\n", encoding="ascii")
+        self.write_package("full.zip")
         self.enterContext(patch.dict(os.environ, {
             "RELEASE_TAG": "tag", "GITHUB_REPOSITORY": "owner/repo",
             "UPSTREAM_COMMIT": "a" * 40, "RECIPE_COMMIT": "b" * 40,
             "RECIPE_DIGEST": "c" * 64, "GITHUB_RUN_ID": "123",
+            "THINFLEX_TEST": "false", "RELEASE_TITLE": "v1.0.6", "ARCHIVE_NAME": "full.zip",
         }))
         self.existing = None
         self.other_releases = []
@@ -37,7 +34,7 @@ class Publishing(unittest.TestCase):
         self.run = self.enterContext(patch.object(publish_release.subprocess, "run", side_effect=self.run_command))
 
     def read_api(self, path):
-        if path == "repos/owner/repo/releases/tags/tag":
+        if path == "repos/owner/repo/releases/tags/" + os.environ["RELEASE_TAG"]:
             # GitHub's tag endpoint does not expose an unpublished draft tag.
             if self.existing is None or self.existing["draft"]:
                 raise HTTPError(path, 404, "missing", {}, None)
@@ -45,12 +42,25 @@ class Publishing(unittest.TestCase):
         if path.startswith("repos/owner/repo/releases?per_page=100&page="):
             page = int(path.rsplit("=", 1)[1])
             releases = self.other_releases + (
-                [] if self.existing is None else [dict(self.existing, tag_name="tag")])
+                [] if self.existing is None else [dict(self.existing, tag_name=os.environ["RELEASE_TAG"])])
             return releases[(page - 1) * 100:page * 100]
         if path.startswith("repos/owner/repo/releases/42/assets?per_page=100&page="):
             page = int(path.rsplit("=", 1)[1])
             return self.assets[(page - 1) * 100:page * 100]
         raise AssertionError(f"Unexpected API call: {path}")
+
+    def write_package(self, name):
+        path = Path("assets") / name
+        path.write_bytes(b"archive " + name.encode("ascii"))
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        Path(str(path) + ".sha256").write_text(f"{digest}  {name}\n", encoding="ascii")
+
+    def enable_thinflex(self):
+        os.environ.update({
+            "THINFLEX_TEST": "true", "RELEASE_TAG": "v1.0.6-thinflex-test-build123",
+            "RELEASE_TITLE": "v1.0.6 ThinFlex 测试版",
+            "ARCHIVE_NAME": "full.zip",
+        })
 
     def add_asset(self, name, digest=True, content=None):
         data = (Path("assets") / name).read_bytes() if content is None else content
@@ -88,9 +98,113 @@ class Publishing(unittest.TestCase):
         commands = self.release_commands()
         self.assertEqual([command[2] for command in commands], ["create", "upload", "edit"])
         self.assertFalse(any("--clobber" in command for command in commands))
+        for command in (commands[0], commands[2]):
+            self.assertIn("--prerelease", command)
+            self.assertIn("--latest=false", command)
         notes = Path("notes.md").read_text(encoding="utf-8")
         self.assertIn("Recipe digest: " + "c" * 64, notes)
+        self.assertIn("Release channel: nightly", notes)
+        self.assertNotIn("Experimental recipe digest:", notes)
         self.assertIn("keyou91", notes)
+        self.assertIn("tools/thinflex/ThinFlexPatch.exe", notes)
+        self.assertEqual({asset["name"] for asset in self.assets}, {"full.zip", "full.zip.sha256"})
+
+    def test_thinflex_publishes_one_full_package_with_explicit_limitations(self):
+        self.enable_thinflex()
+        publish_release.publish()
+        commands = self.release_commands()
+        self.assertEqual([command[2] for command in commands], ["create", "upload", "edit"])
+        self.assertEqual({asset["name"] for asset in self.assets}, {"full.zip", "full.zip.sha256"})
+        for command in (commands[0], commands[2]):
+            self.assertIn("--prerelease", command)
+            self.assertIn("--latest=false", command)
+            self.assertEqual(command[command.index("--title") + 1], "v1.0.6 ThinFlex 测试版")
+        notes = Path("notes.md").read_text(encoding="utf-8")
+        self.assertIn("Release channel: thinflex-test", notes.splitlines())
+        self.assertIn("Experimental recipe digest: " + "c" * 64, notes.splitlines())
+        self.assertNotIn("Recipe digest: " + "c" * 64, notes.splitlines())
+        for statement in ("解压或更新 Bridge 不会自动应用 ThinFlex 引擎补丁", "Windows 工具，无需安装 Python",
+                          "tools/thinflex/ThinFlexPatch.exe", "只提供一个完整 ZIP",
+                          "`create`", "`verify`", "工具不会自动安装", "未知或已修改版本拒绝处理",
+                          "10000 项扩为 65536 项", "2 MiB", "原数字签名失效",
+                          "v1.0.10 ThinFlex 修复有效", "2026-10-10", "反馈未提供游玩时长及完整模型范围",
+                          "4.57%", "33.09%", "10.14%", "7.89%", "p99 帧时间同时增加 **3.48%**",
+                          "性能测试未安装 ThinFlex", "PERFORMANCE-2026-10-10.md",
+                          "不分发 Valve 游戏 DLL 或玩家私有 dump",
+                          "3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85"):
+            self.assertIn(statement, notes)
+        self.assertLess(notes.index("解压或更新 Bridge 不会自动应用 ThinFlex 引擎补丁"), notes.index("Upstream commit:"))
+        self.assertNotIn("update 包", notes)
+        self.assertNotIn("独立工具 ZIP", notes)
+
+    def test_thinflex_rejects_missing_unexpected_or_misnamed_package(self):
+        self.enable_thinflex()
+        Path("assets/full.zip").unlink()
+        with self.assertRaisesRegex(ValueError, "exactly the named"):
+            publish_release.publish()
+        self.write_package("other.zip")
+        with self.assertRaisesRegex(ValueError, "exactly the named"):
+            publish_release.publish()
+        self.write_package("full.zip")
+        with self.assertRaisesRegex(ValueError, "exactly the named"):
+            publish_release.publish()
+        self.api.assert_not_called()
+        self.run.assert_not_called()
+
+    def test_thinflex_rejects_invalid_identity_before_network_calls(self):
+        self.enable_thinflex()
+        for key, value in (("RELEASE_TAG", "v1.0.6-nightly-build123"),
+                           ("RELEASE_TITLE", "v1.0.6 ThinFlex"),
+                           ("RELEASE_TITLE", "v1.0.6 测试版"),
+                           ("ARCHIVE_NAME", "../full.zip"),
+                           ("ARCHIVE_NAME", "..\\full.zip"),
+                           ("ARCHIVE_NAME", "wrong.zip"),
+                           ("ARCHIVE_NAME", "")):
+            with self.subTest(key=key, value=value), patch.dict(os.environ, {key: value}):
+                with self.assertRaises(ValueError):
+                    publish_release.publish()
+        self.api.assert_not_called()
+        self.run.assert_not_called()
+
+    def test_nightly_rejects_thinflex_tag_or_extra_package(self):
+        os.environ["RELEASE_TAG"] = "v1.0.6-thinflex-test-build123"
+        with self.assertRaisesRegex(ValueError, "experimental release channel"):
+            publish_release.publish()
+        os.environ["RELEASE_TAG"] = "tag"
+        self.write_package("thinflex-tool.zip")
+        with self.assertRaisesRegex(ValueError, "exactly the named"):
+            publish_release.publish()
+        self.api.assert_not_called()
+        self.run.assert_not_called()
+
+    def test_thinflex_rejects_bad_full_checksum_before_network_calls(self):
+        self.enable_thinflex()
+        Path("assets/full.zip.sha256").write_text("0" * 64 + "  full.zip\n", encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "Invalid archive checksum"):
+            publish_release.publish()
+        self.api.assert_not_called()
+        self.run.assert_not_called()
+
+    def test_thinflex_draft_resume_verifies_and_reuses_existing_full_package(self):
+        self.enable_thinflex()
+        self.existing = {"id": 42, "draft": True}
+        self.add_asset("full.zip")
+        publish_release.publish()
+        commands = self.release_commands()
+        self.assertEqual([command[2] for command in commands], ["upload", "edit"])
+        self.assertEqual([Path(name).name for name in commands[0][4:]],
+                         ["full.zip.sha256"])
+        self.assertEqual(len(self.assets), 2)
+        self.assertFalse(self.existing["draft"])
+
+    def test_thinflex_draft_with_unexpected_attachment_is_not_published(self):
+        self.enable_thinflex()
+        self.existing = {"id": 42, "draft": True}
+        self.add_asset("studiorender.dll", content=b"must not publish")
+        with self.assertRaisesRegex(RuntimeError, "Unexpected draft attachment"):
+            publish_release.publish()
+        self.run.assert_not_called()
+        self.assertTrue(self.existing["draft"])
 
     def test_published_collision_refused(self):
         self.existing = {"id": 42, "draft": False}
@@ -172,7 +286,7 @@ class Publishing(unittest.TestCase):
     def test_partial_upload_failure_resumes_only_missing_assets(self):
         def fail_upload(command, **kwargs):
             if command[:3] == ["gh", "release", "upload"]:
-                for filename in command[4:6]:
+                for filename in command[4:5]:
                     self.add_asset(Path(filename).name)
                 raise subprocess.CalledProcessError(1, command)
             return self.run_command(command, **kwargs)
@@ -181,15 +295,15 @@ class Publishing(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             publish_release.publish()
         self.assertTrue(self.existing["draft"])
-        self.assertEqual(len(self.assets), 2)
+        self.assertEqual(len(self.assets), 1)
         self.run.reset_mock()
         self.run.side_effect = self.run_command
         publish_release.publish()
         commands = self.release_commands()
         self.assertEqual([command[2] for command in commands], ["upload", "edit"])
         self.assertEqual([Path(name).name for name in commands[0][4:]],
-                         ["update.zip", "update.zip.sha256"])
-        self.assertEqual(len(self.assets), 4)
+                         ["full.zip.sha256"])
+        self.assertEqual(len(self.assets), 2)
         self.assertFalse(self.existing["draft"])
 
     def test_edit_failure_resumes_without_uploading_again(self):
@@ -201,13 +315,13 @@ class Publishing(unittest.TestCase):
         self.run.side_effect = fail_edit
         with self.assertRaises(subprocess.CalledProcessError):
             publish_release.publish()
-        self.assertEqual(len(self.assets), 4)
+        self.assertEqual(len(self.assets), 2)
         self.assertTrue(self.existing["draft"])
         self.run.reset_mock()
         self.run.side_effect = self.run_command
         publish_release.publish()
         self.assertEqual([command[2] for command in self.release_commands()], ["edit"])
-        self.assertEqual(len(self.assets), 4)
+        self.assertEqual(len(self.assets), 2)
         self.assertFalse(self.existing["draft"])
 
     def test_missing_digest_downloads_and_verifies_actual_content(self):
@@ -217,8 +331,7 @@ class Publishing(unittest.TestCase):
         publish_release.publish()
         downloads = [call.args[0] for call in self.run.call_args_list if call.args[0][1] == "api"]
         self.assertEqual(len(downloads), 2)
-        upload = self.release_commands()[0]
-        self.assertEqual([Path(name).name for name in upload[4:]], ["update.zip", "update.zip.sha256"])
+        self.assertEqual([command[2] for command in self.release_commands()], ["edit"])
 
     def test_same_size_different_content_is_refused_with_or_without_digest(self):
         self.existing = {"id": 42, "draft": True}
@@ -226,8 +339,8 @@ class Publishing(unittest.TestCase):
             with self.subTest(digest=digest):
                 self.assets.clear()
                 self.run.reset_mock()
-                original = Path("assets/update.zip.sha256").read_bytes()
-                self.add_asset("update.zip.sha256", digest=digest, content=b"x" * len(original))
+                original = Path("assets/full.zip.sha256").read_bytes()
+                self.add_asset("full.zip.sha256", digest=digest, content=b"x" * len(original))
                 with self.assertRaisesRegex(RuntimeError, "content differs"):
                     publish_release.publish()
                 self.assertEqual(self.release_commands(), [])
@@ -266,15 +379,15 @@ class Publishing(unittest.TestCase):
         self.run.assert_not_called()
         self.assertTrue(self.existing["draft"])
 
-    def test_asset_list_pagination_finds_existing_attachment(self):
+    def test_asset_list_pagination_rejects_unexpected_attachments_before_publication(self):
         self.existing = {"id": 42, "draft": True}
         for index in range(100):
             self.add_asset(f"unrelated-{index}.txt", content=b"unrelated")
         self.add_asset("full.zip")
-        publish_release.publish()
-        uploaded = [Path(name).name for name in self.release_commands()[0][4:]]
-        self.assertNotIn("full.zip", uploaded)
-        self.assertEqual(len(uploaded), 3)
+        with self.assertRaisesRegex(RuntimeError, "Unexpected draft attachment"):
+            publish_release.publish()
+        self.run.assert_not_called()
+        self.assertTrue(self.existing["draft"])
         self.api.assert_any_call("repos/owner/repo/releases/42/assets?per_page=100&page=2")
 
 
