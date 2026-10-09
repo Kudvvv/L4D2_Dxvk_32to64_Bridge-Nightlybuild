@@ -11,6 +11,8 @@ import subprocess
 import urllib.request
 import zipfile
 
+from separate_l4n_release import separate
+
 
 def api(repository, path):
     return json.loads(subprocess.check_output(
@@ -36,7 +38,7 @@ def publish():
     if len(matches) != 1 or not matches[0]['draft'] or not matches[0]['prerelease']:
         raise ValueError('The matching experimental release must already exist as a draft')
     release = matches[0]
-    if any(asset['name'] not in names | {'SHA256SUMS.txt'} for asset in release['assets']):
+    if any(asset['name'] not in names | {f'l4d2-bridge-l4n-v{version}.zip', 'SHA256SUMS.txt'} for asset in release['assets']):
         raise ValueError('Refusing to alter a draft with unrelated assets')
     reference = api(repository, f'git/ref/tags/{tag}')['object']
     if reference['type'] == 'tag':
@@ -67,14 +69,16 @@ def publish():
             run = api(repository, f'actions/runs/{ci["id"]}')
             if run['conclusion'] != 'success' or run['head_sha'] != tagged_commit:
                 raise ValueError('The package must come from successful native CI for this tag')
-    checksum_file = output / 'SHA256SUMS.txt'
-    checksum_file.write_text(''.join(f'{checksums[name]}  {name}\n' for name in sorted(names)))
+    # ZIP-only downloads can bundle L4N; Release assets always separate it.
+    artifacts = separate([output / name for name in sorted(names)], output / 'release', version)
+    checksum_file = output / 'release/SHA256SUMS.txt'
+    checksum_file.write_text(''.join(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n' for path in sorted(artifacts)))
     subprocess.run(['gh', 'release', 'upload', tag, '--repo', repository, '--clobber',
-        *[str(output / name) for name in sorted(names)], str(checksum_file)], check=True)
+        *[str(path) for path in artifacts], str(checksum_file)], check=True)
     uploaded = api(repository, f'releases/{release["id"]}')
-    expected_assets = {name: output / name for name in names | {'SHA256SUMS.txt'}}
+    expected_assets = {path.name: path for path in [*artifacts, checksum_file]}
     if len(uploaded['assets']) != len(expected_assets):
-        raise ValueError('The complete three-asset release was not uploaded')
+        raise ValueError('The complete independent-component release was not uploaded')
     for asset in uploaded['assets']:
         file = expected_assets[asset['name']]
         if asset['state'] != 'uploaded' or asset['size'] != file.stat().st_size:
