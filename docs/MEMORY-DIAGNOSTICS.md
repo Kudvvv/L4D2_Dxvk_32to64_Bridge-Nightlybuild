@@ -8,7 +8,7 @@
 
 ## 安装与复测
 
-当前 Nightly 只提供完整包：关闭游戏及 Host，按 [README](../README.md) 先从临时解压目录移除会覆盖已有配置的文件，再备份并同时更新 bin/d3d9.dll 与 bin/.l4d2bridge/L4D2Bridge64.exe，保留现有后端和 bridge.conf。默认移除 -vulkan；需要该启动项时自行改名客户端并移到 bin/dxvk_d3d9.dll。本文其他首次实测数据属于历史配置，不能视为当前 GPLALL 组合实测。保持 logLevel=Info、logApiCalls=False、logServerCommands=False。
+当前 Nightly 只提供完整包：关闭游戏及 Host，备份原有客户端、Host、配置和 bin/studiorender.dll，按 [README](../README.md) 从临时解压目录移除会覆盖已有配置或自定义后端的文件，再同时更新 bin/d3d9.dll 与 bin/.l4d2bridge/L4D2Bridge64.exe。包内 bin/studiorender.dll 已包含 ThinFlex 修复；先核对已安装 DLL 的 SHA-256，仅在匹配支持的原版时替换，已修复版本可保留，未知版本应从临时解压目录移除此 DLL、仅更新 Bridge。已打补丁的玩家须保留最初原版备份，不能用修复文件覆盖它。默认移除 -vulkan；需要该启动项时自行改名客户端并移到 bin/dxvk_d3d9.dll。本文其他首次实测数据属于历史配置；当前三项优化的对照见[性能报告](PERFORMANCE-2026-10-10.md)，该测试没有安装 ThinFlex。保持 logLevel=Info、logApiCalls=False、logServerCommands=False。
 
 从 Steam 用原来的 Mod 和同一地图再次进图。尝试正常游玩并退出后重新进图一次，检查贴图是否正常、是否崩溃及帧率。请提供 l4d2-memory.log、bridge32.log、bridge64.log，说明能否进图和实际表现；如有崩溃 dump 或报错窗口也一并提供。
 
@@ -28,4 +28,4 @@ vertex_bytes/count、index_bytes/count 是顶点/索引缓冲 shadow，包括使
 
 Windows x86 自动测试覆盖：映射回收后内容恢复、活动锁和嵌套锁保持指针有效、128 个小映射的预算控制、资源销毁时清零计数，以及原来的诊断分配失败路径。通过这些测试不能替代 L4D2 实测。
 
-`scripts/test_memory_sampling_async.ps1` 另外在 x86/x64 的真实 DLL 中测试排队/执行中卸载、请求文本所有权、五秒最小间隔、忙时合并、调度失败同步回退，以及与后台任务并发时强制失败记录仍同步刷新且不调用 C++ new。它使用真实 Windows 线程池及模块引用 API，并以固定容量测试日志接收器验证字段。游戏 low 帧收益仍需同场景对照。
+`scripts/test_memory_sampling_async.ps1` 另外在 x86/x64 的真实 DLL 中测试排队/执行中卸载、请求文本所有权、五秒最小间隔、忙时合并、调度失败同步回退，以及与后台任务并发时强制失败记录仍同步刷新且不调用 C++ new。它使用真实 Windows 线程池及模块引用 API，并以固定容量测试日志接收器验证字段。[性能报告](PERFORMANCE-2026-10-10.md) 记录了包含此改动的三项优化合并后、三对固定 L4N 回放的实测；这些结果不能单独归因于内存采样器，也不代表已安装 ThinFlex 时的性能。

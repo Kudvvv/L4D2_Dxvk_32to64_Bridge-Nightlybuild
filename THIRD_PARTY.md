@@ -38,7 +38,7 @@
 - Tracy 来源：https://github.com/wolfpld/tracy
 - Copyright Bartosz Taudul；BSD-3-Clause 许可。
 - 完整条款及上游其他组件声明见 [licenses/Bridge-third-party.txt](licenses/Bridge-third-party.txt)。
-- 这些许可随完整包和客户端更新包一并分发，不能以根目录 MIT 许可替代。
+- 这些许可随完整包一并分发，不能以根目录 MIT 许可替代。
 
 ## TXVK 参考与游戏平台
 
@@ -47,6 +47,13 @@ TXVK（https://github.com/tianxiaols/TXVK，作者 tianxiaols）的公开文档�
 TXVK 自身的 [LICENSE](https://github.com/tianxiaols/TXVK/blob/main/LICENSE) 为 MIT，保留其 `Copyright (c) 2026 TXVK contributors` 归属。它随附的 Bridge、DXVK、Detours 仍遵循相应上游许可；参考 TXVK 不会将这些代码的版权归到本项目名下。
 
 L4D2 与 Steam 属于 Valve，游戏及平台不包含在本项目的授权范围内。显卡驱动亦遵循各厂商自己的许可。
+
+## Valve 游戏引擎与 ThinFlex 修复
+
+- 完整包中的 `bin/studiorender.dll` 来自维护者本机的匹配 L4D2 游戏文件，按用户要求应用限定 ThinFlex 缓存修复；原引擎代码及版权归 Valve。
+- 原版 SHA-256：`3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85`；修复版：`03964dedcf8b7f4ebde24cd3d0738873d37c075a7a9b313dad001bb937f9d1b6`。包内 `ENGINE-PATCH.json` 记录具体改动，修改后原数字签名失效。
+- 根目录 MIT 许可只覆盖本项目相应独立实现，不为 Valve 引擎 DLL 改变许可。Valve 公开 SDK 在分析中仅用于常量参考，不构成对整个游戏 DLL 的 MIT 授权说明。
+- 归属文字随包保留于 [licenses/Valve-engine-NOTICE.txt](licenses/Valve-engine-NOTICE.txt)。玩家私有日志与转储不随包分发。
 
 ## DXVK-GPLALL 后端变体
 

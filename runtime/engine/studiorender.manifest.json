@@ -1,0 +1,96 @@
+{
+  "format_version": 1,
+  "warning": "EXPERIMENTAL ENGINE PATCH: this is not a Bridge DLL; not yet game validated. The modified copy's original Authenticode signature is no longer valid. Original certificate/overlay bytes are preserved; no files are installed.",
+  "scope": "Thin flex pool only; 32-byte entries; legal indices 0..65535; no Bridge or game installation changes",
+  "original_sha256": "3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85",
+  "output_sha256": "03964dedcf8b7f4ebde24cd3d0738873d37c075a7a9b313dad001bb937f9d1b6",
+  "original_size": 634672,
+  "output_size": 634672,
+  "pe_timestamp": 1782844886,
+  "pool_rva": 4534272,
+  "pool_entries": 65536,
+  "pool_entry_bytes": 32,
+  "cache_relative_entry_offset": 118838,
+  "authenticode_signature_valid_after_patch": false,
+  "certificate_and_overlay_bytes_preserved": true,
+  "game_validated": false,
+  "changes": [
+    {
+      "label": "NumberOfSections",
+      "file_offset": 238,
+      "length": 2,
+      "before_hex": "0400",
+      "after_hex": "0500"
+    },
+    {
+      "label": "SizeOfUninitializedData",
+      "file_offset": 268,
+      "length": 4,
+      "before_hex": "00000000",
+      "after_hex": "00002000"
+    },
+    {
+      "label": "SizeOfImage",
+      "file_offset": 312,
+      "length": 4,
+      "before_hex": "00304500",
+      "after_hex": "00306500"
+    },
+    {
+      "label": "PE CheckSum (not an Authenticode signature)",
+      "file_offset": 320,
+      "length": 4,
+      "before_hex": "1ee00900",
+      "after_hex": "2cf60900"
+    },
+    {
+      "label": ".cflex zero-filled RW section",
+      "file_offset": 640,
+      "length": 40,
+      "before_hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "after_hex": "2e63666c6578000000002000003045000000000000000000000000000000000000000000800000c0"
+    },
+    {
+      "label": "thin pool limit: 10000 to 65536",
+      "file_offset": 1161,
+      "length": 4,
+      "before_hex": "10270000",
+      "after_hex": "00000100"
+    },
+    {
+      "label": "thin pool address at RVA 0x10cd",
+      "file_offset": 1230,
+      "length": 4,
+      "before_hex": "9a3a0000",
+      "after_hex": "36d00100"
+    },
+    {
+      "label": "thin pool address at RVA 0x540b",
+      "file_offset": 18444,
+      "length": 4,
+      "before_hex": "9a3a0000",
+      "after_hex": "36d00100"
+    },
+    {
+      "label": "thin pool address at RVA 0xded1",
+      "file_offset": 53970,
+      "length": 4,
+      "before_hex": "9a3a0000",
+      "after_hex": "36d00100"
+    },
+    {
+      "label": "thin pool address at RVA 0x11083",
+      "file_offset": 66692,
+      "length": 4,
+      "before_hex": "9a3a0000",
+      "after_hex": "36d00100"
+    },
+    {
+      "label": "thin pool address at RVA 0x112d7",
+      "file_offset": 67288,
+      "length": 4,
+      "before_hex": "9a3a0000",
+      "after_hex": "36d00100"
+    }
+  ]
+}

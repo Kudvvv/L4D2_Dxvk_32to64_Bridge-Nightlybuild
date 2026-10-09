@@ -1,6 +1,6 @@
 # 游戏验收与性能基线
 
-状态：流程和工具已提供，尚无本批更新的游戏实测结果。CI 的 volume 测试执行真实 lock/unlock 源码，但模拟传输与后端，不替代画面对比。偏色定位与原修复 credits：[keyou91 / PR #3](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/pull/3)。
+状态：2026-10-10 已完成三对固定 L4N 回放的性能对照，详见 [测量结果与限制](PERFORMANCE-2026-10-10.md)。该对照保留原始 `studiorender.dll`，没有安装 ThinFlex；用户另反馈 v1.0.10 ThinFlex 修复有效，二者证据范围分开记录。CI 的 volume 测试执行真实 lock/unlock 源码，但模拟传输与后端，不替代画面对比。偏色定位与原修复 credits：[keyou91 / PR #3](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/pull/3)。
 
 2026-10-08 的候选版本已尝试启动，受到 Source 单实例限制，未进入渲染阶段；原有配对文件已恢复。详情及独立 CPU 微基准见 [资源清理与传输优化验证](RUNTIME-RELIABILITY.md)。该次尝试不计为游戏验收通过。
 
@@ -20,7 +20,7 @@
 | 稳定性 | 至少游戏 30 分钟后正常退出 | 无崩溃，Host 正常退出；内存趋势有记录 | 两侧日志及进程 CSV |
 | 回退 | 同时恢复备份的客户端与 Host | 能正常进入同一场景 | 回退版本和结果 |
 
-安装与升级均使用唯一的完整 ZIP，先解压到临时目录。已有用户先从临时目录移除包内 `bin/.l4d2bridge/bridge.conf`，避免覆盖游戏中的配置；自行修改过后端时也从临时目录移除对应后端 DLL。备份后合并到游戏根目录，同时更新 `bin/d3d9.dll` 和 `bin/.l4d2bridge` 中的 Host。默认移除 `-vulkan`；需要该启动项时自行把客户端改名为 `dxvk_d3d9.dll`，文件仍留在 `bin`。包内 `tools/thinflex` 仅提供修复工具，不自动应用引擎补丁。完整安装步骤见 [README](../README.md)。
+安装与升级均使用唯一的完整 ZIP。先退出游戏和 Host、备份，再解压到临时目录；已有用户从临时目录移除包内 `bin/.l4d2bridge/bridge.conf`，自行修改过后端时也移除对应后端 DLL，避免覆盖现有配置。包内直接提供修复后的 `bin/studiorender.dll`，无需运行工具：按 [README](../README.md) 核对安装目录的原版或已修复版哈希，未知版本先从临时目录移除该 DLL。已修复用户继续保留最初的原始备份。将准备好的文件合并到游戏根目录，配对更新客户端和 Host。默认移除 `-vulkan`；需要该启动项时自行把客户端改名为 `dxvk_d3d9.dll`，文件仍留在 `bin`。性能复测须记录是否安装包内引擎修复及实际 DLL 哈希。
 
 ## 采样
 

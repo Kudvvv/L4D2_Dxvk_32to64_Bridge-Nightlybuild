@@ -4,7 +4,7 @@ from pathlib import Path
 import shutil
 import tempfile
 from archive_release import archive
-from package_thinflex_test import read_tool_directory
+from engine_payload import staged_engine_files
 
 REQUIRED = ("bin/d3d9.dll", "bin/.l4d2bridge/L4D2Bridge64.exe",
             "bin/.l4d2bridge/d3d9vk_x64.dll", "bin/.l4d2bridge/bridge.conf",
@@ -21,7 +21,7 @@ def runtime_archive(source, output):
     licenses = sorted((source / "licenses").glob("*.txt"))
     if not licenses:
         raise ValueError("Missing third-party licenses")
-    tool_files = read_tool_directory(source / "tools/thinflex")
+    engine_files = staged_engine_files(source)
     with tempfile.TemporaryDirectory() as temporary:
         stage=Path(temporary) / "runtime"
         stage.mkdir()
@@ -31,17 +31,19 @@ def runtime_archive(source, output):
             shutil.copy2(source / name, destination)
         if (source / "VERSION").is_file():
             shutil.copy2(source / "VERSION", stage / "VERSION")
-        for name, data in tool_files.items():
-            destination = stage / "tools/thinflex" / name
+        for name, data in engine_files.items():
+            destination = stage / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
         instruction = (
             "完整包：先退出游戏及 Host，备份现有安装，再将本包解压到临时目录。\n"
+            "本包已含 ThinFlex 修复后的 bin/studiorender.dll，无需运行修复工具；适用版本及原文件 SHA-256 见 ENGINE-PATCH.json。\n"
+            "覆盖前单独备份原始 bin/studiorender.dll。已修复的用户保留原始备份，不要把它替换成修复版；游戏更新后文件版本不同则先跳过该 DLL。\n"
             "升级已有安装时，先从临时目录移除 bin/.l4d2bridge/bridge.conf；使用自定义后端的用户同时移除临时目录中的 bin/.l4d2bridge/d3d9vk_x64.dll。\n"
             "然后将临时目录内容合并到游戏根目录，客户端位于 bin/d3d9.dll，保留 bin/.l4d2bridge 结构。\n"
             "首次安装可保留包内默认配置和 GPLALL 后端。已有 dxvk.conf、bridge.conf、ReShade 和 retention DB 应予保留。\n"
             "客户端和 Host 必须配对更新，故障回退时也同时恢复，不要混用。\n"
-            "ThinFlex 修复工具和说明位于 tools/thinflex；它不会自动修改游戏引擎文件，需要时按该目录 README.txt 操作。\n")
+            "回退 ThinFlex 时恢复原始 studiorender.dll，相关来源说明见 licenses/Valve-engine-NOTICE.txt。\n")
         (stage / "README.txt").write_text(
             "L4D2 Bridge Nightly\n\n" + instruction +
             "默认移除 -vulkan 启动项。需要 -vulkan 时，自行把客户端改名为 dxvk_d3d9.dll ，文件仍留在 bin。\n"

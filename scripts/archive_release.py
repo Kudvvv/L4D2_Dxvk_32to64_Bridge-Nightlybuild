@@ -11,7 +11,7 @@ def archive(source, output):
     files = sorted(p for p in source.rglob("*") if p.is_file())
     if not files:
         raise ValueError("Source directory contains no files")
-    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as target:
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as target:
         for path in files:
             if path.is_symlink():
                 raise ValueError("Symlinks are not supported")

@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import shutil
 import struct
+from engine_payload import source_engine_files
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,6 +25,7 @@ def machine(path):
 
 
 def package(source, dxvk, output):
+    engine_files = source_engine_files()
     client_output = output.parent / "l4d2-client-only"
     inputs = {
         "bin/d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
@@ -38,6 +40,10 @@ def package(source, dxvk, output):
         if destination.exists():
             raise FileExistsError(f"Output already exists; preserve or move it first: {destination}")
     output.mkdir(parents=True, exist_ok=False)
+    for relative, data in engine_files.items():
+        destination = output / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
     hashes = {}
     for relative, (path, _) in inputs.items():
         destination = output / relative
@@ -66,7 +72,7 @@ def package(source, dxvk, output):
     shutil.copytree(ROOT / "docs", output / "docs")
     shutil.copytree(ROOT / "patches", output / "patches")
     licenses = output / "licenses"
-    licenses.mkdir()
+    licenses.mkdir(exist_ok=True)
     shutil.copy2(source / "bridge/LICENSE-MIT", licenses / "Bridge-MIT.txt")
     shutil.copy2(source / "bridge/ThirdPartyLicenses.txt", licenses / "Bridge-third-party.txt")
     shutil.copy2(ROOT / "licenses/DXVK-LICENSE.txt", licenses / "DXVK-LICENSE.txt")

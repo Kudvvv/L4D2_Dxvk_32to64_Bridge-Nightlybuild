@@ -106,7 +106,9 @@ class Publishing(unittest.TestCase):
         self.assertIn("Release channel: nightly", notes)
         self.assertNotIn("Experimental recipe digest:", notes)
         self.assertIn("keyou91", notes)
-        self.assertIn("tools/thinflex/ThinFlexPatch.exe", notes)
+        self.assertIn("已修复的 `bin/studiorender.dll`", notes)
+        self.assertIn("ENGINE-PATCH.json", notes)
+        self.assertNotIn("tools/thinflex/ThinFlexPatch.exe", notes)
         self.assertEqual({asset["name"] for asset in self.assets}, {"full.zip", "full.zip.sha256"})
 
     def test_thinflex_publishes_one_full_package_with_explicit_limitations(self):
@@ -123,17 +125,21 @@ class Publishing(unittest.TestCase):
         self.assertIn("Release channel: thinflex-test", notes.splitlines())
         self.assertIn("Experimental recipe digest: " + "c" * 64, notes.splitlines())
         self.assertNotIn("Recipe digest: " + "c" * 64, notes.splitlines())
-        for statement in ("解压或更新 Bridge 不会自动应用 ThinFlex 引擎补丁", "Windows 工具，无需安装 Python",
-                          "tools/thinflex/ThinFlexPatch.exe", "只提供一个完整 ZIP",
-                          "`create`", "`verify`", "工具不会自动安装", "未知或已修改版本拒绝处理",
+        for statement in ("已修复的 `bin/studiorender.dll`", "复制文件即可应用 ThinFlex 修复",
+                          "无需运行补丁工具或安装 Python", "只提供一个完整 ZIP", "玩家包不包含补丁工具",
+                          "须保留最初原版 DLL 备份", "未知版本应从临时解压目录移除 `bin/studiorender.dll`，仅更新 Bridge",
                           "10000 项扩为 65536 项", "2 MiB", "原数字签名失效",
                           "v1.0.10 ThinFlex 修复有效", "2026-10-10", "反馈未提供游玩时长及完整模型范围",
                           "4.57%", "33.09%", "10.14%", "7.89%", "p99 帧时间同时增加 **3.48%**",
                           "性能测试未安装 ThinFlex", "PERFORMANCE-2026-10-10.md",
-                          "不分发 Valve 游戏 DLL 或玩家私有 dump",
-                          "3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85"):
+                          "引擎 DLL 归属 Valve，不适用项目根目录 MIT 许可", "licenses/Valve-engine-NOTICE.txt",
+                          "ENGINE-PATCH.json", "附件不包含玩家私有 dump",
+                          "3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85",
+                          "03964dedcf8b7f4ebde24cd3d0738873d37c075a7a9b313dad001bb937f9d1b6"):
             self.assertIn(statement, notes)
-        self.assertLess(notes.index("解压或更新 Bridge 不会自动应用 ThinFlex 引擎补丁"), notes.index("Upstream commit:"))
+        self.assertLess(notes.index("复制文件即可应用 ThinFlex 修复"), notes.index("Upstream commit:"))
+        self.assertNotIn("tools/thinflex", notes)
+        self.assertNotIn("工具 BUILD.json", notes)
         self.assertNotIn("update 包", notes)
         self.assertNotIn("独立工具 ZIP", notes)
 

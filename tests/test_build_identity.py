@@ -22,3 +22,8 @@ class Identity(unittest.TestCase):
             before=recipe_digest(root)
             (root/"docs/THINFLEX-TEST-README.txt").write_bytes(b"installation correction\n")
             self.assertNotEqual(before,recipe_digest(root))
+            before=recipe_digest(root); (root/"runtime").mkdir()
+            binary=root/"runtime/studiorender.dll"
+            binary.write_bytes(b"MZ\0\r\n"); self.assertNotEqual(before,recipe_digest(root))
+            before=recipe_digest(root)
+            binary.write_bytes(b"MZ\0\n"); self.assertNotEqual(before,recipe_digest(root))

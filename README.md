@@ -4,18 +4,23 @@
 
 ## 下载与安装（先看这里）
 
-**[前往 Releases 下载完整包](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**。每次发布只提供一个 `l4d2-bridge-*.zip`，另附 `.sha256` 校验文件；不再区分 update 包，也不用另下载 ThinFlex 工具。
+**[前往 Releases 下载完整包](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**。每次发布只提供一个 `l4d2-bridge-*.zip`，另附 `.sha256` 校验文件。包内已包含修复后的 `bin/studiorender.dll`，无需运行补丁工具或安装 Python。
 
-1. **退出游戏和 Bridge Host，备份现有文件。** 将完整 ZIP 解压到临时目录。
+1. **退出游戏和 Bridge Host，备份现有文件。** 备份原客户端、Host、配置和 `bin/studiorender.dll`，将完整 ZIP 解压到临时目录。若已安装 ThinFlex 修复，继续保留最初的原始 DLL 备份，勿用修复版覆盖它。
 2. **已有用户先保留配置：** 从临时解压目录移除包内 `bin/.l4d2bridge/bridge.conf`，保留游戏里正在使用的配置。若自行修改过后端，同样从临时目录移除 `bin/.l4d2bridge/d3d9vk_x64.dll`，避免覆盖。首次安装跳过此步；已有 `dxvk.conf`、ReShade 和 DB 不在包内，不受覆盖。
-3. **安装 Bridge：** 将准备好的内容合并到游戏根目录（`left4dead2.exe` 所在目录），同时更新客户端和 Host。客户端位于 `bin/d3d9.dll`；配套 x64 Host、后端和配置位于 `bin/.l4d2bridge`。默认移除 `-vulkan` 启动项。
-4. **需要 ThinFlex 崩溃修复：** 工具已在包内 `tools/thinflex/ThinFlexPatch.exe`，无需安装 Python。按 [工具说明](docs/THINFLEX-TEST-README.txt) 或包内 `tools/thinflex/README.txt` 生成副本、校验并备份安装。**仅解压完整包不会自动修改 `studiorender.dll`。** 已安装并验证有效的 ThinFlex 修复可保留，无需重复应用。
+3. **核对游戏引擎 DLL 版本：** 用 PowerShell 的 `Get-FileHash '你的游戏目录\bin\studiorender.dll' -Algorithm SHA256` 与下表比较。匹配原版时可覆盖；已是修复版时保留现有文件和原始备份。**若是其他哈希，先从临时目录移除 `bin/studiorender.dll`，只更新 Bridge，不覆盖未知游戏版本。**
+4. **覆盖安装：** 将准备好的内容合并到游戏根目录（`left4dead2.exe` 所在目录），同时更新客户端和 Host；匹配版本的 `studiorender.dll` 随文件覆盖即应用 ThinFlex 修复。客户端位于 `bin/d3d9.dll`；配套 x64 Host、后端和配置位于 `bin/.l4d2bridge`。默认移除 `-vulkan` 启动项。
 
-ThinFlex 修复已收到用户复测有效反馈，仍限定于说明中精确匹配的原始 DLL；其他版本会拒绝处理。游戏更新后应重新核对，不能覆盖未知版本。
+| 游戏 `bin/studiorender.dll` | SHA-256 |
+|---|---|
+| 支持的原版 | `3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85` |
+| 包内修复版 | `03964dedcf8b7f4ebde24cd3d0738873d37c075a7a9b313dad001bb937f9d1b6` |
+
+ThinFlex 修复已收到用户复测有效反馈，仍限定于以上精确版本。游戏更新后重新核对；直接复制文件不会自动检查目标版本。包内 `ENGINE-PATCH.json` 记录改动，`licenses/Valve-engine-NOTICE.txt` 保留引擎归属；修改后的 DLL 原数字签名失效。详细安装和恢复步骤见 [ThinFlex 说明](docs/THINFLEX-TEST-README.txt)。
 
 如需 `-vulkan`，把客户端 `d3d9.dll` 改名为 `dxvk_d3d9.dll`，文件仍留在游戏 `bin`。从旧版切换到默认加载方式时，先备份旧 `bin/dxvk_d3d9.dll` 并移除 `-vulkan`。两种方式共用 `bin/.l4d2bridge`。
 
-回退 Bridge 时同时恢复配对的客户端和 Host；ThinFlex 的恢复步骤见工具说明。卸载时移除本包安装的文件并恢复备份。
+回退 Bridge 时同时恢复配对的客户端和 Host；回退 ThinFlex 时恢复本机保存的原始 `studiorender.dll`。卸载时移除本包安装的文件并恢复备份。
 
 [性能实测](docs/PERFORMANCE-2026-10-10.md) 记录三组同场景对照与适用范围；更多验证步骤见 [游戏验收与性能基线](docs/GAME-VALIDATION.md)。
 
@@ -45,7 +50,7 @@ ThinFlex 修复已收到用户复测有效反馈，仍限定于说明中精确�
 - `upstream_commit` 留空跟随最新代码；填写完整 40 位 SHA 可指定提交。
 - 勾选 `force_rebuild` 可强制编译并创建新的独立版本；已有版本和附件保留，默认关闭。
 - 勾选 `validation_only` 仅构建、测试和运行 A/B 基准，保存结果供检查，跳过发布。
-- 手动勾选 `thinflex_test` 标记为性能优化与 ThinFlex 修复测试版（Pre-release，不设为 Latest）。所有构建均提供内含 `tools/thinflex` 的单一完整包；是否应用引擎修复由玩家按说明操作。
+- 手动勾选 `thinflex_test` 标记为性能优化与 ThinFlex 修复测试版（Pre-release，不设为 Latest）。所有构建均提供包含固定 ThinFlex 修复 DLL 的单一完整包；安装时先核对游戏版本。
 
 去重同时检查上游提交和构建输入指纹；补丁、后端配置、脚本或测试更新会触发新构建。版本名为 `nightly-YYYYMMDD-上游短SHA-r输入指纹-b运行ID.重试号`，日期采用上游提交日期（UTC）。强制重建和重新运行均产生独立版本；旧附件不覆盖。Release 说明及包内 `UPSTREAM.json` 记录完整提交、输入指纹和构建实例。补丁冲突、编译或测试失败时不发布。
 
@@ -57,5 +62,6 @@ ThinFlex 修复已收到用户复测有效反馈，仍限定于说明中精确�
 - NVIDIA Bridge：**MIT**，见 [licenses/Bridge-MIT.txt](licenses/Bridge-MIT.txt)。
 - DXVK／DXVK-GPLALL：随附 **zlib/libpng** 许可，见 [licenses/DXVK-LICENSE.txt](licenses/DXVK-LICENSE.txt) 和 [licenses/DXVK-GPLALL-LICENSE.txt](licenses/DXVK-GPLALL-LICENSE.txt)。
 - Bridge 所含 Detours、Tracy 等依赖继续遵循各自许可，见 [licenses/Bridge-third-party.txt](licenses/Bridge-third-party.txt)。
+- 包内修改版 `studiorender.dll` 来自维护者本机的匹配游戏文件，按用户要求应用限定 ThinFlex 修复。原引擎归 Valve，不属于根目录 MIT 授权；见 [引擎归属说明](licenses/Valve-engine-NOTICE.txt)。
 
 根目录 MIT 许可不替代第三方许可。发布包保留版权及许可文件；完整归属见 [THIRD_PARTY.md](THIRD_PARTY.md)。L4D2 游戏本体不在本项目授权范围内。

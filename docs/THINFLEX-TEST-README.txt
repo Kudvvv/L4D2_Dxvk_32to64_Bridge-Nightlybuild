@@ -1,16 +1,16 @@
-ThinFlex 崩溃修复工具 — 测试版
-===========================
+ThinFlex 崩溃修复 — 测试版安装说明
+=================================
+
+本完整 ZIP 已包含修复好的 bin/studiorender.dll、ENGINE-PATCH.json 及
+licenses/Valve-engine-NOTICE.txt，与配套 Bridge Client/Host、GPLALL 后端一起提供。
+确认游戏 DLL 版本匹配后，复制包内文件即可应用修复，无需运行补丁工具或安装 Python。
+玩家包不附带 tools/thinflex 或补丁工具 EXE。
 
 适用问题：studiorender.dll 的 ThinFlex 表情顶点缓存达到 10000 项后空指针崩溃。
-工具只生成缓存扩至 65536 项的独立 DLL 副本，不自动安装，不关闭表情或降低画质。
+修复将缓存扩至 65536 项，新增 2 MiB 缓存，保留原有表情计算及画质。
 离线测试已通过。2026-10-10 收到用户反馈：v1.0.10 ThinFlex 修复有效。
 本次保留相同补丁算法与输入／输出 DLL 哈希；反馈未提供游玩时长或完整模型范围，
 不能据此确认所有场景的长期稳定性。
-
-完整 ZIP 的 tools/thinflex 目录包含本工具，不含游戏引擎 DLL。
-ThinFlexPatch.exe 可直接在 Windows 运行，无需安装 Python。
-随附 patch_studiorender_flex.py 是相同工具的源码；详细证据见 docs/THINFLEX-CRASH-FIX.md。
-只提供一个完整 ZIP；解压或更新 Bridge 不会自动应用此修复，需要执行以下步骤。
 
 同次发布的 Bridge 包含三项性能优化：关闭 API 日志时避免临时字符串分配、
 完整且紧密排列的表面整块复制、普通定期内存扫描移出 Present 线程。
@@ -20,66 +20,52 @@ ThinFlexPatch.exe 可直接在 Windows 运行，无需安装 Python。
 测试条件、范围和限制：
 https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/blob/main/docs/PERFORMANCE-2026-10-10.md
 
-仅接受原始 bin/studiorender.dll 的 SHA-256：
+一、备份与版本核对
+
+1. 正常退出 L4D2/L4N 游戏及 L4D2Bridge64 Host，将 ZIP 解压到独立临时目录。
+2. 备份现有 Bridge 客户端、Host、配置及游戏 bin/studiorender.dll。
+   若已安装本修复，请继续保留最初原版 studiorender.dll 的备份，
+   不要用已经修复的 DLL 覆盖原版备份。
+3. 保留现有配置：从临时解压目录移除会覆盖已有 dxvk.conf、bridge.conf、
+   自定义后端、ReShade 或 DB 的对应文件。详细路径见包内 README.txt 或仓库 README.md。
+4. 在 PowerShell 核对游戏目录中 DLL 的 SHA-256（修改下面的游戏路径）：
+
+Get-FileHash -LiteralPath 'E:\Steam\steamapps\common\Left 4 Dead 2\bin\studiorender.dll' -Algorithm SHA256
+
+支持的原始 DLL SHA-256：
 3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85
-预期实验副本 SHA-256：
+包内修复 DLL SHA-256：
 03964dedcf8b7f4ebde24cd3d0738873d37c075a7a9b313dad001bb937f9d1b6
-不匹配时工具会拒绝处理；不要用其他玩家的 DLL 强行替换，也不要绕过检查。
-修改后的 DLL 原数字签名失效。保留证书字节或重算 PE 校验和不能恢复签名。
-本测试版不代表原厂签名文件，也不代表已经证实所有崩溃都得到解决。
 
-一、备份并生成（PowerShell）
+匹配原始哈希：完成原版备份后，可复制包内修复 DLL。
+匹配修复哈希：已经应用本修复，可保留现有 DLL；务必继续保存原版备份。
+其他哈希：游戏版本不匹配或已被另行修改，从临时解压目录移除 bin/studiorender.dll，
+只更新 Bridge，不要强行替换引擎文件。
 
-1. 正常退出 L4D2/L4N 游戏及 L4D2Bridge64 Host。
-2. 把完整 ZIP 解压到独立目录，在其中的 tools/thinflex 目录打开 PowerShell。
-3. 修改下方游戏路径，逐段执行。请使用新的 test-copy 目录，不覆盖已有备份。
+二、复制安装与复测
 
-$gameRoot = 'E:\Steam\steamapps\common\Left 4 Dead 2'
-$source = Join-Path $gameRoot 'bin\studiorender.dll'
-$work = Join-Path (Get-Location) 'test-copy'
-if (Get-Process -Name left4dead2,L4D2Bridge64 -ErrorAction SilentlyContinue) { throw '请先退出游戏及 Host。' }
-if (Test-Path -LiteralPath $work) { throw 'test-copy 已存在，请保留备份并改用新的目录名。' }
-if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne '3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85') { throw '原始 DLL 不匹配，停止。' }
-New-Item -ItemType Directory -Path $work -ErrorAction Stop | Out-Null
-$original = Join-Path $work 'studiorender.original.dll'
-$patched = Join-Path $work 'studiorender.experimental.dll'
-$manifest = Join-Path $work 'studiorender.experimental.manifest.json'
-Copy-Item -LiteralPath $source -Destination $original -ErrorAction Stop
-.\ThinFlexPatch.exe create $original $patched --manifest $manifest --experimental-engine-patch
-if ($LASTEXITCODE -ne 0) { throw '生成失败，请勿安装。' }
-.\ThinFlexPatch.exe verify $original $patched $manifest
-if ($LASTEXITCODE -ne 0) { throw '校验失败，请勿安装。' }
-
-以上步骤不改变游戏目录。请保留原始备份、实验副本和 manifest，勿删除。
-
-二、手工安装供测试（继续在同一 PowerShell 窗口）
-
-先确认游戏及 Host 已退出。以下复制才会替换游戏 bin/studiorender.dll。
-
-if (Get-Process -Name left4dead2,L4D2Bridge64 -ErrorAction SilentlyContinue) { throw '请先退出游戏及 Host。' }
-.\ThinFlexPatch.exe verify $original $patched $manifest
-if ($LASTEXITCODE -ne 0) { throw '校验失败，停止。' }
-$record = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
-if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $record.original_sha256) { throw '游戏 DLL 已变化，请勿覆盖。' }
-Copy-Item -LiteralPath $patched -Destination $source -Force -ErrorAction Stop
-if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $record.output_sha256) { throw '安装校验失败，请恢复备份。' }
+将准备好的临时目录内容合并复制到游戏根目录，成对更新 bin/d3d9.dll 与
+bin/.l4d2bridge/L4D2Bridge64.exe。版本匹配时，复制 bin/studiorender.dll 即安装修复。
+安装后再次核对该 DLL 哈希应为上面的修复哈希，并保存 ENGINE-PATCH.json 和原版备份。
+客户端默认位于 bin/d3d9.dll，移除 -vulkan；使用该启动项的玩家按包内 README.txt
+将客户端改名放在 bin/dxvk_d3d9.dll。现有配置、自定义后端、ReShade 与 DB 应保留。
 
 使用原先报错的地图和模型复测；关注人物表情及持续游玩是否再次崩溃。
 记录实际 DLL 哈希及测试场景；如出现问题，保存新的 dump 并恢复原文件。
-该实验副本不调整 Bridge 默认配置、GPLALL、画质、VSync 或 G-SYNC。
+此修复不调整 Bridge 默认配置、GPLALL、画质、VSync 或 G-SYNC。
 
-三、回退（继续使用上述变量；若重开 PowerShell，先重新设置这些路径）
+三、回退
 
-if (Get-Process -Name left4dead2,L4D2Bridge64 -ErrorAction SilentlyContinue) { throw '请先退出游戏及 Host。' }
-.\ThinFlexPatch.exe verify $original $patched $manifest
-if ($LASTEXITCODE -ne 0) { throw '备份或实验记录校验失败，停止。' }
-$record = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
-$currentHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-if ($currentHash -notin @($record.original_sha256, $record.output_sha256)) { throw '游戏文件已经更新或被另行修改，请勿用旧备份覆盖。' }
-Copy-Item -LiteralPath $original -Destination $source -Force -ErrorAction Stop
-if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $record.original_sha256) { throw '恢复后校验失败。' }
+退出游戏及 Host。核对当前 bin/studiorender.dll 为上述原始或修复哈希，
+并核对原版备份确为上述原始哈希，再用原版备份恢复 bin/studiorender.dll。
+恢复后重新核对哈希。若游戏更新后当前 DLL 已变成其他哈希，不要用旧备份覆盖它。
+如果没有匹配的原版备份，请用游戏官方文件验证恢复当前版本，不要下载未知来源 DLL。
 
-游戏更新后的 DLL 如果哈希变化，本工具会拒绝处理；请等待匹配版本的后续验证。
-下载附件旁的 .sha256 可核对完整 ZIP。tools/thinflex/BUILD.json 记录工具构建来源和已验证的 DLL 哈希，
-其中 game_validated=false 表示工具包构建流程没有执行游戏验收；上面的用户反馈单独记录，
-该字段不表示你的本地游戏是否已经打补丁。
+修改后的 DLL 原数字签名失效。保留证书字节或重算 PE 校验和不能恢复签名。
+该 Valve 游戏引擎文件不适用项目根目录 MIT 许可；归属说明见 Valve-engine-NOTICE.txt。
+公开 Source SDK 仅用于定位常量，其许可不能据此视为覆盖整个游戏 DLL。
+本测试版不代表原厂签名文件，也不代表已经证实所有崩溃都得到解决。
+附件旁的 .sha256 可核对完整 ZIP；ENGINE-PATCH.json 记录引擎补丁及输入／输出身份。
+
+维护者工具仍保存在源码仓库中，不放入玩家 ZIP。生成和验证命令（create/verify）、
+补丁细节及三份 dump 的证据边界见 docs/THINFLEX-CRASH-FIX.md。
