@@ -1,0 +1,554 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-10",
+  "scope": "L4N fixed-view c1m1_hotel replay; three matched baseline/candidate pairs; no engine patch.",
+  "environment": {
+    "cpu": "AMD Ryzen 9 9950X3D",
+    "logical_processors": 32,
+    "gpu": "NVIDIA RTX 5090 D",
+    "driver": "617.42",
+    "game": "Left 4 Dead 2 2.2.4.3 / build 10097",
+    "l4n": "2.50.3.0",
+    "backend": "GPLALL 2.6.8-2",
+    "resolution": "3840x2160",
+    "msaa": 8,
+    "anisotropic_filtering": 16,
+    "window_mode": "borderless",
+    "presentmon": "2.6.0",
+    "fps_max": 0,
+    "video_vsync": 0,
+    "global_vsync_and_gsync": "disabled by user"
+  },
+  "conditions": {
+    "requested_warmup_from_launch_seconds": 40,
+    "requested_capture_seconds": 90,
+    "fixed_file_sha256": {
+      "dxvk.conf": "90ec7c3688478fd0e8e8e6dff3186b362081de08e67e0ec3e400b15644691bc7",
+      "bin/.l4d2bridge/bridge.conf": "1600cd159767aa126fc9d25ca8d80d3f6fa9ef4b358e2f01a2458f3f9b6bf6b6",
+      "bin/.l4d2bridge/d3d9vk_x64.dll": "d7b3e078a913f8ae66e29851b9dbcdf40a4d35639d6ef6493a6f9382173e3300",
+      "bin/studiorender.dll": "3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85",
+      "left4dead2/cfg/video.txt": "719a75dfa60c44c31ad8489458c1db84677fa6353352a79892b0506e4ac6e43e"
+    },
+    "demo_sha256": "3b40c501ce5fced10f4de0bf197e82947db046e35d33c083ba5cefba1213f627",
+    "original_engine_dll_preserved": true
+  },
+  "builds": {
+    "baseline": {
+      "version": "1.0.6",
+      "recipe_commit": "88053eb9a5f7bba314c4518c3b835508c176bef8",
+      "upstream_commit": "5fd30eae2d397f369bdf5660f3ddd0bc0bd1fa58",
+      "binary_sha256": {
+        "bin/d3d9.dll": "935c86a9a62f50ad7cde2665891c25ba3fa59e845b80c1bcd9d8bdcd92193d3c",
+        "bin/.l4d2bridge/L4D2Bridge64.exe": "0496bb96847ed2433d601fc8ad31eefb2be4b42836bbe4ed1b6dc58d3ea36548"
+      }
+    },
+    "candidate": {
+      "version": "1.0.11",
+      "recipe_commit": "7bc830169844de1e02fada926f374debc758d645",
+      "upstream_commit": "5fd30eae2d397f369bdf5660f3ddd0bc0bd1fa58",
+      "validation_build_run": 37966476999,
+      "binary_sha256": {
+        "bin/d3d9.dll": "80966ba57f174cf17fb4becf2ab28a43e33ec3e115ff073a6c2b690f30c2ed1d",
+        "bin/.l4d2bridge/L4D2Bridge64.exe": "9140b0c3b9273e79e971c952fd47428aeff7b8e30ed167fa4751f809f0fd08da"
+      },
+      "validation_only": true
+    }
+  },
+  "analysis_source_sha256": {
+    "scripts/analyze_baseline.py": "53a309e5340855997651cad8a74a0732bef67f027119827a62728aeb22bcac1d"
+  },
+  "local_reference_analyzer_sha256": "3ab2bb8adff814b86427ed86688276a44cabe1aebec5173ae30a6a99679cd75f",
+  "definitions": {
+    "average_fps": "1000 / arithmetic mean of all positive msBetweenPresents values.",
+    "low_percent_fps": "1000 / mean of the slowest ceil(N * fraction) frame intervals; fraction is 0.01 or 0.001. Not the reciprocal of a percentile.",
+    "percentiles": "Linear interpolation at (N - 1) * p, using scripts/analyze_baseline.py frame_statistics.",
+    "maximum_instantaneous_fps": "1000 / the minimum interval; a single-sample submission peak, not sustained or displayed FPS.",
+    "maximum_one_second_present_count": "Maximum count in complete, non-overlapping one-second elapsed-time buckets; first and final buckets excluded, matching summarize_runs.py. Not a sliding-window maximum.",
+    "improvement_percent": "For higher-is-better metrics: 100 * (candidate / baseline - 1). For lower-is-better metrics: 100 * (1 - candidate / baseline).",
+    "paired_summary": "Median/minimum/maximum of three within-pair percentage improvements; not a ratio of variant medians and not frame-level confidence bounds.",
+    "timing_scope": "Host Present submission intervals; not a guarantee of complete frames displayed or an input-latency measurement."
+  },
+  "runs": [
+    {
+      "label": "baseline03",
+      "actual_warmup_from_launch_seconds": 40.467035,
+      "wall_capture_seconds": 90.109076,
+      "qpc_span_seconds": 89.9810452,
+      "frame_interval_seconds": 89.9836797,
+      "completed_second_buckets": 88,
+      "validation": {
+        "session_complete": true,
+        "normal_exit": true,
+        "qpc_strictly_increasing": true,
+        "all_intervals_positive": true,
+        "single_host_and_swapchain": true,
+        "vsync_disabled": true,
+        "no_recorded_focus_transitions_in_capture": true,
+        "active_at_start_under_existing_log_method": true,
+        "pre_capture_focus_record_count": 0
+      },
+      "presentation": {
+        "SyncInterval": [
+          "0"
+        ],
+        "AllowsTearing": [
+          "1"
+        ],
+        "PresentMode": [
+          "Hardware: Independent Flip"
+        ],
+        "Dropped": [
+          "0"
+        ]
+      },
+      "evidence_sha256": {
+        "frames.csv": "9699b10626f8498a763db6cda61b7f3b492f8446c0c174db89fe4252d6c0f38e",
+        "session.json": "e1e037be67a25b169d4c6eb46eea2e37af36e72bfeb07b29d10a64200acde6ea",
+        "timing.json": "2e145b1b2f2d56cd021d489540e7e89b88978227bacb47fc88256bd5195544fc",
+        "bridge32.log": "2bac914c0a626c31edea237c1b4988f015bac78691e21238dddc84fb1ac2902b",
+        "bridge64.log": "4b5ccf7cd26548f13b3976f25e20ffcf619f60e570bc715bbe92d35b9f09fcfe",
+        "memory.log": "8345db363afca91d20a69696f9a7445303747ddc156399b1f486ec553349d31c"
+      }
+    },
+    {
+      "label": "async01",
+      "actual_warmup_from_launch_seconds": 40.472432,
+      "wall_capture_seconds": 90.142353,
+      "qpc_span_seconds": 89.9854497,
+      "frame_interval_seconds": 89.9867024,
+      "completed_second_buckets": 88,
+      "validation": {
+        "session_complete": true,
+        "normal_exit": true,
+        "qpc_strictly_increasing": true,
+        "all_intervals_positive": true,
+        "single_host_and_swapchain": true,
+        "vsync_disabled": true,
+        "no_recorded_focus_transitions_in_capture": true,
+        "active_at_start_under_existing_log_method": true,
+        "pre_capture_focus_record_count": 0
+      },
+      "presentation": {
+        "SyncInterval": [
+          "0"
+        ],
+        "AllowsTearing": [
+          "1"
+        ],
+        "PresentMode": [
+          "Hardware: Independent Flip"
+        ],
+        "Dropped": [
+          "0"
+        ]
+      },
+      "evidence_sha256": {
+        "frames.csv": "2642c9d1f1549ab806a4b60cba7dd6e43aeda2e68f5d33fbc594dcd150766be3",
+        "session.json": "1181993bfdf0e6065bd51a1ea2aa33283cb64558d0c581ed2c669ad617130ba3",
+        "timing.json": "dc11cf80c28aeb2a8f1c84811c8a60c396ef6b0fe85f2f6f0b9048a7aff9270f",
+        "bridge32.log": "072616e1e8df29f1fdeebaebb82cc7a850836b53902396c4cd26b43d4ed98e0f",
+        "bridge64.log": "117feba04ce9e8b29898bdec36c5d893f82e50acdd599c173f806c8900dacfcc",
+        "memory.log": "12c4915e519420891cce4fe681db9e044172a67a514657cdfb47bdf0794c421d"
+      }
+    },
+    {
+      "label": "baseline05",
+      "actual_warmup_from_launch_seconds": 40.488581,
+      "wall_capture_seconds": 90.109825,
+      "qpc_span_seconds": 89.9861028,
+      "frame_interval_seconds": 89.9912219,
+      "completed_second_buckets": 88,
+      "validation": {
+        "session_complete": true,
+        "normal_exit": true,
+        "qpc_strictly_increasing": true,
+        "all_intervals_positive": true,
+        "single_host_and_swapchain": true,
+        "vsync_disabled": true,
+        "no_recorded_focus_transitions_in_capture": true,
+        "active_at_start_under_existing_log_method": true,
+        "pre_capture_focus_record_count": 2
+      },
+      "presentation": {
+        "SyncInterval": [
+          "0"
+        ],
+        "AllowsTearing": [
+          "1"
+        ],
+        "PresentMode": [
+          "Hardware: Independent Flip"
+        ],
+        "Dropped": [
+          "0"
+        ]
+      },
+      "evidence_sha256": {
+        "frames.csv": "7671a8baab895929b6783bad4a4da12fd8405176e815cbdf635200feed6f019f",
+        "session.json": "6de8c9c376fb88c028fcd1a6ce60a0cef29663482e8c2c2b625374e274450c19",
+        "timing.json": "797353381ff19b5de779c07a027de83a32d48eb6e85bbef8fee33a892dd547c5",
+        "bridge32.log": "7e5074fd9bae61f79716b52228205da22fa265b38ff00e6366fe617661d3f9ea",
+        "bridge64.log": "6c4211f1b41a2814bec2059b1a61c901765154664ffb508d36291aabdc122396",
+        "memory.log": "84a2b7cd0cb9d3e891bf0ebeedb88a967875b747b23ed12b9d583dc9516e5001"
+      }
+    },
+    {
+      "label": "async02",
+      "actual_warmup_from_launch_seconds": 40.5031,
+      "wall_capture_seconds": 90.124306,
+      "qpc_span_seconds": 89.9888377,
+      "frame_interval_seconds": 89.9908336,
+      "completed_second_buckets": 88,
+      "validation": {
+        "session_complete": true,
+        "normal_exit": true,
+        "qpc_strictly_increasing": true,
+        "all_intervals_positive": true,
+        "single_host_and_swapchain": true,
+        "vsync_disabled": true,
+        "no_recorded_focus_transitions_in_capture": true,
+        "active_at_start_under_existing_log_method": true,
+        "pre_capture_focus_record_count": 0
+      },
+      "presentation": {
+        "SyncInterval": [
+          "0"
+        ],
+        "AllowsTearing": [
+          "1"
+        ],
+        "PresentMode": [
+          "Hardware: Independent Flip"
+        ],
+        "Dropped": [
+          "0"
+        ]
+      },
+      "evidence_sha256": {
+        "frames.csv": "a072dc15af8a07c596108d9cfabe1abf18c2258f6decaa1284b9aaef6fee67ad",
+        "session.json": "3d9de8c8829b20db9e5196c1ddbda5121d048c131a58251e6ca3515131a50498",
+        "timing.json": "4e167c33764f3bb95535bfc09e11477aeead5694b8e4897e7cfd5e3bb47bb355",
+        "bridge32.log": "85b7f9907e4d2a275bfc9a02e6710fa5c6a5f17b497a51f6cf7fdaae475ea9ba",
+        "bridge64.log": "ccf9465e35130d8ff119fef90eb4458e4e190fed38de8f2b32016b73d567d8e5",
+        "memory.log": "c5cc35b240f64bed9a5e692ba20601b02af218d50143d7e81966612204bdb4a9"
+      }
+    },
+    {
+      "label": "baseline06",
+      "actual_warmup_from_launch_seconds": 40.532236,
+      "wall_capture_seconds": 90.100724,
+      "qpc_span_seconds": 89.9912922,
+      "frame_interval_seconds": 89.9938429,
+      "completed_second_buckets": 88,
+      "validation": {
+        "session_complete": true,
+        "normal_exit": true,
+        "qpc_strictly_increasing": true,
+        "all_intervals_positive": true,
+        "single_host_and_swapchain": true,
+        "vsync_disabled": true,
+        "no_recorded_focus_transitions_in_capture": true,
+        "active_at_start_under_existing_log_method": true,
+        "pre_capture_focus_record_count": 0
+      },
+      "presentation": {
+        "SyncInterval": [
+          "0"
+        ],
+        "AllowsTearing": [
+          "1"
+        ],
+        "PresentMode": [
+          "Hardware: Independent Flip"
+        ],
+        "Dropped": [
+          "0"
+        ]
+      },
+      "evidence_sha256": {
+        "frames.csv": "bfd82fe616a0c9ce4b60ddb14e7b266d3522ad5fd0bcc8746077ea3bfc364a4f",
+        "session.json": "c89b51be8de311b1ccbef2e7f2a01b2952a2490c3b18a1034f639048c32f64d9",
+        "timing.json": "20aee8e5c5d15ce90df67e55a27aec5bb7184475fdb8f8e3ab9172437bc3f952",
+        "bridge32.log": "80155b496fc5a4a4a3289be3ef159d9bfbcb6de3af86fffb884b0bd0f0193b6a",
+        "bridge64.log": "4c94794c92f5a44c2fe9c45cb0e6af840f7a5725db25ea22683ebd93c9d8825e",
+        "memory.log": "d4a934633143268b3f714b86f75d903d97c8ac4d2982178d35047ee0311b182f"
+      }
+    },
+    {
+      "label": "async03",
+      "actual_warmup_from_launch_seconds": 40.476386,
+      "wall_capture_seconds": 90.1511,
+      "qpc_span_seconds": 89.979596,
+      "frame_interval_seconds": 89.9834747,
+      "completed_second_buckets": 88,
+      "validation": {
+        "session_complete": true,
+        "normal_exit": true,
+        "qpc_strictly_increasing": true,
+        "all_intervals_positive": true,
+        "single_host_and_swapchain": true,
+        "vsync_disabled": true,
+        "no_recorded_focus_transitions_in_capture": true,
+        "active_at_start_under_existing_log_method": true,
+        "pre_capture_focus_record_count": 0
+      },
+      "presentation": {
+        "SyncInterval": [
+          "0"
+        ],
+        "AllowsTearing": [
+          "1"
+        ],
+        "PresentMode": [
+          "Hardware: Independent Flip"
+        ],
+        "Dropped": [
+          "0"
+        ]
+      },
+      "evidence_sha256": {
+        "frames.csv": "11f41f2ca133f0aa8f34ba67b8c55a3cbd7b29e6912a860710261ac4ad4b95a4",
+        "session.json": "efff0e26f9e14404b27ff4aa82632704b5cf17f5b09e8b125e9c0884333188a8",
+        "timing.json": "cfc99adea77bb27d837a138e199d8cd36a31aaa5aaad171501dba180a3f2ad50",
+        "bridge32.log": "c2b0de64179b0354f7b9702983413aa90a3e34993208666bd6b003494a88d1bb",
+        "bridge64.log": "7dd493f281a4f3a50307315a4d74f6eb65103ea6ae59c8fe7837d7b846718638",
+        "memory.log": "c9a9507b4c2a597decfa326db76f22c7a4858ed725709b052745fccbfbd76823"
+      }
+    }
+  ],
+  "exclusions_and_pilots": [
+    {
+      "label": "copy-logger01",
+      "reason": "Excluded entire run: foreground lost during capture, zero Present intervals and an inconsistent outlier/duration.",
+      "evidence_sha256": {
+        "frames.csv": "7df1d9f3216142a4aa111fc224084b9fc339efe406673c35ca6e10eea448eb88",
+        "session.json": "997dcac80621fce28ae67ce717d2af71a4076c2ff4816421759bcc28c98aed33",
+        "timing.json": "13cf78ae7f857b2779076fa5263198d37502313c49b08bacb6b3d21069a673a2",
+        "bridge32.log": "5045b33563363a93983afdd6c226ce75e2a1377148abbf8a2f5e45f7c396ca15"
+      }
+    },
+    {
+      "label": "copy-logger02",
+      "reason": "Excluded entire run: game inactive for approximately 47 seconds during capture.",
+      "evidence_sha256": {
+        "frames.csv": "debb04e4a92686a895ccd759c89e1fa0b06a5e3317db1200c004d53608327bac",
+        "session.json": "b48a3f81e6c8d247882718d59531598c1eadc308d07aff631f120bf88c901e38",
+        "timing.json": "32e63667e30f98a7aa72570bb0bd4124067ad8e23867844f44dc53f1cf9a39b2",
+        "bridge32.log": "a9cd6f07779a1170b425d7264ca1d557eec0cbe6616045acfad9f4171a77e9d5"
+      }
+    },
+    {
+      "label": "baseline04",
+      "reason": "Excluded entire run: inactive at capture start and further focus transitions during capture.",
+      "evidence_sha256": {
+        "frames.csv": "f1acf721fd6120b2a1f33a07f58f5f7fb1dcd7b72f5aedf0376e789132a5e17e",
+        "session.json": "fa1aa4d9b38ce38fe06e2566e6582d3ecb16d4770a159c805c79dae474754d90",
+        "timing.json": "0d32eac0b68624353e7fae6574c31de083f19e481c1ad212936af31daed676a5",
+        "bridge32.log": "faa67b8c807274592a8058577dd2e0691d894b5d764f9e907f55033aefd069ba"
+      }
+    },
+    {
+      "label": "baseline01",
+      "reason": "Pilot only: 30-second warmup; excluded from the final 40-second-warmup comparison.",
+      "evidence_sha256": {
+        "frames.csv": "e731690ea246c5f4fe7834136fa002f8467d51176c04a4541e468e02424c18a4",
+        "session.json": "58a9d0948fd98cdcb46da75a8d09213748df6c45d29dbd1621cc4c773e6c52a1",
+        "timing.json": "bd5ce5bc5dde298d16a7c02617742e893731743eb4041a930a281452b198b117",
+        "bridge32.log": "d15b72b9019035e72b54575bc061018e7e28df0ced5966d0e053d249b6bde533"
+      }
+    },
+    {
+      "label": "baseline02",
+      "reason": "Pilot only: 30-second warmup; excluded from the final 40-second-warmup comparison.",
+      "evidence_sha256": {
+        "frames.csv": "eb96ec768391975394ef990819d2df056edf36343d7be0214a0f42ac8d1856d1",
+        "session.json": "b4b53c7ef3d9d34adc0b91905b6359503ff5c4e423e4b31834d0c22fe52d7009",
+        "timing.json": "83633d1c2edd8b83f3cf3bea619058a94814da5b17217876047acd42f8d8c280",
+        "bridge32.log": "8029f7694b4fcc0386a0e2eceb12502711cd0b3a7520917283236eb7bbdda085"
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "pair_id": 1,
+      "baseline": "baseline03",
+      "candidate": "async01",
+      "relative_change_percent": {
+        "average_fps": 10.81467245542207,
+        "low_1_percent_fps": 4.568089495904593,
+        "low_0_1_percent_fps": 28.178220957248644,
+        "p99_frame_time_ms": 3.481495930201861,
+        "p99_9_frame_time_ms": -27.758415553008952,
+        "maximum_frame_time_ms": 7.175662652694448,
+        "maximum_instantaneous_fps": 50.778123610493566,
+        "maximum_one_second_present_count": 8.571428571428562,
+        "frames_at_least_8ms": -63.33333333333333
+      },
+      "improvement_percent": {
+        "average_fps": 10.81467245542207,
+        "low_1_percent_fps": 4.568089495904593,
+        "low_0_1_percent_fps": 28.178220957248644,
+        "p99_frame_time_ms": -3.481495930201861,
+        "p99_9_frame_time_ms": 27.758415553008952,
+        "maximum_frame_time_ms": -7.175662652694448,
+        "maximum_instantaneous_fps": 50.778123610493566,
+        "maximum_one_second_present_count": 8.571428571428562,
+        "frames_at_least_8ms": 63.33333333333333
+      }
+    },
+    {
+      "pair_id": 2,
+      "baseline": "baseline05",
+      "candidate": "async02",
+      "relative_change_percent": {
+        "average_fps": 10.13854485118637,
+        "low_1_percent_fps": 7.013584118664951,
+        "low_0_1_percent_fps": 38.133967004352854,
+        "p99_frame_time_ms": 1.0778053265219079,
+        "p99_9_frame_time_ms": -22.046367452613303,
+        "maximum_frame_time_ms": -45.73948132816169,
+        "maximum_instantaneous_fps": 37.12062256809337,
+        "maximum_one_second_present_count": 7.887323943661961,
+        "frames_at_least_8ms": -72.41379310344827
+      },
+      "improvement_percent": {
+        "average_fps": 10.13854485118637,
+        "low_1_percent_fps": 7.013584118664951,
+        "low_0_1_percent_fps": 38.133967004352854,
+        "p99_frame_time_ms": -1.0778053265219079,
+        "p99_9_frame_time_ms": 22.046367452613303,
+        "maximum_frame_time_ms": 45.73948132816169,
+        "maximum_instantaneous_fps": 37.12062256809337,
+        "maximum_one_second_present_count": 7.887323943661961,
+        "frames_at_least_8ms": 72.41379310344827
+      }
+    },
+    {
+      "pair_id": 3,
+      "baseline": "baseline06",
+      "candidate": "async03",
+      "relative_change_percent": {
+        "average_fps": 9.561477575995546,
+        "low_1_percent_fps": 3.4699661005955784,
+        "low_0_1_percent_fps": 33.08866819575156,
+        "p99_frame_time_ms": 4.74211960073605,
+        "p99_9_frame_time_ms": -24.02726759172211,
+        "maximum_frame_time_ms": -6.27467787676792,
+        "maximum_instantaneous_fps": 58.09309520461259,
+        "maximum_one_second_present_count": 6.779661016949157,
+        "frames_at_least_8ms": -57.14285714285714
+      },
+      "improvement_percent": {
+        "average_fps": 9.561477575995546,
+        "low_1_percent_fps": 3.4699661005955784,
+        "low_0_1_percent_fps": 33.08866819575156,
+        "p99_frame_time_ms": -4.74211960073605,
+        "p99_9_frame_time_ms": 24.02726759172211,
+        "maximum_frame_time_ms": 6.27467787676792,
+        "maximum_instantaneous_fps": 58.09309520461259,
+        "maximum_one_second_present_count": 6.779661016949157,
+        "frames_at_least_8ms": 57.14285714285714
+      }
+    }
+  ],
+  "paired_summary": {
+    "average_fps": {
+      "direction": "higher_is_better",
+      "pair_count": 3,
+      "median_improvement_percent": 10.13854485118637,
+      "minimum_improvement_percent": 9.561477575995546,
+      "maximum_improvement_percent": 10.81467245542207
+    },
+    "low_1_percent_fps": {
+      "direction": "higher_is_better",
+      "pair_count": 3,
+      "median_improvement_percent": 4.568089495904593,
+      "minimum_improvement_percent": 3.4699661005955784,
+      "maximum_improvement_percent": 7.013584118664951
+    },
+    "low_0_1_percent_fps": {
+      "direction": "higher_is_better",
+      "pair_count": 3,
+      "median_improvement_percent": 33.08866819575156,
+      "minimum_improvement_percent": 28.178220957248644,
+      "maximum_improvement_percent": 38.133967004352854
+    },
+    "p99_frame_time_ms": {
+      "direction": "lower_is_better",
+      "pair_count": 3,
+      "median_improvement_percent": -3.481495930201861,
+      "minimum_improvement_percent": -4.74211960073605,
+      "maximum_improvement_percent": -1.0778053265219079
+    },
+    "p99_9_frame_time_ms": {
+      "direction": "lower_is_better",
+      "pair_count": 3,
+      "median_improvement_percent": 24.02726759172211,
+      "minimum_improvement_percent": 22.046367452613303,
+      "maximum_improvement_percent": 27.758415553008952
+    },
+    "maximum_frame_time_ms": {
+      "direction": "lower_is_better",
+      "pair_count": 3,
+      "median_improvement_percent": 6.27467787676792,
+      "minimum_improvement_percent": -7.175662652694448,
+      "maximum_improvement_percent": 45.73948132816169
+    },
+    "maximum_instantaneous_fps": {
+      "direction": "higher_is_better",
+      "pair_count": 3,
+      "median_improvement_percent": 50.778123610493566,
+      "minimum_improvement_percent": 37.12062256809337,
+      "maximum_improvement_percent": 58.09309520461259
+    },
+    "maximum_one_second_present_count": {
+      "direction": "higher_is_better",
+      "pair_count": 3,
+      "median_improvement_percent": 7.887323943661961,
+      "minimum_improvement_percent": 6.779661016949157,
+      "maximum_improvement_percent": 8.571428571428562
+    },
+    "frames_at_least_8ms": {
+      "direction": "lower_is_better",
+      "pair_count": 3,
+      "median_improvement_percent": 63.33333333333333,
+      "minimum_improvement_percent": 57.14285714285714,
+      "maximum_improvement_percent": 72.41379310344827
+    }
+  },
+  "variant_medians": {
+    "baseline": {
+      "average_fps": 340.1454923312315,
+      "low_1_percent_fps": 178.26930619086033,
+      "low_0_1_percent_fps": 103.98525153696912,
+      "p99_frame_time_ms": 4.8198700000000025,
+      "p99_9_frame_time_ms": 7.38701099999984,
+      "maximum_frame_time_ms": 11.5181,
+      "maximum_instantaneous_fps": 945.8948164964057,
+      "maximum_one_second_present_count": 354,
+      "frames_at_least_8ms": 29
+    },
+    "candidate": {
+      "average_fps": 373.03289380231803,
+      "low_1_percent_fps": 184.71740545932295,
+      "low_0_1_percent_fps": 138.39258639055447,
+      "p99_frame_time_ms": 5.048433999999999,
+      "p99_9_frame_time_ms": 5.612114099999931,
+      "maximum_frame_time_ms": 10.2782,
+      "maximum_instantaneous_fps": 1406.271972999578,
+      "maximum_one_second_present_count": 380,
+      "frames_at_least_8ms": 11
+    }
+  },
+  "limitations": [
+    "One CPU/GPU system, one fixed-view recorded scene and three short A/B pairs. These are descriptive results, not a general FPS guarantee.",
+    "All pairs run baseline then candidate; no randomized order. Startup warmup is measured from process launch, not a synchronized demo tick.",
+    "Frames within a run are correlated; frame count is not the number of independent experiments. No statistical confidence claim is made.",
+    "Three optimizations are present together; total FPS change cannot be attributed to the sampler alone.",
+    "Focus checks use Bridge client window-state logs. If no earlier transition is logged, the existing analyzer assumes initially active; there is no independent continuous OS focus trace.",
+    "The 60-second diagnostic recording had CPU activity from two helper processes and is not included in the final six-run comparison.",
+    "This does not test combat, repeated map transitions, long sessions, other GPUs or other players.",
+    "The minimum ten-frame tail rule is only a sparse-sample warning threshold, not proof of statistical reliability."
+  ],
+  "game_results_csv_sha256": "e2a58d298ccb6840013840717904ec36c647d7e0d803cfe116c4d336bfd574a8"
+}

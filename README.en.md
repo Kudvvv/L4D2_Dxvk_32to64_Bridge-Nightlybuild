@@ -39,7 +39,7 @@ For first installation, exit the game, back up files and merge the package into 
 
 To use `-vulkan`, rename the client to `dxvk_d3d9.dll` within the game `bin`. When switching from the old installation to the default loading path, back up the old `bin/dxvk_d3d9.dll` and remove `-vulkan`. Both loading paths share `bin/.l4d2bridge`.
 
-For an existing installation, prefer the `l4d2-bridge-update-*` ZIP. It updates the client and Host together, preserving configuration, DXVK, ReShade and the retention DB. Roll back the client and Host together. See [game validation and performance baselines](docs/GAME-VALIDATION.md); measured game results are still pending.
+For an existing installation, prefer the `l4d2-bridge-update-*` ZIP. It updates the client and Host together, preserving configuration, DXVK, ReShade and the retention DB. Roll back the client and Host together. See [game validation and performance baselines](docs/GAME-VALIDATION.md) and the [2026-10-10 paired L4N replay results](docs/PERFORMANCE-2026-10-10.md). Those measurements cover one scene and one machine, not guaranteed gains across maps or hardware.
 
 Automated tests check compilation and diagnostic logic; they do not verify in-game compatibility.
 
