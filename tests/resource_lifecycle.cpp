@@ -440,6 +440,9 @@ template<typename Buffer, typename Desc> void testPolicy(const Desc& descriptor)
   resetState();
 }
 int main() {
+  // Async sampling/lifetime is exercised in memory_sampling_async.cpp. Keep
+  // these ownership tests free of callbacks during executable CRT teardown.
+  l4d2_memory::nextSample.store((std::numeric_limits<ULONGLONG>::max)());
   try {
     testCreations<false>();
     testCreations<true>();

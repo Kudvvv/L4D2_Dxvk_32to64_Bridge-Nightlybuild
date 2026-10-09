@@ -37,3 +37,8 @@ try {
   python "$PSScriptRoot/prepare_texture_creation_test.py" $source $testDir
   if ($LASTEXITCODE -ne 0) { throw 'Failed to restore actual texture creation methods' }
 } finally { Pop-Location }
+
+# This uses a real DLL and Windows threadpool on both architectures; the earlier
+# EXE tests retain synchronous failure snapshots and resource-accounting checks.
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'test_memory_sampling_async.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'Asynchronous memory diagnostic lifetime test failed' }

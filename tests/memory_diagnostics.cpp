@@ -71,6 +71,10 @@ int testShadowCache() {
 int main(int argc, char** argv) {
   if (argc != 2) { return 1; }
   using namespace l4d2_memory;
+  // This executable tests accounting and synchronous failure snapshots. The
+  // dedicated DLL harness covers asynchronous samples and unload lifetimes;
+  // do not leave a background callback running into this EXE's CRT teardown.
+  nextSample.store(std::numeric_limits<ULONGLONG>::max());
   auto surface = allocate(4096, Kind::Surface, 64, 16, 21);
   auto vertex = allocate(8192, Kind::Vertex, 0, 0, 0, true);
   auto index = allocate(2048, Kind::Index);

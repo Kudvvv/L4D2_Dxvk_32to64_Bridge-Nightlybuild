@@ -20,6 +20,12 @@
 
 vertex_bytes/count、index_bytes/count 是顶点/索引缓冲 shadow，包括使用 shadow 的静态缓冲。va_committed、va_reserved、va_free、largest_free 是 x86 地址空间扫描；va_limit 是扫描上界；scan_complete 表示扫描是否完成。private_bytes 和 working_set 通过系统 API 读取，counters_valid=0 时不可使用它们判断。系统对映射内存的统计与旧版堆分配不同，不能只比较 private_bytes 判断所有资源占用。
 
-采样由 Present 和 shadow 分配/映射触发，间隔至少五秒，没有后台线程；没有这些调用的阶段不会持续记录。统计是近似快照，不包含引擎其他内存、IPC 和代理对象。event=allocation-failed 记录缓冲 shadow 分配失败；section-create-failed、section-map-failed 记录 section 或映射失败，并附带 win32_error，立即刷新文件。没有失败事件不能排除其他位置的内存耗尽或访问错误。
+采样由 Present 和 shadow 分配/映射触发，最小触发间隔仍为五秒；普通采样交给 Windows 线程池执行，没有这些调用的阶段不会持续记录。同一时刻最多有一项未完成的普通采样：若上次任务超过五秒仍未完成，本次普通触发合并到已有任务，不在渲染线程重复扫描或排队。这不是严格每五秒必有一行日志的保证。线程池提交或模块引用获取失败时，退回原来的同步扫描，保留诊断记录。
+
+普通 event（包括 before-allocation、surface-mapped）记录的是触发原因，时间戳、内存计数和地址空间字段对应后台实际扫描时刻；before-allocation 不再表示扫描发生在分配之前。字段和单位不变，统计仍是近似快照，不包含引擎其他内存、IPC 和代理对象。失败事件不合并、不依赖后台调度：event=allocation-failed、section-create-failed、section-map-failed 仍在失败调用线程同步扫描，保留失败参数和 win32_error，并在返回前刷新文件。它们可能等待正在进行的扫描释放日志锁，和原有并发采样的序列化规则一致。没有失败事件不能排除其他位置的内存耗尽或访问错误。
+
+排队任务持有客户端 DLL 的临时引用，回调返回后由 Windows 释放；因此正常动态卸载可能延后到这一次任务结束。采样器没有常驻线程、没有永久固定模块，也不在 DllMain 增加线程等待。后台任务只拥有事件文本和标量参数，不保留游戏资源指针。强制失败路径仍使用栈存储和 Win32 I/O，不创建线程池任务或分配请求对象。
 
 Windows x86 自动测试覆盖：映射回收后内容恢复、活动锁和嵌套锁保持指针有效、128 个小映射的预算控制、资源销毁时清零计数，以及原来的诊断分配失败路径。通过这些测试不能替代 L4D2 实测。
+
+`scripts/test_memory_sampling_async.ps1` 另外在 x86/x64 的真实 DLL 中测试排队/执行中卸载、请求文本所有权、五秒最小间隔、忙时合并、调度失败同步回退，以及与后台任务并发时强制失败记录仍同步刷新且不调用 C++ new。它使用真实 Windows 线程池及模块引用 API，并以固定容量测试日志接收器验证字段。游戏 low 帧收益仍需同场景对照。

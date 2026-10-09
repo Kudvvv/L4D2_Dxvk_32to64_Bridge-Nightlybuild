@@ -134,6 +134,7 @@ jobs:
             .deps/surface-test/*.csv
             .deps/surface-test/*.exe
             .deps/function-logging-test/**
+            .deps/memory-sampling-test/**
           include-hidden-files: true
           if-no-files-found: warn
       - name: Record provenance and archive
