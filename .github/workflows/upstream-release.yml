@@ -84,6 +84,13 @@ jobs:
       - name: Test resource creation cleanup and buffer lock bounds
         shell: powershell
         run: ./scripts/test_resource_lifecycle.ps1
+      - name: Test API logger allocations and preserved log behavior (x86 and x64)
+        shell: powershell
+        run: ./scripts/test_function_logging.ps1
+      - name: Benchmark disabled API logger overhead
+        if: ${{ inputs.validation_only }}
+        shell: powershell
+        run: ./scripts/benchmark_function_logging.ps1
       - name: Test Host swapchain query and Reset temporary references
         shell: powershell
         run: ./scripts/test_device_reset_lifetime.ps1
@@ -100,6 +107,13 @@ jobs:
       - name: Test actual volume lock and upload code (x86 and x64)
         shell: powershell
         run: ./scripts/test_volume_texture.ps1
+      - name: Test actual surface upload code (x86 and x64)
+        shell: powershell
+        run: ./scripts/test_surface_upload.ps1
+      - name: Benchmark surface upload copying
+        if: ${{ inputs.validation_only }}
+        shell: powershell
+        run: ./scripts/test_surface_upload.ps1 -Benchmark
       - name: Benchmark volume upload copying
         if: ${{ inputs.validation_only }}
         shell: powershell
@@ -116,6 +130,10 @@ jobs:
             .deps/volume-test/*.json
             .deps/volume-test/*.csv
             .deps/volume-test/*.exe
+            .deps/surface-test/*.json
+            .deps/surface-test/*.csv
+            .deps/surface-test/*.exe
+            .deps/function-logging-test/**
           include-hidden-files: true
           if-no-files-found: warn
       - name: Record provenance and archive

@@ -655,7 +655,7 @@ index 20a5e2b6b6f6b19da9ceb60e0213039dd6cc2c27..ae74cf278bc3c362dc33f9d60aac5b52
      : LockableBuffer((IDirect3DIndexBuffer9*)nullptr, pDevice, desc) {
    }
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
-index 300aaf52349174026c589c75ab88d7b0192369a6..acf4dabf399c57bcab1c4fbaf51c752095a9ec9f 100644
+index 300aaf52349174026c589c75ab88d7b0192369a6..7940c954bffaccce3d80d3bddf3051e846b4ba6b 100644
 --- a/bridge/src/client/d3d9_lss.cpp
 +++ b/bridge/src/client/d3d9_lss.cpp
 @@ -1,3 +1,7 @@
@@ -674,6 +674,11 @@ index 300aaf52349174026c589c75ab88d7b0192369a6..acf4dabf399c57bcab1c4fbaf51c7520
  #include "pch.h"
  
  #include "version.h"
+@@ -74,3 +79,3 @@ std::map<std::thread::id, std::atomic<size_t>> FunctionEntryExitLogger::s_counte
+
+-FunctionEntryExitLogger::FunctionEntryExitLogger(const std::string functionName, void* thiz) {
++FunctionEntryExitLogger::FunctionEntryExitLogger(const char* functionName, void* thiz) {
+   if (GlobalOptions::getLogApiCalls() || GlobalOptions::getLogAllCalls()) {
 @@ -128,7 +133,7 @@ bool gbBridgeRunning = true;
  std::string gRemixFolder = "";
  std::mutex gSwapChainMapMutex;
@@ -724,7 +729,7 @@ index 300aaf52349174026c589c75ab88d7b0192369a6..acf4dabf399c57bcab1c4fbaf51c7520
      DInputHookAttach();
  
 diff --git a/bridge/src/client/d3d9_surface.cpp b/bridge/src/client/d3d9_surface.cpp
-index e54aec56f6a42f37dce303845cde33fe5eada0c4..e29ad879cabc81817af2ef683938bdaf6a769456 100644
+index e54aec56f6a42f37dce303845cde33fe5eada0c4..b6e9f2dab6a40967d4a04e854f6e19b25df22876 100644
 --- a/bridge/src/client/d3d9_surface.cpp
 +++ b/bridge/src/client/d3d9_surface.cpp
 @@ -1,3 +1,7 @@
@@ -890,7 +895,32 @@ index e54aec56f6a42f37dce303845cde33fe5eada0c4..e29ad879cabc81817af2ef683938bdaf
    const auto dataFlag = m_bUseSharedHeap ? Commands::FlagBits::DataInSharedHeap : 0;
    {
      ClientMessage c(Commands::IDirect3DSurface9_UnlockRect, getId(), dataFlag);
-@@ -296,4 +361,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+@@ -277,10 +342,20 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
+       const size_t rowSize = bridge_util::calcRowSize(width, m_desc.Format);
+       c.send_data(rowSize);
+       if (auto* blobPacketPtr = c.begin_data_blob(totalSize)) {
+-        FOR_EACH_RECT_ROW(lockInfo.lockedRect, height, m_desc.Format, {
+-          memcpy(blobPacketPtr, ptr, rowSize);
+-          blobPacketPtr += rowSize;
+-        });
++        // NV-DXVK start: Copy only complete, tightly packed surfaces in one pass.
++        const bool completeSurface = lockInfo.rect.left == 0 && lockInfo.rect.top == 0
++          && width == m_desc.Width && height == m_desc.Height;
++        const uint64_t packedSize = static_cast<uint64_t>(bridge_util::calcStride(height, m_desc.Format)) * rowSize;
++        if (completeSurface && totalSize != 0 && packedSize == totalSize
++          && lockInfo.lockedRect.Pitch > 0 && static_cast<size_t>(lockInfo.lockedRect.Pitch) == rowSize) {
++          memcpy(blobPacketPtr, lockInfo.lockedRect.pBits, totalSize);
++        } else {
++          FOR_EACH_RECT_ROW(lockInfo.lockedRect, height, m_desc.Format, {
++            memcpy(blobPacketPtr, ptr, rowSize);
++            blobPacketPtr += rowSize;
++          });
++        }
++        // NV-DXVK end
+         c.end_data_blob();
+       }
+     }
+@@ -296,4 +371,4 @@ void Direct3DSurface9_LSS::sendDataToServer(const LockInfo& lockInfo) const {
  std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions(const RECT& rect) {
    return { rect.right  - rect.left,
             rect.bottom - rect.top  };
@@ -1076,6 +1106,19 @@ index 2a4b9e459991bbcd51d12b0b741ca9ee79fc7c4c..51de5d295ac2b6ef49b4282c392757c8
    Direct3DTexture9_LSS(BaseDirect3DDevice9Ex_LSS* const pDevice, const TEXTURE_DESC& desc)
      : Direct3DBaseTexture9_LSS(pDevice, desc) {
      m_children.resize(GetLevelCount());
+diff --git a/bridge/src/client/d3d9_util.h b/bridge/src/client/d3d9_util.h
+index 2ef0ed48d8560f61057866fc5fbd50f73f46e285..62481d2a7538129b4e7b4fdb1f4ec22e3cfca48a 100644
+--- a/bridge/src/client/d3d9_util.h
++++ b/bridge/src/client/d3d9_util.h
+@@ -46,7 +46,7 @@ using namespace bridge_util;
+
+ class FunctionEntryExitLogger {
+ public:
+-  FunctionEntryExitLogger(const std::string functionName, void* thiz);
++  FunctionEntryExitLogger(const char* functionName, void* thiz);
+   ~FunctionEntryExitLogger();
+ private:
+   std::string m_functionName;
 diff --git a/bridge/src/client/d3d9_vertexbuffer.cpp b/bridge/src/client/d3d9_vertexbuffer.cpp
 index 36ebe3aa806dea61d2005543e0b8b473c97ea4a1..854fe6132ef0839f0c07d2034117ffc7cfd66646 100644
 --- a/bridge/src/client/d3d9_vertexbuffer.cpp
