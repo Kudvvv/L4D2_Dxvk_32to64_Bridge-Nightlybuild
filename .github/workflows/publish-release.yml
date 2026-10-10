@@ -11,6 +11,10 @@ on:
       version:
         description: Release version without the v prefix
         required: true
+      include_l4n:
+        description: 'Publish a separate L4N package (disable when the plugin is unchanged)'
+        type: boolean
+        default: true
       l4n_build_run_id:
         description: Prior successful run with unchanged L4N source/ABI (empty uses this build's separate plugin artifact)
         required: false
@@ -27,10 +31,13 @@ jobs:
       BUILD_RUN_ID: ${{ inputs.build_run_id }}
       RELEASE_VERSION: ${{ inputs.version }}
       L4N_BUILD_RUN_ID: ${{ inputs.l4n_build_run_id }}
+      INCLUDE_L4N: ${{ inputs.include_l4n }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Test release packaging and optional component publication
+        run: python -m unittest discover -s tests -p test_release_packaging.py
       - name: Verify tested packages, optional plugin provenance and release draft before publishing
         run: python scripts/publish_release.py

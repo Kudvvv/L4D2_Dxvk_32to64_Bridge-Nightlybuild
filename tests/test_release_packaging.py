@@ -4,6 +4,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from argparse import Namespace
 from pathlib import Path
 import struct
@@ -163,6 +164,60 @@ class StablePackaging(unittest.TestCase):
                 archive.writestr('SHA256.json', json.dumps({'bin/dxvk_d3d9.dll': hashlib.sha256(b'original').hexdigest()}))
             with self.assertRaisesRegex(ValueError, 'checksum'):
                 publish_release.read_package(path)
+
+    def test_core_only_publication_verifies_packages_without_plugin_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, args = self.prepare(directory)
+            args.plugin = None
+            self.run_package(root, args)
+            archives = {}
+            for name in ['l4d2-bridge', 'l4d2-bridge-patch']:
+                archive_path = root / (name + '.zip')
+                with zipfile.ZipFile(archive_path, 'w') as archive:
+                    for relative, data in self.files(args.output / name).items():
+                        archive.writestr(relative, data)
+                archives[name + '-v1.2.0'] = archive_path.read_bytes()
+            assets, edits = [], []
+
+            def api(path):
+                if path.endswith('/actions/runs/123'):
+                    return {'conclusion': 'success', 'name': 'Build L4D2 D3D9 Bridge', 'head_sha': 'a' * 40}
+                if path.endswith('/releases?per_page=100'):
+                    return [{'tag_name': 'v1.2.0', 'draft': True, 'target_commitish': 'a' * 40, 'id': 1}]
+                if path.endswith('/artifacts?per_page=100'):
+                    return {'artifacts': [{'name': name, 'expired': False, 'archive_download_url': name}
+                                          for name in archives]}
+                if path.endswith('/releases/1'):
+                    return {'assets': assets}
+                self.fail('Unexpected API/plugin work: ' + path)
+
+            def run(command, **kwargs):
+                if command[:2] == ['gh', 'api']:
+                    kwargs['stdout'].write(archives[command[2]])
+                elif command[:3] == ['gh', 'release', 'upload']:
+                    names = command[4:-1]
+                    self.assertEqual(names, ['l4d2-bridge-patch-v1.2.0.zip',
+                                             'l4d2-bridge-v1.2.0.zip', 'SHA256SUMS.txt'])
+                    assets.extend({'name': name, 'size': Path(name).stat().st_size} for name in names)
+                elif command[:3] == ['gh', 'release', 'edit']:
+                    self.assertEqual(len(assets), 3)
+                    edits.append(command)
+                else:
+                    self.fail('Unexpected publication command: ' + str(command))
+
+            previous = os.getcwd()
+            try:
+                os.chdir(root)
+                with mock.patch.dict(os.environ, {'GH_REPO': 'owner/repo', 'RELEASE_VERSION': '1.2.0',
+                                                 'BUILD_RUN_ID': '123', 'L4N_BUILD_RUN_ID': '', 'INCLUDE_L4N': 'false'}), \
+                     mock.patch.object(publish_release, 'api', side_effect=api), \
+                     mock.patch.object(publish_release.subprocess, 'run', side_effect=run):
+                    publish_release.main()
+                self.assertEqual(len(edits), 1)
+                self.assertEqual(len(Path('SHA256SUMS.txt').read_text().splitlines()), 2)
+                self.assertFalse(list(root.glob('*l4n*.zip')))
+            finally:
+                os.chdir(previous)
 
     def test_existing_outputs_are_preserved(self):
         with tempfile.TemporaryDirectory() as directory:

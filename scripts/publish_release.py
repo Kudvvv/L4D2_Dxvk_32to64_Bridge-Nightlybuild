@@ -94,6 +94,9 @@ def main():
     version = os.environ['RELEASE_VERSION']
     run_id = os.environ['BUILD_RUN_ID']
     plugin_run_id = os.environ.get('L4N_BUILD_RUN_ID', '')
+    include_plugin = os.environ.get('INCLUDE_L4N', 'true').lower()
+    if include_plugin not in ('true', 'false'):
+        raise ValueError('INCLUDE_L4N must be true or false')
     if not re.fullmatch(r'\d+\.\d+\.\d+', version) or not run_id.isdigit() or (plugin_run_id and not plugin_run_id.isdigit()):
         raise ValueError('Invalid version or build run ID')
 
@@ -129,57 +132,58 @@ def main():
     if receipts[0]['build_id'] != receipts[1]['build_id'] or receipts[0]['patch_sha256'] != receipts[1]['patch_sha256']:
         raise ValueError('Core artifacts are not a matched build')
 
-    plugin_name = f'l4d2-bridge-l4n-v{version}.zip'
-    if plugin_run_id:
-        previous = tested(plugin_run_id)
-        old_commit = previous['head_sha']
-        for name in ['plugins/l4n/L4D2BridgePlugin.cpp', 'plugins/l4n/sdk/l4n_plugin.h']:
-            if contents(repo, old_commit, name) != contents(repo, commit, name):
-                raise ValueError('L4N source changed; build the plugin rather than reuse it')
-        previous_patch = contents(repo, old_commit, 'patches/l4d2-bridge.patch')
-        current_patch = contents(repo, commit, 'patches/l4d2-bridge.patch')
-        for name in ['bridge/src/util/bridge_control.h', 'bridge/src/util/pageblock_control.h']:
-            if patch_section(previous_patch, name) != patch_section(current_patch, name):
-                raise ValueError('Control ABI changed; revalidate the plugin')
-        old_version = contents(repo, old_commit, 'VERSION').decode().strip()
-        previous_path = download(plugin_run_id, f'l4d2-bridge-v{old_version}', 'reused-plugin-source.zip')
-        old_files = read_package(previous_path)
-        plugin = old_files['optional/L4N/L4D2BridgePlugin.dll']
-        relative = 'bin/neko/plugins/L4D2BridgePlugin.dll'
-        hashes = {relative: hashlib.sha256(plugin).hexdigest()}
-        plugin_files = {relative: plugin, 'VERSION': (version + '\n').encode()}
-        for name in ['LICENSE', 'THIRD_PARTY.md', 'docs/L4N-BRIDGE-CONTROLS.md']:
-            plugin_files[name] = contents(repo, commit, name)
-        plugin_files['README.md'] = (
-            f'# Optional L4N Bridge controls {version}\n\n'
-            'Close L4D2, then merge bin/neko/plugins into the game directory. '
-            'Requires L4N SDK v2 HUD support. Bridge works without this plugin. '
-            'See [controls](docs/L4N-BRIDGE-CONTROLS.md). '
-            'The unchanged DLL is reused from a tested build; provenance is in BUILD-INFO.json.\n').encode()
-        receipt = {'version': version, 'kind': 'optional-l4n-plugin', 'distribution': 'release',
-                   'source_commit': old_commit, 'compatible_bridge_commit': commit,
-                   'reused_binary': True, 'build_run_id': int(plugin_run_id), 'files': hashes}
-        plugin_files['SHA256.json'] = (json.dumps(hashes, indent=2) + '\n').encode()
-        plugin_files['BUILD-INFO.json'] = (json.dumps(receipt, indent=2) + '\n').encode()
-        path = Path(plugin_name)
-        with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-            for name, data in sorted(plugin_files.items()):
-                archive.writestr(name, data)
-    else:
-        path = download(run_id, plugin_name[:-4], plugin_name)
-    plugin_files = read_package(path)
-    plugin_receipt = json.loads(plugin_files['BUILD-INFO.json'])
-    plugin = plugin_files['bin/neko/plugins/L4D2BridgePlugin.dll']
-    offset = int.from_bytes(plugin[60:64], 'little')
-    if plugin_files['VERSION'].decode().strip() != version or plugin_receipt['version'] != version or plugin_receipt['kind'] != 'optional-l4n-plugin':
-        raise ValueError('Invalid independent plugin package')
-    if plugin[:2] != b'MZ' or plugin[offset:offset + 4] != b'PE\0\0' or int.from_bytes(plugin[offset + 4:offset + 6], 'little') != 0x14c:
-        raise ValueError('L4N plugin must be x86 PE')
-    if [name for name in plugin_files if name.startswith('bin/')] != ['bin/neko/plugins/L4D2BridgePlugin.dll']:
-        raise ValueError('Plugin asset contains Bridge or backend files')
-    if plugin_receipt['files'] != json.loads(plugin_files['SHA256.json']) or set(plugin_receipt['files']) != {'bin/neko/plugins/L4D2BridgePlugin.dll'}:
-        raise ValueError('Invalid plugin checksum receipt')
-    outputs.append(path)
+    if include_plugin == 'true':
+        plugin_name = f'l4d2-bridge-l4n-v{version}.zip'
+        if plugin_run_id:
+            previous = tested(plugin_run_id)
+            old_commit = previous['head_sha']
+            for name in ['plugins/l4n/L4D2BridgePlugin.cpp', 'plugins/l4n/sdk/l4n_plugin.h']:
+                if contents(repo, old_commit, name) != contents(repo, commit, name):
+                    raise ValueError('L4N source changed; build the plugin rather than reuse it')
+            previous_patch = contents(repo, old_commit, 'patches/l4d2-bridge.patch')
+            current_patch = contents(repo, commit, 'patches/l4d2-bridge.patch')
+            for name in ['bridge/src/util/bridge_control.h', 'bridge/src/util/pageblock_control.h']:
+                if patch_section(previous_patch, name) != patch_section(current_patch, name):
+                    raise ValueError('Control ABI changed; revalidate the plugin')
+            old_version = contents(repo, old_commit, 'VERSION').decode().strip()
+            previous_path = download(plugin_run_id, f'l4d2-bridge-v{old_version}', 'reused-plugin-source.zip')
+            old_files = read_package(previous_path)
+            plugin = old_files['optional/L4N/L4D2BridgePlugin.dll']
+            relative = 'bin/neko/plugins/L4D2BridgePlugin.dll'
+            hashes = {relative: hashlib.sha256(plugin).hexdigest()}
+            plugin_files = {relative: plugin, 'VERSION': (version + '\n').encode()}
+            for name in ['LICENSE', 'THIRD_PARTY.md', 'docs/L4N-BRIDGE-CONTROLS.md']:
+                plugin_files[name] = contents(repo, commit, name)
+            plugin_files['README.md'] = (
+                f'# Optional L4N Bridge controls {version}\n\n'
+                'Close L4D2, then merge bin/neko/plugins into the game directory. '
+                'Requires L4N SDK v2 HUD support. Bridge works without this plugin. '
+                'See [controls](docs/L4N-BRIDGE-CONTROLS.md). '
+                'The unchanged DLL is reused from a tested build; provenance is in BUILD-INFO.json.\n').encode()
+            receipt = {'version': version, 'kind': 'optional-l4n-plugin', 'distribution': 'release',
+                       'source_commit': old_commit, 'compatible_bridge_commit': commit,
+                       'reused_binary': True, 'build_run_id': int(plugin_run_id), 'files': hashes}
+            plugin_files['SHA256.json'] = (json.dumps(hashes, indent=2) + '\n').encode()
+            plugin_files['BUILD-INFO.json'] = (json.dumps(receipt, indent=2) + '\n').encode()
+            path = Path(plugin_name)
+            with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+                for name, data in sorted(plugin_files.items()):
+                    archive.writestr(name, data)
+        else:
+            path = download(run_id, plugin_name[:-4], plugin_name)
+        plugin_files = read_package(path)
+        plugin_receipt = json.loads(plugin_files['BUILD-INFO.json'])
+        plugin = plugin_files['bin/neko/plugins/L4D2BridgePlugin.dll']
+        offset = int.from_bytes(plugin[60:64], 'little')
+        if plugin_files['VERSION'].decode().strip() != version or plugin_receipt['version'] != version or plugin_receipt['kind'] != 'optional-l4n-plugin':
+            raise ValueError('Invalid independent plugin package')
+        if plugin[:2] != b'MZ' or plugin[offset:offset + 4] != b'PE\0\0' or int.from_bytes(plugin[offset + 4:offset + 6], 'little') != 0x14c:
+            raise ValueError('L4N plugin must be x86 PE')
+        if [name for name in plugin_files if name.startswith('bin/')] != ['bin/neko/plugins/L4D2BridgePlugin.dll']:
+            raise ValueError('Plugin asset contains Bridge or backend files')
+        if plugin_receipt['files'] != json.loads(plugin_files['SHA256.json']) or set(plugin_receipt['files']) != {'bin/neko/plugins/L4D2BridgePlugin.dll'}:
+            raise ValueError('Invalid plugin checksum receipt')
+        outputs.append(path)
     sums = Path('SHA256SUMS.txt')
     sums.write_text(''.join(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n' for path in outputs))
     subprocess.run(['gh', 'release', 'upload', 'v' + version, *map(str, outputs), str(sums), '--clobber'], check=True)
