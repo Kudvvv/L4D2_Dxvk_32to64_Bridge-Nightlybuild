@@ -4,13 +4,15 @@
 
 param(
   [ValidateSet('x86', 'x64')][string]$CompileArchitecture,
+  [string]$SourceDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) '.deps/dxvk-remix'),
+  [switch]$ExpectReadyFastPath,
   [switch]$Benchmark,
   [ValidateRange(2, 30)][int]$BenchmarkRounds = 6,
   [ValidateRange(100000, 50000000)][int]$BenchmarkMessages = 2000000
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$source = Join-Path $repoRoot '.deps/dxvk-remix'
+$source = (Resolve-Path -LiteralPath $SourceDirectory).Path
 $testDir = Join-Path $repoRoot '.deps/queue-test'
 New-Item -ItemType Directory -Force $testDir | Out-Null
 if ($CompileArchitecture) {
@@ -18,7 +20,10 @@ if ($CompileArchitecture) {
   SetupVS -Platform $CompileArchitecture -VcVarsVer '14.29'
   Push-Location $testDir
   try {
-    & cl.exe /nologo /std:c++17 /EHsc /W4 /WX "/I$source/bridge/src/util" "$repoRoot/tests/command_queue.cpp" "/Fe:queue-test-$CompileArchitecture.exe"
+    $testArgs = @('/nologo', '/std:c++17', '/EHsc', '/W4', '/WX', '/DL4D2_QUEUE_TEST_CLOCK',
+      "/I$source/bridge/src/util", "$repoRoot/tests/command_queue.cpp", "/Fe:queue-test-$CompileArchitecture.exe")
+    if ($ExpectReadyFastPath) { $testArgs += '/DL4D2_QUEUE_TEST_LAZY_CLOCK' }
+    & cl.exe @testArgs
     if ($LASTEXITCODE -ne 0) { throw "Queue test compilation failed for $CompileArchitecture" }
     if ($Benchmark) {
       # The two benchmark headers differ only by the successful-peek SC fence.
@@ -50,7 +55,9 @@ if ($CompileArchitecture) {
   } finally { Pop-Location }
 } else {
   foreach ($arch in @('x86', 'x64')) {
-    $compileArgs = @('-NoProfile', '-File', $PSCommandPath, '-CompileArchitecture', $arch)
+    $compileArgs = @('-NoProfile', '-File', $PSCommandPath, '-CompileArchitecture', $arch,
+      '-SourceDirectory', $source)
+    if ($ExpectReadyFastPath) { $compileArgs += '-ExpectReadyFastPath' }
     if ($Benchmark) { $compileArgs += '-Benchmark' }
     & powershell.exe @compileArgs
     if ($LASTEXITCODE -ne 0) { throw "Queue test compilation failed for $arch" }

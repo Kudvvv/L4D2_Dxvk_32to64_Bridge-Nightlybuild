@@ -20,6 +20,9 @@ jobs:
       - name: Test all imported upstream features
         shell: powershell
         run: ./scripts/test_upstream_features.ps1
+      - name: Test ready commands and queue wakeup across architectures
+        shell: powershell
+        run: ./scripts/test_command_queue.ps1 -ExpectReadyFastPath
       - name: Test Python contracts and package validation
         run: python -m unittest discover -s tests -p 'test_*.py'
       - uses: actions/upload-artifact@v4

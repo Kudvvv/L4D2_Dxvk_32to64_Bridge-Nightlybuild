@@ -20,11 +20,25 @@
 
 class GlobalOptions {
 public:
-  static DWORD getCommandTimeout() { return 5000; }
+  inline static DWORD commandTimeout = 5000;
+  static DWORD getCommandTimeout() { return commandTimeout; }
 };
 #include "util_circularqueue.h"
 #include "util_commands.h"
+#ifdef L4D2_QUEUE_TEST_CLOCK
+#include "api_wait_diagnostics.h"
+#include "queue_wait_diagnostics.h"
+std::atomic<uint64_t> queueClockCalls { 0 };
+ULONGLONG queueTestClock() {
+  queueClockCalls.fetch_add(1, std::memory_order_relaxed);
+  return GetTickCount64();
+}
+#define GetTickCount64 queueTestClock
+#endif
 #include "util_atomiccircularqueue.h"
+#ifdef L4D2_QUEUE_TEST_CLOCK
+#undef GetTickCount64
+#endif
 
 using bridge_util::Result;
 struct Item {
@@ -149,6 +163,85 @@ void testTimeoutAndCompatibility() {
   producer.join();
   require(result == Result::Success && value.sequence == 7, "legacy producer fallback failed");
 }
+void testFullQueueTimeoutAndRecovery() {
+  const auto name = uniqueName();
+  Memory memory(name);
+  Writer writer(name, memory.data, kMapSize, kQueueSize);
+  Reader reader(name, memory.data, kMapSize, kQueueSize);
+  for (uint32_t i = 0; i < kQueueSize - 1; ++i) {
+    require(writer.push(makeItem(i)) == Result::Success, "initial fill failed");
+  }
+  GlobalOptions::commandTimeout = 25;
+  const auto start = GetTickCount64();
+  const auto result = writer.push(makeItem(999));
+  const auto elapsed = GetTickCount64() - start;
+  GlobalOptions::commandTimeout = 5000;
+  require(result == Result::Failure && elapsed >= 25 && elapsed < 2000,
+    "full queue did not respect its timeout");
+  for (uint32_t i = 0; i < kQueueSize - 1; ++i) { peekThenPull(reader, i); }
+  require(writer.push(makeItem(123)) == Result::Success, "writer did not recover after timeout");
+  peekThenPull(reader, 123);
+}
+void testPullCancellationAndWake() {
+  const auto name = uniqueName();
+  Memory memory(name);
+  Writer writer(name, memory.data, kMapSize, kQueueSize);
+  Reader reader(name, memory.data, kMapSize, kQueueSize);
+  std::atomic<bool> cancel { false };
+  std::promise<void> started;
+  auto task = std::async(std::launch::async, [&] {
+    started.set_value();
+    Result result = Result::Success;
+    reader.pull(result, 0, &cancel);
+    return result;
+  });
+  started.get_future().wait();
+  Sleep(25);
+  const auto start = GetTickCount64();
+  cancel.store(true);
+  require(task.get() == Result::Timeout && GetTickCount64() - start < 2000,
+    "unbounded pull did not observe cancellation");
+  cancel.store(false);
+  std::thread producer([&] { Sleep(25); writer.push(makeItem(77)); });
+  Result result = Result::Failure;
+  const auto item = reader.pull(result, 1000, &cancel);
+  producer.join();
+  require(result == Result::Success, "pull did not wake after previous cancellation");
+  requireItem(item, 77);
+}
+#ifdef L4D2_QUEUE_TEST_LAZY_CLOCK
+void testImmediateOperationsAvoidClock() {
+  const auto name = uniqueName();
+  Memory memory(name);
+  Writer writer(name, memory.data, kMapSize, kQueueSize);
+  Reader reader(name, memory.data, kMapSize, kQueueSize);
+  std::atomic<bool> cancel { true };
+  for (uint32_t i = 0; i < 1000; ++i) {
+    require(writer.push(makeItem(i)) == Result::Success, "clock test push failed");
+    queueClockCalls.store(0, std::memory_order_relaxed);
+    Result result = Result::Failure;
+    requireItem(reader.peek(result, 1, &cancel), i);
+    require(result == Result::Success, "available item did not take precedence over cancellation");
+    requireItem(reader.pull(result, 1, &cancel), i);
+    require(result == Result::Success, "clock test pull failed");
+    require(queueClockCalls.load(std::memory_order_relaxed) == 0,
+      "ready peek/pull read the timeout clock");
+  }
+  Result result = Result::Success;
+  queueClockCalls.store(0, std::memory_order_relaxed);
+  reader.peek(result, 1000, &cancel);
+  require(result == Result::Timeout, "cancelled peek did not return");
+  reader.pull(result, 1000, &cancel);
+  require(result == Result::Timeout, "cancelled pull did not return");
+  require(queueClockCalls.load(std::memory_order_relaxed) == 0,
+    "already-cancelled empty queue read the timeout clock");
+  cancel.store(false);
+  queueClockCalls.store(0, std::memory_order_relaxed);
+  reader.peek(result, 20, &cancel);
+  require(result == Result::Timeout && queueClockCalls.load(std::memory_order_relaxed) > 0,
+    "empty bounded wait never started its timeout clock");
+}
+#endif
 void testNotificationCoalescing() {
   const auto name = uniqueName();
   Memory memory(name);
@@ -270,8 +363,13 @@ int wmain(int argc, wchar_t** argv) {
       runReader(name, capacity);
     } else {
       require(argc == 2, "expected peer executable path");
+#ifdef L4D2_QUEUE_TEST_LAZY_CLOCK
+      testImmediateOperationsAvoidClock();
+#endif
       testIdleAndCancel();
       testTimeoutAndCompatibility();
+      testFullQueueTimeoutAndRecovery();
+      testPullCancellationAndWake();
       testNotificationCoalescing();
       testCounters();
       testWakeAndWrap();
