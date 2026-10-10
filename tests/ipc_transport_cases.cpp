@@ -9,7 +9,11 @@ void require(bool value,const char* message) {
 }
 uint32_t pattern(uint32_t sequence,uint32_t offset) { return sequence*1664525u+offset*1013904223u; }
 template<typename B> void receiveKnown(uint32_t sequence, bool request) {
-  const bool blob=wrapTest ? request : (sequence%3)!=0;
+#ifdef REMIX_BRIDGE_CLIENT
+  const bool blob=!wrapTest && (sequence%3)!=0;
+#else
+  const bool blob=wrapTest || (sequence%3)!=0;
+#endif
 #ifdef REMIX_BRIDGE_CLIENT
   require(B::waitForCommand(Commands::Bridge_Response,0,nullptr,true,sequence)==Result::Success,"known matching reply");
   const auto packet=B::template get_packet<2>(blob);
