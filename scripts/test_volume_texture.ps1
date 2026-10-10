@@ -69,15 +69,26 @@ if ($CompileArchitecture) {
     if ($LASTEXITCODE -ne 0) { throw 'Negative control extraction failed' }
     & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /DSEND_ALL_LOCK_DATA_AT_ONCE "/I$testDir" "$repoRoot/tests/volume_texture.cpp" "/Fe:volume-$CompileArchitecture-negative.exe"
     if ($LASTEXITCODE -ne 0) { throw 'Negative control compilation failed' }
-    & (Join-Path $testDir "volume-$CompileArchitecture-negative.exe")
-    if ($LASTEXITCODE -eq 0) { throw 'Regression test failed to detect the old RowPitch bug' }
+    # Capture expected stderr without PowerShell 5 treating it as a fatal ErrorRecord.
+    & cmd.exe /d /c "volume-$CompileArchitecture-negative.exe > pitch-negative-output.txt 2>&1"
+    $controlExit = $LASTEXITCODE
+    $controlOutput = Get-Content -LiteralPath 'pitch-negative-output.txt' -Raw
+    Write-Host $controlOutput
+    if ($controlExit -ne 1 -or $controlOutput -notmatch 'RowPitch must be bytes') {
+      throw 'Volume pitch control failed for an unexpected reason or missed the regression'
+    }
     # Removing only the wire-size guard must fail before any huge allocation occurs.
     python "$PSScriptRoot/prepare_volume_test.py" $source "$testDir/volume_methods.h" --payload-negative-control
     if ($LASTEXITCODE -ne 0) { throw 'Payload negative control extraction failed' }
     & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /DSEND_ALL_LOCK_DATA_AT_ONCE "/I$testDir" "$repoRoot/tests/volume_texture.cpp" "/Fe:volume-$CompileArchitecture-payload-negative.exe"
     if ($LASTEXITCODE -ne 0) { throw 'Payload negative control compilation failed' }
-    & (Join-Path $testDir "volume-$CompileArchitecture-payload-negative.exe")
-    if ($LASTEXITCODE -eq 0) { throw 'Regression test failed to detect the missing wire-size guard' }
+    & cmd.exe /d /c "volume-$CompileArchitecture-payload-negative.exe > payload-negative-output.txt 2>&1"
+    $controlExit = $LASTEXITCODE
+    $controlOutput = Get-Content -LiteralPath 'payload-negative-output.txt' -Raw
+    Write-Host $controlOutput
+    if ($controlExit -ne 1 -or $controlOutput -notmatch 'wire payload layout boundary changed') {
+      throw 'Volume payload control failed for an unexpected reason or missed the regression'
+    }
     python "$PSScriptRoot/prepare_volume_test.py" $source "$testDir/volume_methods.h"
     if ($LASTEXITCODE -ne 0) { throw 'Failed to restore actual volume methods' }
   } finally { Pop-Location }

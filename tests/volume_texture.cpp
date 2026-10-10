@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <d3d9.h>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -49,6 +50,12 @@ void operator delete[](void* memory) noexcept {
   std::free(memory);
 }
 void operator delete[](void* memory, size_t) noexcept { ::operator delete[](memory); }
+// The CRT's nothrow array overload may delegate to scalar new. Route both array
+// forms through the same fault/ownership hook now that production uses nothrow.
+void* operator new[](size_t size, const std::nothrow_t&) noexcept {
+  try { return ::operator new[](size); } catch (const std::bad_alloc&) { return nullptr; }
+}
+void operator delete[](void* memory, const std::nothrow_t&) noexcept { ::operator delete[](memory); }
 
 enum class TransportFault { None, Construct, Header, Payload, Finish };
 TransportFault transportFault = TransportFault::None;
@@ -193,6 +200,16 @@ void testPayloadBounds() {
     Case{1, 1, 0x3ffffffeu, true}, Case{1, 1, 0x3fffffffu, false},
     // Each API pitch fits INT, but the complete volume reaches or exceeds 4 GiB.
     Case{32768, 8192, 4, false}, Case{32768, 8192, 5, false}}) {
+    D3DVOLUME_DESC desc {};
+    desc.Width = item.width; desc.Height = item.height; desc.Depth = item.depth;
+    const D3DBOX box {0, 0, item.width, item.height, 0, item.depth};
+    l4d2_volume::Layout layout;
+    require(l4d2_volume::layout(box, desc, 1, 4, layout) == item.fitsWire,
+      "wire payload layout boundary changed");
+    if (item.fitsWire) {
+      require(layout.bytes == static_cast<uint64_t>(item.width) * item.height * item.depth * 4u,
+        "representable payload layout truncated its byte count");
+    }
     Direct3DVolume9_LSS volume(D3DFMT_A8R8G8B8, item.width, item.height, item.depth);
     auto locked = sentinelOutput();
     const auto previousAttempts = allocation::arrayAttempts;
@@ -201,8 +218,15 @@ void testPayloadBounds() {
     const auto result = volume.LockBox(&locked, nullptr, 0);
     allocation::failArray = false;
     if (item.fitsWire) {
-      require(result == E_OUTOFMEMORY && allocation::arrayAttempts == previousAttempts + 1,
-        "representable payload was rejected before the allocation fault");
+      require(result == E_OUTOFMEMORY, "representable payload allocation failure changed HRESULT");
+      // A wire-valid byte count can exceed the compiler's maximum array object
+      // size on x86. Such a new-expression may fail before calling operator new[].
+      // Ordinary sizes below exercise the actual allocator fault on every target.
+      const bool exceedsArrayRange = static_cast<uint64_t>(layout.bytes)
+        > static_cast<uint64_t>((std::numeric_limits<ptrdiff_t>::max)());
+      require(allocation::arrayAttempts == previousAttempts + 1
+        || (exceedsArrayRange && allocation::arrayAttempts == previousAttempts),
+        "representable payload did not exercise the expected allocation boundary");
     } else {
       require(result == D3DERR_INVALIDCALL && allocation::arrayAttempts == previousAttempts,
         "oversized wire payload reached allocation instead of being rejected");
@@ -219,10 +243,13 @@ void testAllocationFailuresAndDestruction() {
     require(volume.LockBox(nullptr, nullptr, 0) == D3DERR_INVALIDCALL,
       "null output must return INVALIDCALL");
     auto locked = sentinelOutput();
+    const auto previousAttempts = allocation::arrayAttempts;
     allocation::failArray = true;
     const auto result = volume.LockBox(&locked, nullptr, 0);
     allocation::failArray = false;
     require(result == E_OUTOFMEMORY, "buffer allocation failure escaped the HRESULT boundary");
+    require(allocation::arrayAttempts == previousAttempts + 1,
+      "buffer allocation failure bypassed the array allocation hook");
     requireEmptyOutput(locked);
     require(volume.pendingLocks() == 0 && allocation::liveArrays == baseline,
       "buffer allocation failure changed ownership");
