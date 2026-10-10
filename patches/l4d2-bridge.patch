@@ -14990,7 +14990,7 @@ index 3ed228a..d7d7676 100644
          return 0;
        }
 diff --git a/bridge/src/util/util_bridgecommand.cpp b/bridge/src/util/util_bridgecommand.cpp
-index a3bed63..2f93e54 100644
+index a3bed63..db1a7a7 100644
 --- a/bridge/src/util/util_bridgecommand.cpp
 +++ b/bridge/src/util/util_bridgecommand.cpp
 @@ -1,3 +1,7 @@
@@ -15126,7 +15126,7 @@ index a3bed63..2f93e54 100644
 +  if (!bridge_data::compatible(*channel.control, capacity)) {
 +    Logger::err("IPC protocol/control layout mismatch; mixed Client/Host refused");
 +    failRead();
-   }
++  }
 +  if (header.dataOffset >= capacity) { failRead(); }
 +  const auto start = channel.data->cursor();
 +  const auto position = static_cast<uint32_t>(channel.data->get_pos());
@@ -15143,9 +15143,16 @@ index a3bed63..2f93e54 100644
 +  if (end > channel.cachedPublished) {
 +    channel.cachedPublished = channel.control->published.load(std::memory_order_acquire);
 +    if (end > channel.cachedPublished) { failRead(); }
-+  }
+   }
 +  s_readEnd = start + words;
 +  s_readActive = true;
++}
++
++DECL_BRIDGE_FUNC(void, startPendingRead) {
++    Result result;
++    const auto header = getReaderChannel().commands->peek(result, 1);
++    if (result != Result::Success) { failRead(); }
++    startRead(header);
 +}
  
 -  /*
@@ -15158,13 +15165,6 @@ index a3bed63..2f93e54 100644
 -       || (s_curBatchStartPos > serverCount && expectedClientDataPos < s_curBatchStartPos)
 -       || ((s_curBatchStartPos <= serverCount) && *s_pWriterChannel->serverResetPosRequired))) {
 -    handleOverwriteCondition();
-+DECL_BRIDGE_FUNC(void, startPendingRead) {
-+    Result result;
-+    const auto header = getReaderChannel().commands->peek(result, 1);
-+    if (result != Result::Success) { failRead(); }
-+    startRead(header);
-+}
-+
 +DECL_BRIDGE_FUNC(void, failRead) {
 +  getReaderChannel().control->fault.store(1, std::memory_order_release);
 +  gbBridgeRunning.store(false, std::memory_order_release);
@@ -15286,28 +15286,21 @@ index a3bed63..2f93e54 100644
        return Result::Failure;
      }
  
-@@ -256,7 +341,19 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -255,8 +340,11 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+ 
  DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
                             uintptr_t pHandle,
-                            const Commands::Flags commandFlags)
+-                           const Commands::Flags commandFlags)
 -  : m_command(command)
-+  : Command(command, pHandle, commandFlags, DeferredUid {}) {
-+#ifdef REMIX_BRIDGE_CLIENT
-+  send_data(static_cast<UINT>(s_cmdUID));
-+#endif
-+}
-+
-+DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
-+                           uintptr_t pHandle,
 +                           const Commands::Flags commandFlags,
-+                           DeferredUid)
++                           bool includeUid)
 +  : m_exceptionContext(std::is_same<BridgeId, ::BridgeId::Device>::value ? bridge_exception::Queue::Device : bridge_exception::Queue::Module,
 +                       static_cast<uint16_t>(command), static_cast<uint32_t>(pHandle), "serialize_command")
 +  , m_command(command)
    , m_handle((uint32_t) (size_t) pHandle)
    , m_commandFlags(commandFlags) {
    // If the assert or exception gets triggered it means that there is more than one Command
-@@ -276,82 +373,78 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
+@@ -276,82 +364,85 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
  #endif
  
  #ifdef REMIX_BRIDGE_CLIENT
@@ -15347,19 +15340,25 @@ index a3bed63..2f93e54 100644
 -      if (GlobalOptions::getLogAllCommands()) {
 -        Logger::info("Pushed UID: " + std::to_string(s_cmdUID));
 -      }
--#endif
--      if (RESULT_FAILURE(result)) {
--        // For now just log when things go wrong, but could use some robustness improvements
--        Logger::err("DataQueue send_data: Failed to send data!");
--      }
 +  s_curUID = s_cmdUID;
 +#else
 +  s_curUID = m_handle;
  #endif
--  }
+-      if (RESULT_FAILURE(result)) {
+-        // For now just log when things go wrong, but could use some robustness improvements
+-        Logger::err("DataQueue send_data: Failed to send data!");
+-      }
 +  m_uncaught = std::uncaught_exceptions();
 +  if (!healthy()) { m_status = Result::Failure; return; }
 +  accept(s_pWriterChannel->data->begin_batch());
++#ifdef REMIX_BRIDGE_CLIENT
++  // Generic callers keep the original UID write inside this constructor.
++  // Known layouts include the UID in their one complete reservation instead.
++  if (includeUid) { send_data(static_cast<UINT>(s_cmdUID)); }
++#else
++  (void)includeUid;
+ #endif
+-  }
  }
  
 -DECL_COMMAND_FUNC(,~Command) {
@@ -15383,13 +15382,6 @@ index a3bed63..2f93e54 100644
 -      if (GlobalOptions::getLogAllCommands()) {
 -        Logger::info("Pushed: " + toString(m_command));
 -      }
--#endif
--    } while (
--          RESULT_FAILURE(result)
--      && numRetries++ < GlobalOptions::getCommandRetries()
--      && gbBridgeRunning
--#ifdef REMIX_BRIDGE_CLIENT
--      && BridgeState::getServerState_NoLock() == BridgeState::ProcessState::Running
 +    const auto end = s_pWriterChannel->data->cursor();
 +    const auto capacity = s_pWriterChannel->data->get_total_size();
 +    auto flags = m_commandFlags;
@@ -15399,6 +15391,13 @@ index a3bed63..2f93e54 100644
 +    m_status = s_pWriterChannel->commands->try_push({m_command, flags, static_cast<uint32_t>(s_pWriterChannel->data->get_pos()), m_handle});
 +    if (m_status != Result::Success)
  #endif
+-    } while (
+-          RESULT_FAILURE(result)
+-      && numRetries++ < GlobalOptions::getCommandRetries()
+-      && gbBridgeRunning
+-#ifdef REMIX_BRIDGE_CLIENT
+-      && BridgeState::getServerState_NoLock() == BridgeState::ProcessState::Running
+-#endif
 -    );
 +    {
 +    const auto configured = static_cast<uint64_t>(GlobalOptions::getCommandTimeout())
@@ -15449,7 +15448,7 @@ index a3bed63..2f93e54 100644
 \ No newline at end of file
 +template class Bridge<BridgeId::Device>;
 diff --git a/bridge/src/util/util_bridgecommand.h b/bridge/src/util/util_bridgecommand.h
-index a555f8c..a1f148c 100644
+index a555f8c..9ad9b02 100644
 --- a/bridge/src/util/util_bridgecommand.h
 +++ b/bridge/src/util/util_bridgecommand.h
 @@ -1,3 +1,7 @@
@@ -15649,10 +15648,11 @@ index a555f8c..a1f148c 100644
    // Waits for a command to appear in the command queue. Upon success the command will be removed from the queue
    // and discarded.
    static bridge_util::Result waitForCommandAndDiscard(const Commands::D3D9Command& command = Commands::Bridge_Any,
-@@ -226,69 +263,88 @@ public:
+@@ -225,70 +262,90 @@ public:
+     }
      Command(const Commands::D3D9Command command,
              uintptr_t pHandle,
-             const Commands::Flags commandFlags);
+-            const Commands::Flags commandFlags);
 -    ~Command();
 -
 -    inline void send_data(const DataT obj) {
@@ -15677,9 +15677,11 @@ index a555f8c..a1f148c 100644
 -          // For now just log when things go wrong, but could use some robustness improvements
 -          Logger::err("DataQueue send_data: Failed to send data object!");
 -        }
++            const Commands::Flags commandFlags)
++      : Command(command, pHandle, commandFlags, true) { }
 +    template<size_t N> Command(Commands::D3D9Command command, uintptr_t handle,
 +        Commands::Flags flags, const bridge_data::Packet<N>& packet)
-+      : Command(command, handle, flags, DeferredUid {}) {
++      : Command(command, handle, flags, false) {
 +      if (m_status != Result::Success) { return; }
 +      l4d2_api_wait::Span timing(l4d2_api_wait::Metric::Serialize);
 +#ifdef REMIX_BRIDGE_CLIENT
@@ -15794,7 +15796,7 @@ index a555f8c..a1f148c 100644
      static inline size_t get_counter() {
        return s_cmdCounter;
      }
-@@ -298,7 +354,9 @@ public:
+@@ -298,7 +355,9 @@ public:
      }
  
      static inline void reset_counter() {
@@ -15805,12 +15807,11 @@ index a555f8c..a1f148c 100644
      }
      
      static inline void print_data(std::string prefix, std::vector<Commands::D3D9Command>& commandList)       {
-@@ -328,6 +386,35 @@ public:
+@@ -328,6 +387,34 @@ public:
      }
  
    private:
-+    struct DeferredUid {};
-+    Command(Commands::D3D9Command command, uintptr_t handle, Commands::Flags flags, DeferredUid);
++    Command(Commands::D3D9Command command, uintptr_t handle, Commands::Flags flags, bool includeUid);
 +    bridge_data::Reservation reserve(uint64_t words, bool blob) {
 +      if (m_status != Result::Success || m_finished || s_pWriterChannel->data->blobOpen()) { return {}; }
 +      const auto r = s_pWriterChannel->data->reservation(words, blob);
