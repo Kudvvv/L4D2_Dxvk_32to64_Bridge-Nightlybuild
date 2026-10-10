@@ -18,7 +18,9 @@ def generate(source, output):
     logger = (src / 'util/log/log.h').read_text(encoding="utf-8")
     window = (src / 'client/window.cpp').read_text(encoding="utf-8")
     control = (src / 'client/pageblock_control.cpp').read_text(encoding="utf-8")
-    generated = ['#include "runtime_observation_support.h"\n']
+    generated = ['#include "runtime_observation_support.h"\n#include <cstdarg>\n']
+    readback = (src / 'client/readback_recovery.h').read_text(encoding='utf-8')
+    generated.append(readback[readback.index('namespace l4d2_readback {'):] + '\n')
     retention = (src / 'client/retention_runtime.h').read_text(encoding='utf-8')
     start, end = method(retention, 'struct Runtime {')
     generated.append('namespace l4d2_retention {\n' + retention[start:end] + ';\n}\n')

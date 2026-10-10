@@ -118,6 +118,10 @@ int main(int argc, char** argv) {
     LARGE_INTEGER begin{},end{},frequency{};QueryPerformanceFrequency(&frequency);QueryPerformanceCounter(&begin);
     assert(!entry.synchronize() && entry.pendingSynchronization());
     assert(backing.backingBytes()==layout.bytes && !backing.recoveryMissing());
+    auto& reference=l4d2_readback::context();reference.enabled=true;reference.repeats=3;
+    l4d2_readback::test(19,18,desc,backing);
+    assert(!reference.enabled && reference.attempts==1 && reference.failures==1 && reference.recovered==0);
+    assert(backing.backingBytes()==layout.bytes && !backing.recoveryMissing());
     configuredPolicy="learned-aggressive";configuredDb="ipc-submit-failure.db";std::filesystem::remove(configuredDb);
     l4d2_retention::Runtime retention;assert(retention.context.enabled && !retention.context.fallback);
     Request request;request.resourceId=19;request.parentId=18;request.width=request.height=64;request.format=D3DFMT_DXT1;request.bytes=layout.bytes;request.operation=3;
@@ -130,8 +134,8 @@ int main(int argc, char** argv) {
     }
     GetProcessHandleCount(GetCurrentProcess(),&afterHandles);assert(afterHandles==beforeHandles);
     QueryPerformanceCounter(&end);assert(static_cast<double>(end.QuadPart-begin.QuadPart)/frequency.QuadPart<2.0);
-    assert(ipcSubmissions==101 && backing.backingBytes()==layout.bytes);
-    std::puts("IPC_REQUEST_FAILURE_PASS default residency+retention exchange no-wait no-completion no-eviction no-handle-leak");return 0;
+    assert(ipcSubmissions==102 && backing.backingBytes()==layout.bytes);
+    std::puts("IPC_REQUEST_FAILURE_PASS retained reference+default residency+retention exchange no-wait no-completion no-eviction no-handle-leak");return 0;
   }
   if (!std::strcmp(argv[1], "observer-failure")) {
     std::atomic<unsigned> calls { 0 };
