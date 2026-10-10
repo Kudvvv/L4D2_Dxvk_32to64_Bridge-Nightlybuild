@@ -30,9 +30,12 @@ def generate(source, output):
     for name in FILES:
         text = (util / name).read_text(encoding='utf-8')
         hashes[name] = hashlib.sha256(text.encode()).hexdigest()
+        if name == 'util_semaphore.cpp':
+            text = '#include "ipc_wait_injection.h"\n' + text
         if name == 'util_ipcchannel.h':
             text = text.replace('#include "util_blockingcircularqueue.h"','')  # unused alternative
         (output / name).write_text(text, encoding='utf-8')
+    (output / 'version.h').write_text('#define BRIDGE_VERSION \"native-production-fixture\"\n',encoding='utf-8')
     (output / 'log').mkdir(exist_ok=True)
     (output / 'log/log.h').write_text('''#pragma once
 #include <cstdlib>
@@ -80,7 +83,7 @@ struct GlobalOptions {
   }
   static void init(''',1)
     bodies=[]
-    for marker in ('DECL_BRIDGE_FUNC(bridge_util::Result, syncDataQueue,',
+    for marker in ('DECL_BRIDGE_FUNC(void, reportFault,', 'DECL_BRIDGE_FUNC(bridge_util::Result, syncDataQueue,',
                    'DECL_BRIDGE_FUNC(void, startRead,', 'DECL_BRIDGE_FUNC(void, ensureRead,',
                    'DECL_BRIDGE_FUNC(void, failRead)', 'DECL_BRIDGE_FUNC(size_t, end_read_data)',
                    'DECL_BRIDGE_FUNC(Header, pop_front)', 'DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand,'):

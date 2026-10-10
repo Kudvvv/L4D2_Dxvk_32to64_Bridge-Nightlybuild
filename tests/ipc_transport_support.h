@@ -36,6 +36,7 @@
 #define ZoneScoped
 using namespace bridge_util;
 std::atomic<bool> gbBridgeRunning {true};
+std::atomic<bool> ipcInjectWaitFailure {false};
 bridge_util::Guid gUniqueIdentifier;
 struct BridgeState {
   enum class ProcessState { Running, DoneProcessing };

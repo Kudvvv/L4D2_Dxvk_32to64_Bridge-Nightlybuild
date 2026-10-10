@@ -17,6 +17,8 @@ int main() {
       for (uint64_t n=0; n<=capacity+1; ++n) {
         for (bool blob : {false,true}) {
           auto r=plan(begin,capacity,n,blob);
+          auto fast=planAt(begin,static_cast<uint32_t>(begin%capacity),capacity,n,blob);
+          require(r.valid==fast.valid && r.end==fast.end && r.words==fast.words && r.payload==fast.payload,"cached position equivalent");
           if (!r.valid) { continue; }
           require(r.end-begin==r.words && r.words<=capacity,"occupied span");
           if (blob) { require(static_cast<uint64_t>(r.payload)+n-1<=capacity,"contiguous payload"); }

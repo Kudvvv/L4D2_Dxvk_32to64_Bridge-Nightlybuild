@@ -23,20 +23,6 @@ if ($CompileRole) {
     & powershell.exe -NoProfile -File $PSCommandPath -CompileRole $role
     if ($LASTEXITCODE -ne 0) { throw "Transport compilation failed for $role" }
   }
-  foreach ($hostRole in @('host32','host64')) {
-    $session = [guid]::NewGuid().ToString()
-    $count = 100000
-    $hostProcess = Start-Process (Join-Path $testDir "transport-$hostRole.exe") -ArgumentList @($session,$count) -PassThru -NoNewWindow
-    $clientProcess = Start-Process (Join-Path $testDir 'transport-client32.exe') -ArgumentList @($session,$count) -PassThru -NoNewWindow
-    try {
-      if (!$clientProcess.WaitForExit(120000)) { throw 'Client transport test timed out' }
-      if (!$hostProcess.WaitForExit(10000)) { throw 'Host transport test timed out' }
-      if ($clientProcess.ExitCode -ne 0 -or $hostProcess.ExitCode -ne 0) { throw 'Native cross-process transport failed' }
-    } finally {
-      if (!$clientProcess.HasExited) { $clientProcess.Kill() }
-      if (!$hostProcess.HasExited) { $hostProcess.Kill() }
-    }
-  }
-  & (Join-Path $testDir 'transport-client32.exe') faults
-  if ($LASTEXITCODE -ne 0) { throw 'Native failed-batch test failed' }
+  python "$repoRoot/scripts/run_ipc_transport.py"
+  if ($LASTEXITCODE -ne 0) { throw 'Native transport assertions failed' }
 }
