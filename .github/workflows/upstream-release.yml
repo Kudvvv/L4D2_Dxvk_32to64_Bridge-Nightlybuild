@@ -94,6 +94,12 @@ jobs:
       - name: Test API logger allocations and preserved log behavior (x86 and x64)
         shell: powershell
         run: ./scripts/test_function_logging.ps1
+      - name: Test input hook errors, DirectInput results and Query references (x86 and x64)
+        shell: powershell
+        run: ./scripts/test_input_hooks.ps1
+      - name: Test lazy logging and buffer shadow behavior (x86 and x64)
+        shell: powershell
+        run: ./scripts/test_lazy_logging.ps1
       - name: Benchmark disabled API logger overhead
         if: ${{ inputs.validation_only }}
         shell: powershell

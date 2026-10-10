@@ -111,6 +111,8 @@ class Logger {
 public:
   template<typename T> static void err(const T&) {}
   template<typename T> static void trace(const T&) {}
+  // This fixture has logging disabled; production logger behavior is tested separately.
+  template<typename Producer> static void traceLazy(Producer&&) {}
 };
 template<typename... Args> const char* format_string(const char* message, Args...) { return message; }
 class ClientMessage {

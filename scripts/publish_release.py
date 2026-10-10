@@ -111,6 +111,8 @@ def publish():
     introduction = (
         f"L4D2 Bridge {title}\n\n"
         "**只提供一个完整 ZIP：包含配套 Client/Host、固定 GPLALL 后端、默认配置和已修复的 `bin/studiorender.dll`。核对游戏 DLL 版本并备份后，复制文件即可应用 ThinFlex 修复，无需运行补丁工具或安装 Python。**\n\n"
+        "- 同步原项目的独立修复：更正 DirectInput 成功请求误报警、移除无效线程键盘 hook、修正 Query 引用日志分类；动态 VB/IB 的两处 Trace 消息按日志级别构造。该批改动没有新的游戏 FPS 实测，保留现有配置及诊断行为。\n"
+        f"- 选择性移植范围与延期内容见[更新记录](https://github.com/{repo}/blob/{recipe}/docs/ORIGINAL-PROJECT-UPDATES.md)。\n"
         "- Bridge 包含三项性能优化：关闭 API 日志时避免临时字符串分配、完整且紧密排列的表面整块复制、普通定期内存扫描移出 Present 线程。\n"
         "- 固定 L4N 回放的三对对照中，配对提升中位数为 1% low **4.57%**、0.1% low **33.09%**、平均 FPS **10.14%**、一秒 Present 峰值 **7.89%**。"
         "p99 帧时间同时增加 **3.48%**，并非所有帧时间指标均改善。性能测试未安装 ThinFlex，不能将这些数据当作合并安装后的性能结果。\n"

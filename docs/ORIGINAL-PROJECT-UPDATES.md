@@ -2,7 +2,7 @@
 
 基础移植基准：`6c6dc09d7b1053f304ff6d7b353edadb46d6ca78`（2026-10-07）。来源：[L4D2 原项目](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/tree/6c6dc09d7b1053f304ff6d7b353edadb46d6ca78)。
 
-2026-10-09 已检查至 `47c4da5403e3b8f1b1beca0ffa35474be3027394`。基础基准之后仅选择性移植下述修复，不表示整个提交区间均已合入。
+2026-10-10 已检查至 `cf49175e8a3c6c2fe45c99aec0680b0d1c864d24`。基础基准之后仅选择性移植下述修复，不表示整个提交区间均已合入。
 
 ## 本批移植
 
@@ -23,6 +23,23 @@
 `6c6dc09..c1d0100` 的其他提交主要涉及 Steam/ReShade presenter、输入激活/焦点、可选 API/纹理上传诊断及其配套修复、版本和发布流程。未将这些依赖延期功能的内容加入当前补丁。
 
 ## 验证
+
+### 2026-10-10 输入日志修复与延迟消息构造
+
+参考 [`0d450b7`](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/commit/0d450b7707f6954d639a333e5258a1275f00fc63)，仅选择以下独立改动：
+
+- Client 自定义输入 hook 保留三个有效线程 hook，取消不合法的线程级 `WH_KEYBOARD_LL` 安装尝试；失败立即保存 Win32 错误码，日志异常不阻断其余安装，卸载只处理有效 handle。原有 `client.overrideCustomWinHooks=False` 不变，不新增全局 hook 或 Presenter。
+- DirectInput A/W 原样传递参数及 HRESULT；成功的旧接口请求仅在 Debug 开启时记录，不再误报 Unsupported。真实失败保留请求版本及 HRESULT，日志失败不改变接口返回值。
+- Query AddRef/Release 已委托实际引用实现，日志改为普通调用分类，移除错误的 missing-call 标记；引用与销毁行为不变。
+- 引入独立的 Trace/Debug 延迟消息构造，仅把动态 VB/IB shadow 创建和销毁的两处 Trace 格式化改为按日志级别求值。默认 Info 下避免无效字符串构造；保留开启日志时的内容、初始化前缓存、buffer 总计数、分配与零初始化契约。
+
+测试从实际生产源码提取上述方法，在 x86/x64 验证成功、失败、日志异常、引用委托、日志级别与缓存语义，并以旧实现负对照确认回归有效。本地 114 项 Python 测试通过；新增原生正向与负向用例在 GCC x86/x64 通过，MSVC 严格编译及全部既有回归作为发布前门槛。完整补丁对 NVIDIA 基础版本及固定构建版本分别做正向检查，并对修改后的源码做反向检查；其余 32 个补丁段落保持原字节。完整编译及 Windows 原生测试由本轮 Actions 验证。
+
+未移植本区间的 `memoryMonitoring=False` / `crashDiagnostics=False` 默认变更及整套观察状态重构。这会改变当前诊断行为；Nightly 已有保持默认采样的异步实现。未引入 InputDemand、Presenter/Steam 输入门控、PageBlock/retention/readback 或新诊断功能。原项目 logger 的名称指针改动不适用于 Nightly 的名称生命周期契约，保留现有名称所有权及回归测试。
+
+[`cf49175`](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/commit/cf49175e8a3c6c2fe45c99aec0680b0d1c864d24) 允许原项目省略未改变的独立 L4N 插件附件；当前 Nightly 无此插件发布流程，不移植。继续发布包含固定 ThinFlex 修复 DLL 的单一完整 ZIP 及校验文件。
+
+这次没有游戏 FPS 对照，不宣称帧率提升。偏色修复、GPLALL 后端、x64 Host、默认配置及已验证 ThinFlex 文件保持不变。
 
 ### 2026-10-09 选择性移植
 
