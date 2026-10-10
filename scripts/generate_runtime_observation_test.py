@@ -22,6 +22,9 @@ def generate(source, output):
     retention = (src / 'client/retention_runtime.h').read_text(encoding='utf-8')
     start, end = method(retention, 'struct Runtime {')
     generated.append('namespace l4d2_retention {\n' + retention[start:end] + ';\n}\n')
+    residency = (src / 'client/pageblock_runtime.h').read_text(encoding='utf-8')
+    start, end = method(residency, 'struct Runtime {')
+    generated.append('namespace l4d2_residency {\n' + residency[start:end] + ';\n}\n')
     for marker in ['class FunctionEntryExitLogger']:
         start, end = method(util, marker)
         generated.append(util[start:end] + ';\n')

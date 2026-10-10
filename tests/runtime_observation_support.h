@@ -69,10 +69,12 @@ struct Config {
   }
 };
 namespace bridge_util { using Config = ::Config; using Logger = ::Logger; }
+inline bool failIpcSubmission=false;
+inline unsigned ipcSubmissions=0;
 struct ClientMessage {
   ClientMessage(Commands::D3D9Command, uint32_t) {}
   void send_data(uint32_t, const void*) {}
-  bridge_util::Result finish() { return bridge_util::Result::Success; }
+  bridge_util::Result finish() { ++ipcSubmissions; return failIpcSubmission ? bridge_util::Result::Failure : bridge_util::Result::Success; }
 };
 namespace l4d2_retention {
 inline std::filesystem::path clientDirectory() { return std::filesystem::current_path(); }

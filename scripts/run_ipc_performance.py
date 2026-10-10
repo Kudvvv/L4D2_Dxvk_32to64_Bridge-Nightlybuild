@@ -21,7 +21,7 @@ def sample(variant,mode,size,count,capacity,iteration):
     logs=[]
     try:
         for process in (client,host):
-            logs.append(process.communicate(timeout=25)[0])
+            logs.append(process.communicate(timeout=8 if mode in ('wrap','slow') else 25)[0])
         for process,log in zip((client,host),logs):
             if process.returncode:raise RuntimeError(f'exit={process.returncode} {log}')
         metrics=[json.loads(line) for log in logs for line in log.splitlines() if line.startswith('{')]
@@ -37,7 +37,7 @@ def sample(variant,mode,size,count,capacity,iteration):
     print(f'IPC_PERF_SAMPLE {variant} {mode} {size} iteration={iteration} valid={row["valid"]}',flush=True)
     if not row['valid'] and variant=='B':raise RuntimeError(f'New transport native failure: {row}')
 
-scenarios=[('batch',0,24000,8388608),('batch',64,24000,8388608),('batch',1024,12000,8388608),('batch',4096,3000,8388608),('batch',65536,190,8388608),('stream',64,24000,8388608),('wrap',64,12000,4096),('slow',64,12000,4096)]
+scenarios=[('batch',0,24000,8388608),('batch',64,24000,8388608),('batch',1024,12000,8388608),('batch',4096,3000,8388608),('batch',65536,190,8388608),('stream',64,24000,8388608),('near-full',64,204,4096),('wrap',64,12000,4096),('slow',64,12000,4096),('idle',0,1,4096)]
 for mode,size,count,capacity in scenarios:
     # Warm up both variants; preserve raw samples but exclude iteration -1.
     for v in ('A','B'):sample(v,mode,size,count,capacity,-1)
@@ -51,10 +51,23 @@ for mode,size,_,_ in scenarios:
         failed=[r for r in rows if r['mode']==mode and r['bytes']==size and r['variant']==v and r['iteration']>=0 and not r['valid']]
         stats={'passed':len(valid),'failed':len(failed)}
         for role in ('client','host'):
-            for metric in ('wall_ns_call','cpu_ns_call','end_to_end_ns_call'):
+            for metric in ('wall_ns_call','cpu_ns_call','end_to_end_ns_call','cycles_call'):
                 values=[next(m for m in r['metrics'] if m['role']==role)[metric] for r in valid]
                 if values:stats[f'{role}_{metric}']={'median':statistics.median(values),'min':min(values),'max':max(values)}
         group['variants'][v]=stats
+    pairs={}
+    for role in ('client','host'):
+        for metric in ('wall_ns_call','end_to_end_ns_call','cycles_call'):
+            changes=[]
+            for iteration in range(11):
+                pair=[r for r in rows if r['mode']==mode and r['bytes']==size and r['iteration']==iteration and r['valid']]
+                a=next((r for r in pair if r['variant']=='A'),None);b=next((r for r in pair if r['variant']=='B'),None)
+                if a and b:
+                    av=next(m for m in a['metrics'] if m['role']==role)[metric]
+                    bv=next(m for m in b['metrics'] if m['role']==role)[metric]
+                    if av:changes.append((bv/av-1)*100)
+            if changes:pairs[f'{role}_{metric}']={'paired_delta_percent_median':statistics.median(changes),'min':min(changes),'max':max(changes),'pairs':len(changes)}
+    group['paired']=pairs
     summary.append(group)
 (OUTPUT/'summary.json').write_text(json.dumps(summary,indent=2))
 print('IPC_PERF_SUMMARY '+json.dumps(summary),flush=True)

@@ -13,6 +13,7 @@ int wmain(int argc,wchar_t** argv){
   const auto count=static_cast<uint32_t>(std::wcstoul(argv[2],nullptr,10));
   const auto size=static_cast<uint32_t>(std::wcstoul(argv[3],nullptr,10));
   const std::wstring mode=argv[4];
+  const bool batched=mode==L"batch" || mode==L"near-full";
   const auto capacity=static_cast<uint32_t>(std::wcstoul(argv[5],nullptr,10));
   const uint32_t commandCapacity=32768;
   const size_t memory=commandCapacity*sizeof(Header)+256+static_cast<size_t>(capacity)*4;
@@ -31,23 +32,26 @@ int wmain(int argc,wchar_t** argv){
   std::vector<uint8_t> bytes(size,0x6b);
 #ifdef REMIX_BRIDGE_CLIENT
   require(WaitForSingleObject(ready,5000)==WAIT_OBJECT_0,"host ready");
-  if(mode!=L"batch"){SetEvent(start);}
+  if(!batched){SetEvent(start);}
+  ULONG64 cyclesBegin=0,cyclesEnd=0;QueryThreadCycleTime(GetCurrentThread(),&cyclesBegin);
   const auto cpuBegin=cpuNow();QueryPerformanceCounter(&begin);
-  for(uint32_t sequence=0;sequence<count;++sequence){
+  for(uint32_t sequence=0;mode!=L"idle" && sequence<count;++sequence){
     Device::Command command(Commands::Bridge_Response);
     command.send_many(sequence,size);command.send_data(size,size?bytes.data():nullptr);
 #ifndef IPC_OLD_BASELINE
     require(command.finish()==Result::Success,"Client submission");
 #endif
   }
-  QueryPerformanceCounter(&end);const auto cpuEnd=cpuNow();
-  if(mode==L"batch"){SetEvent(start);}
+  QueryPerformanceCounter(&end);const auto cpuEnd=cpuNow();QueryThreadCycleTime(GetCurrentThread(),&cyclesEnd);
+  if(batched){SetEvent(start);}
   require(WaitForSingleObject(done,15000)==WAIT_OBJECT_0,"Host completion");QueryPerformanceCounter(&complete);
   const char* role="client";
 #else
   SetEvent(ready);require(WaitForSingleObject(start,5000)==WAIT_OBJECT_0,"batch start");
+  ULONG64 cyclesBegin=0,cyclesEnd=0;QueryThreadCycleTime(GetCurrentThread(),&cyclesBegin);
   const auto cpuBegin=cpuNow();QueryPerformanceCounter(&begin);
-  for(uint32_t sequence=0;sequence<count;++sequence){
+  if(mode==L"idle") {Result result;reader.commands->peek(result,500);require(result==Result::Timeout,"idle queue wait");}
+  for(uint32_t sequence=0;mode!=L"idle" && sequence<count;++sequence){
     require(Device::waitForCommand()==Result::Success,"Host packet wait");const auto header=Device::pop_front();
     require(Device::get_data()==sequence,"Host UID order");require(Device::get_data()==sequence,"Host metadata order");
     require(Device::get_data()==size,"Host size");void* pointer=nullptr;
@@ -61,10 +65,10 @@ int wmain(int argc,wchar_t** argv){
 #endif
     if(mode==L"slow" && (sequence%64)==0){Sleep(1);}
   }
-  QueryPerformanceCounter(&end);const auto cpuEnd=cpuNow();complete=end;SetEvent(done);const char* role="host";
+  QueryPerformanceCounter(&end);const auto cpuEnd=cpuNow();QueryThreadCycleTime(GetCurrentThread(),&cyclesEnd);complete=end;SetEvent(done);const char* role="host";
 #endif
   const auto ns=static_cast<double>(end.QuadPart-begin.QuadPart)*1e9/static_cast<double>(frequency.QuadPart);
   const auto total=static_cast<double>(complete.QuadPart-begin.QuadPart)*1e9/static_cast<double>(frequency.QuadPart);
-  std::printf("{\"role\":\"%s\",\"count\":%u,\"bytes\":%u,\"wall_ns_call\":%.3f,\"cpu_ns_call\":%.3f,\"end_to_end_ns_call\":%.3f}\n",role,count,size,ns/count,static_cast<double>(cpuEnd-cpuBegin)*100/count,total/count);
+  std::printf("{\"role\":\"%s\",\"count\":%u,\"bytes\":%u,\"wall_ns_call\":%.3f,\"cpu_ns_call\":%.3f,\"end_to_end_ns_call\":%.3f,\"cycles_call\":%.3f}\n",role,count,size,ns/count,static_cast<double>(cpuEnd-cpuBegin)*100/count,total/count,static_cast<double>(cyclesEnd-cyclesBegin)/count);
   CloseHandle(ready);CloseHandle(start);CloseHandle(done);return 0;
 }

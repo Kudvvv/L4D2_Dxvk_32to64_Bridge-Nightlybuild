@@ -25,6 +25,9 @@ jobs:
       - name: Validate shared ABI and data ring invariants on x86 and x64
         shell: powershell
         run: ./scripts/test_data_ring_contract.ps1
+      - name: Verify actual creation and StateBlock failure ownership boundaries
+        shell: powershell
+        run: ./scripts/test_ipc_api_failure.ps1
       - name: Test native Device and Module transport in both directions
         shell: powershell
         run: ./scripts/test_ipc_transport.ps1

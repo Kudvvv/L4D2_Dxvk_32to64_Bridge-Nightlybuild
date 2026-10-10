@@ -9,8 +9,8 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 TEST = ROOT / '.deps/ipc-transport'
 
-def pair(host_role, count, threaded=False):
-    args=[str(uuid.uuid4()),str(count)]+(['threaded'] if threaded else [])
+def pair(host_role, count, threaded=False, rpc=False):
+    args=[str(uuid.uuid4()),str(count)]+(['rpc' if rpc else 'threaded'] if threaded else [])
     host=subprocess.Popen([str(TEST/f'transport-{host_role}.exe'),*args],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     client=subprocess.Popen([str(TEST/'transport-client32.exe'),*args],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     try:
@@ -26,7 +26,8 @@ def pair(host_role, count, threaded=False):
 for role in ('host32','host64'):
     pair(role,100000)
     pair(role,4000,True)
-for mode in ('oversize','timeout','partial-timeout','header-full','wait-failure','peer-exit','normal-peer-exit','protocol'):
+    pair(role,4000,True,True)
+for mode in ('serializer','oversize','timeout','partial-timeout','header-full','wait-failure','peer-exit','normal-peer-exit','protocol'):
     result=subprocess.run([str(TEST/'transport-client32.exe'),mode],capture_output=True,text=True,timeout=20)
     print(result.stdout,result.stderr,sep='',flush=True)
     if result.returncode: raise RuntimeError(f'Native fault failed: {mode} code={result.returncode}')

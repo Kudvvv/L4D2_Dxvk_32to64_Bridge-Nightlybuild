@@ -384,7 +384,7 @@ index 9de506f..7a4901a 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_device.cpp b/bridge/src/client/d3d9_device.cpp
-index 1abdf20..4b2b7a3 100644
+index 1abdf20..6f16fad 100644
 --- a/bridge/src/client/d3d9_device.cpp
 +++ b/bridge/src/client/d3d9_device.cpp
 @@ -1,3 +1,7 @@
@@ -1194,8 +1194,16 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1006,11 +1184,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetRenderTarget(DWORD RenderTargetInd
-     WAIT_FOR_OPTIONAL_SERVER_RESPONSE("GetRenderTarget()", D3DERR_INVALIDCALL, currentUID);
+@@ -1003,14 +1181,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetRenderTarget(DWORD RenderTargetInd
+       currentUID = c.get_uid();
+       c.send_many(RenderTargetIndex, pLssRenderTarget->getId());
+     }
+-    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("GetRenderTarget()", D3DERR_INVALIDCALL, currentUID);
++    const auto result = [&]() -> HRESULT { try {
++      WAIT_FOR_OPTIONAL_SERVER_RESPONSE("GetRenderTarget()", D3DERR_INVALIDCALL, currentUID);
++    } catch (const BridgeReadFailure&) { return D3DERR_DEVICELOST; } }();
++    if (FAILED(result) && *ppRenderTarget) { (*ppRenderTarget)->Release(); *ppRenderTarget = nullptr; }
++    return result;
    }
    
 -  return S_OK;
@@ -1210,7 +1218,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();  
    UID currentUID = 0;
-@@ -1033,10 +1212,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetDepthStencilSurface(IDirect3DSurfa
+@@ -1033,10 +1216,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetDepthStencilSurface(IDirect3DSurfa
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetDepthStencilSurface()", D3DERR_INVALIDCALL, currentUID);
@@ -1224,11 +1232,17 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1059,10 +1239,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetDepthStencilSurface(IDirect3DSurfa
+@@ -1058,11 +1242,16 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetDepthStencilSurface(IDirect3DSurfa
+       }
      }
    }
-   WAIT_FOR_OPTIONAL_SERVER_RESPONSE("GetDepthStencilSurface()", D3DERR_INVALIDCALL, currentUID);
+-  WAIT_FOR_OPTIONAL_SERVER_RESPONSE("GetDepthStencilSurface()", D3DERR_INVALIDCALL, currentUID);
 -}
++  const auto result = [&]() -> HRESULT { try {
++    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("GetDepthStencilSurface()", D3DERR_INVALIDCALL, currentUID);
++  } catch (const BridgeReadFailure&) { return D3DERR_DEVICELOST; } }();
++  if (FAILED(result) && *ppZStencilSurface) { (*ppZStencilSurface)->Release(); *ppZStencilSurface = nullptr; }
++  return result;
 +} catch (const BridgeReadFailure&) { return D3DERR_DEVICELOST; }
  
  template<bool EnableSync>
@@ -1238,7 +1252,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1083,10 +1264,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::BeginScene() {
+@@ -1083,10 +1272,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::BeginScene() {
      currentUID = c.get_uid();
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("BeginScene()", D3DERR_INVALIDCALL, currentUID);
@@ -1252,7 +1266,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1107,10 +1289,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::EndScene() {
+@@ -1107,10 +1297,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::EndScene() {
      currentUID = c.get_uid();
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("EndScene()", D3DERR_INVALIDCALL, currentUID);
@@ -1266,7 +1280,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1132,7 +1315,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::Clear(DWORD Count, CONST D3DRECT* pRe
+@@ -1132,7 +1323,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::Clear(DWORD Count, CONST D3DRECT* pRe
      c.send_data(sizeof(D3DCOLOR), (void*) &Color);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("Clear()", D3DERR_INVALIDCALL, currentUID);
@@ -1275,7 +1289,7 @@ index 1abdf20..4b2b7a3 100644
  
  namespace {
    static inline size_t mapXformStateTypeToIdx(const D3DTRANSFORMSTATETYPE Type) {
-@@ -1166,7 +1349,8 @@ bool isValidD3drtansformstatetype(D3DTRANSFORMSTATETYPE Type) {
+@@ -1166,7 +1357,8 @@ bool isValidD3drtansformstatetype(D3DTRANSFORMSTATETYPE Type) {
  }
  
  template<bool EnableSync>
@@ -1285,7 +1299,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1203,10 +1387,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTransform(D3DTRANSFORMSTATETYPE St
+@@ -1203,10 +1395,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTransform(D3DTRANSFORMSTATETYPE St
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetTransform()", D3DERR_INVALIDCALL, currentUID);
@@ -1298,7 +1312,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1224,6 +1409,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetTransform(D3DTRANSFORMSTATETYPE St
+@@ -1224,6 +1417,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetTransform(D3DTRANSFORMSTATETYPE St
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::MultiplyTransform(D3DTRANSFORMSTATETYPE State, CONST D3DMATRIX* pMatrix) {
@@ -1306,7 +1320,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1257,7 +1443,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::MultiplyTransform(D3DTRANSFORMSTATETY
+@@ -1257,7 +1451,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::MultiplyTransform(D3DTRANSFORMSTATETY
  }
  
  template<bool EnableSync>
@@ -1316,7 +1330,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1283,10 +1470,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetViewport(CONST D3DVIEWPORT9* pView
+@@ -1283,10 +1478,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetViewport(CONST D3DVIEWPORT9* pView
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetViewport()", D3DERR_INVALIDCALL, currentUID);
@@ -1329,7 +1343,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1302,7 +1490,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetViewport(D3DVIEWPORT9* pViewport)
+@@ -1302,7 +1498,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetViewport(D3DVIEWPORT9* pViewport)
  }
  
  template<bool EnableSync>
@@ -1339,7 +1353,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1328,10 +1517,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetMaterial(CONST D3DMATERIAL9* pMate
+@@ -1328,10 +1525,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetMaterial(CONST D3DMATERIAL9* pMate
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetMaterial()", D3DERR_INVALIDCALL, currentUID);
@@ -1352,7 +1366,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1347,7 +1537,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetMaterial(D3DMATERIAL9* pMaterial)
+@@ -1347,7 +1545,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetMaterial(D3DMATERIAL9* pMaterial)
  }
  
  template<bool EnableSync>
@@ -1362,7 +1376,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1383,10 +1574,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetLight(DWORD Index, CONST D3DLIGHT9
+@@ -1383,10 +1582,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetLight(DWORD Index, CONST D3DLIGHT9
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetLight()", D3DERR_INVALIDCALL, currentUID);
@@ -1375,7 +1389,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1402,7 +1594,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetLight(DWORD Index, D3DLIGHT9* pLig
+@@ -1402,7 +1602,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetLight(DWORD Index, D3DLIGHT9* pLig
  }
  
  template<bool EnableSync>
@@ -1385,7 +1399,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1433,10 +1626,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::LightEnable(DWORD LightIndex, BOOL bE
+@@ -1433,10 +1634,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::LightEnable(DWORD LightIndex, BOOL bE
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("LightEnable()", D3DERR_INVALIDCALL, currentUID);
@@ -1398,7 +1412,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    if (pEnable == nullptr) {
-@@ -1453,7 +1647,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetLightEnable(DWORD Index, BOOL* pEn
+@@ -1453,7 +1655,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetLightEnable(DWORD Index, BOOL* pEn
  }
  
  template<bool EnableSync>
@@ -1408,7 +1422,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1485,10 +1680,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetClipPlane(DWORD Index, CONST float
+@@ -1485,10 +1688,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetClipPlane(DWORD Index, CONST float
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetClipPlane()", D3DERR_INVALIDCALL, currentUID);
@@ -1421,7 +1435,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1506,7 +1702,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetClipPlane(DWORD Index, float* pPla
+@@ -1506,7 +1710,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetClipPlane(DWORD Index, float* pPla
  }
  
  template<bool EnableSync>
@@ -1431,7 +1445,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    
-@@ -1536,10 +1733,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetRenderState(D3DRENDERSTATETYPE Sta
+@@ -1536,10 +1741,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetRenderState(D3DRENDERSTATETYPE Sta
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetRenderState()", D3DERR_INVALIDCALL, currentUID);
@@ -1444,7 +1458,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1744,7 +1942,8 @@ void Direct3DDevice9Ex_LSS<EnableSync>::StateBlockSetCaptureFlags(D3DSTATEBLOCKT
+@@ -1744,7 +1950,8 @@ void Direct3DDevice9Ex_LSS<EnableSync>::StateBlockSetCaptureFlags(D3DSTATEBLOCKT
  }
  
  template<bool EnableSync>
@@ -1454,7 +1468,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1770,11 +1969,16 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateStateBlock(D3DSTATEBLOCKTYPE Ty
+@@ -1770,11 +1977,16 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateStateBlock(D3DSTATEBLOCKTYPE Ty
        c.send_many(Type, (uint32_t) pLssSB->getId());
      }
    }
@@ -1474,13 +1488,18 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1790,11 +1994,13 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::BeginStateBlock() {
+@@ -1790,11 +2002,17 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::BeginStateBlock() {
      ClientMessage c(Commands::IDirect3DDevice9Ex_BeginStateBlock, getId());
      currentUID = c.get_uid();
    }
-+  if (!DeviceBridge::healthy()) { auto* failed = m_stateRecording; m_stateRecording = nullptr; failed->Release(); return D3DERR_DEVICELOST; }
-   WAIT_FOR_OPTIONAL_SERVER_RESPONSE("BeginStateBlock()", D3DERR_INVALIDCALL, currentUID);
+-  WAIT_FOR_OPTIONAL_SERVER_RESPONSE("BeginStateBlock()", D3DERR_INVALIDCALL, currentUID);
 -}
++  if (!DeviceBridge::healthy()) { auto* failed = m_stateRecording; m_stateRecording = nullptr; failed->Release(); return D3DERR_DEVICELOST; }
++  const auto result = [&]() -> HRESULT { try {
++    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("BeginStateBlock()", D3DERR_INVALIDCALL, currentUID);
++  } catch (const BridgeReadFailure&) { return D3DERR_DEVICELOST; } }();
++  if (FAILED(result) && m_stateRecording) { auto* failed=m_stateRecording; m_stateRecording=nullptr; failed->Release(); }
++  return result;
 +} catch (const BridgeReadFailure&) { return D3DERR_DEVICELOST; }
  
  template<bool EnableSync>
@@ -1490,7 +1509,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1807,7 +2013,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::EndStateBlock(IDirect3DStateBlock9**
+@@ -1807,7 +2025,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::EndStateBlock(IDirect3DStateBlock9**
    if (!m_stateRecording) {
      return D3DERR_INVALIDCALL;
    }
@@ -1499,17 +1518,23 @@ index 1abdf20..4b2b7a3 100644
  
    UID currentUID = 0;
    {
-@@ -1815,13 +2021,16 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::EndStateBlock(IDirect3DStateBlock9**
+@@ -1815,13 +2033,20 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::EndStateBlock(IDirect3DStateBlock9**
      ClientMessage c(Commands::IDirect3DDevice9Ex_EndStateBlock, getId());
      currentUID = c.get_uid();
      c.send_data((uint32_t) m_stateRecording->getId());
 -    m_stateRecording = nullptr;
+-  }
+-  WAIT_FOR_OPTIONAL_SERVER_RESPONSE("EndStateBlock()", D3DERR_INVALIDCALL, currentUID);
+-}
 +    if (c.finish() != Result::Success) { return D3DERR_DEVICELOST; }
-   }
++  }
 +  *ppSB = m_stateRecording;
 +  m_stateRecording = nullptr;
-   WAIT_FOR_OPTIONAL_SERVER_RESPONSE("EndStateBlock()", D3DERR_INVALIDCALL, currentUID);
--}
++  const auto result = [&]() -> HRESULT { try {
++    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("EndStateBlock()", D3DERR_INVALIDCALL, currentUID);
++  } catch (const BridgeReadFailure&) { return D3DERR_DEVICELOST; } }();
++  if (FAILED(result)) { auto* failed=*ppSB; *ppSB=nullptr; failed->Release(); }
++  return result;
 +} catch (const BridgeReadFailure&) { return D3DERR_DEVICELOST; }
  
  template<bool EnableSync>
@@ -1518,7 +1543,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1838,6 +2047,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetClipStatus(CONST D3DCLIPSTATUS9* p
+@@ -1838,6 +2063,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetClipStatus(CONST D3DCLIPSTATUS9* p
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetClipStatus(D3DCLIPSTATUS9* pClipStatus) {
@@ -1526,7 +1551,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1872,6 +2082,7 @@ namespace {
+@@ -1872,6 +2098,7 @@ namespace {
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetTexture(DWORD Stage, IDirect3DBaseTexture9** ppTexture) {
@@ -1534,7 +1559,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    if (isInvalidSamplerStage(Stage) || ppTexture == nullptr) {
-@@ -1915,7 +2126,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetTexture(DWORD Stage, IDirect3DBase
+@@ -1915,7 +2142,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetTexture(DWORD Stage, IDirect3DBase
  }
  
  template<bool EnableSync>
@@ -1544,7 +1569,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -1961,6 +2173,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTexture(DWORD Stage, IDirect3DBase
+@@ -1961,6 +2189,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTexture(DWORD Stage, IDirect3DBase
        }
        type = pTexture->GetType();
      }
@@ -1560,7 +1585,7 @@ index 1abdf20..4b2b7a3 100644
      if (m_stateRecording) {
        m_stateRecording->m_captureState.textures[idx] = std::move(objectRef);
        m_stateRecording->m_captureState.textureTypes[idx] = type;
-@@ -1977,7 +2198,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTexture(DWORD Stage, IDirect3DBase
+@@ -1977,7 +2214,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTexture(DWORD Stage, IDirect3DBase
      c.send_many(Stage, (uint32_t) pD3DObject);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetTexture()", D3DERR_INVALIDCALL, currentUID);
@@ -1569,7 +1594,7 @@ index 1abdf20..4b2b7a3 100644
  
  namespace {
    enum TextureStageStateType {
-@@ -2029,6 +2250,7 @@ namespace {
+@@ -2029,6 +2266,7 @@ namespace {
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetTextureStageState(DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD* pValue) {
@@ -1577,7 +1602,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    if (isInvalidSamplerStage(Stage) || pValue == nullptr) {
-@@ -2047,7 +2269,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetTextureStageState(DWORD Stage, D3D
+@@ -2047,7 +2285,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetTextureStageState(DWORD Stage, D3D
  }
  
  template<bool EnableSync>
@@ -1587,7 +1612,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    if (Stage >= caps::MaxSimultaneousTextures) {
-@@ -2084,10 +2307,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTextureStageState(DWORD Stage, D3D
+@@ -2084,10 +2323,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetTextureStageState(DWORD Stage, D3D
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetTextureStageState()", D3DERR_INVALIDCALL, currentUID);
@@ -1600,7 +1625,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    if (isInvalidSamplerStage(Sampler) || pValue == nullptr) {
-@@ -2106,7 +2330,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetSamplerState(DWORD Sampler, D3DSAM
+@@ -2106,7 +2346,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetSamplerState(DWORD Sampler, D3DSAM
  }
  
  template<bool EnableSync>
@@ -1610,7 +1635,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    if (isInvalidSamplerStage(Sampler)) {
-@@ -2144,10 +2369,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetSamplerState(DWORD Sampler, D3DSAM
+@@ -2144,10 +2385,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetSamplerState(DWORD Sampler, D3DSAM
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetSamplerState()", D3DERR_INVALIDCALL, currentUID);
@@ -1623,7 +1648,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2164,6 +2390,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ValidateDevice(DWORD* pNumPasses) {
+@@ -2164,6 +2406,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ValidateDevice(DWORD* pNumPasses) {
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPaletteEntries(UINT PaletteNumber, CONST PALETTEENTRY* pEntries) {
@@ -1631,7 +1656,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2180,6 +2407,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPaletteEntries(UINT PaletteNumber,
+@@ -2180,6 +2423,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPaletteEntries(UINT PaletteNumber,
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPaletteEntries(UINT PaletteNumber, PALETTEENTRY* pEntries) {
@@ -1639,7 +1664,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2196,6 +2424,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPaletteEntries(UINT PaletteNumber,
+@@ -2196,6 +2440,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPaletteEntries(UINT PaletteNumber,
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetCurrentTexturePalette(UINT PaletteNumber) {
@@ -1647,7 +1672,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    {
-@@ -2207,6 +2436,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetCurrentTexturePalette(UINT Palette
+@@ -2207,6 +2452,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetCurrentTexturePalette(UINT Palette
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetCurrentTexturePalette(UINT* pPaletteNumber) {
@@ -1655,7 +1680,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2222,7 +2452,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetCurrentTexturePalette(UINT* pPalet
+@@ -2222,7 +2468,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetCurrentTexturePalette(UINT* pPalet
  }
  
  template<bool EnableSync>
@@ -1665,7 +1690,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2248,10 +2479,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetScissorRect(CONST RECT* pRect) {
+@@ -2248,10 +2495,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetScissorRect(CONST RECT* pRect) {
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetScissorRect()", D3DERR_INVALIDCALL, currentUID);
@@ -1678,7 +1703,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2267,7 +2499,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetScissorRect(RECT* pRect) {
+@@ -2267,7 +2515,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetScissorRect(RECT* pRect) {
  }
  
  template<bool EnableSync>
@@ -1688,7 +1713,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    {
-@@ -2288,7 +2521,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetSoftwareVertexProcessing(BOOL bSof
+@@ -2288,7 +2537,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetSoftwareVertexProcessing(BOOL bSof
    DeviceBridge::pop_front();
  
    return hresult;
@@ -1697,7 +1722,7 @@ index 1abdf20..4b2b7a3 100644
  
  template<bool EnableSync>
  int Direct3DDevice9Ex_LSS<EnableSync>::GetSoftwareVertexProcessing() {
-@@ -2303,7 +2536,8 @@ int Direct3DDevice9Ex_LSS<EnableSync>::GetSoftwareVertexProcessing() {
+@@ -2303,7 +2552,8 @@ int Direct3DDevice9Ex_LSS<EnableSync>::GetSoftwareVertexProcessing() {
  }
  
  template<bool EnableSync>
@@ -1707,7 +1732,7 @@ index 1abdf20..4b2b7a3 100644
    LogFunctionCall();
    UID currentUID = 0;
    {
-@@ -2318,7 +2552,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetNPatchMode(float nSegments) {
+@@ -2318,7 +2568,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetNPatchMode(float nSegments) {
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetNPatchMode()", D3DERR_INVALIDCALL, currentUID);
@@ -1716,7 +1741,7 @@ index 1abdf20..4b2b7a3 100644
  
  template<bool EnableSync>
  float Direct3DDevice9Ex_LSS<EnableSync>::GetNPatchMode() {
-@@ -2333,7 +2567,8 @@ float Direct3DDevice9Ex_LSS<EnableSync>::GetNPatchMode() {
+@@ -2333,7 +2583,8 @@ float Direct3DDevice9Ex_LSS<EnableSync>::GetNPatchMode() {
  }
  
  template<bool EnableSync>
@@ -1726,7 +1751,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    UID currentUID = 0;
-@@ -2343,10 +2578,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawPrimitive(D3DPRIMITIVETYPE Primit
+@@ -2343,10 +2594,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawPrimitive(D3DPRIMITIVETYPE Primit
      c.send_many(PrimitiveType, StartVertex, PrimitiveCount);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("DrawPrimitive()", D3DERR_INVALIDCALL, currentUID);
@@ -1740,7 +1765,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    UID currentUID = 0;
-@@ -2356,10 +2592,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawIndexedPrimitive(D3DPRIMITIVETYPE
+@@ -2356,10 +2608,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawIndexedPrimitive(D3DPRIMITIVETYPE
      c.send_many(Type, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("DrawIndexedPrimitive()", D3DERR_INVALIDCALL, currentUID);
@@ -1754,7 +1779,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    UID currentUID = 0;
-@@ -2375,10 +2612,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawPrimitiveUP(D3DPRIMITIVETYPE Prim
+@@ -2375,10 +2628,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawPrimitiveUP(D3DPRIMITIVETYPE Prim
      c.send_data(VertexStreamZeroStride);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("DrawPrimitiveUP()", D3DERR_INVALIDCALL, currentUID);
@@ -1768,7 +1793,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    UID currentUID = 0;
-@@ -2396,10 +2634,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawIndexedPrimitiveUP(D3DPRIMITIVETY
+@@ -2396,10 +2650,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawIndexedPrimitiveUP(D3DPRIMITIVETY
      c.send_data(vertexDataSize, (void*) pVertexStreamZeroData);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("DrawIndexedPrimitiveUP()", D3DERR_INVALIDCALL, currentUID);
@@ -1782,7 +1807,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogMissingFunctionCall();
  
-@@ -2424,10 +2663,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ProcessVertices(UINT SrcStartIndex, U
+@@ -2424,10 +2679,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ProcessVertices(UINT SrcStartIndex, U
      c.send_data(Flags);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("ProcessVertices()", D3DERR_INVALIDCALL, currentUID);
@@ -1796,7 +1821,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    if (pVertexElements == nullptr || ppDecl == nullptr) {
-@@ -2454,11 +2694,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexDeclaration(CONST D3DVERT
+@@ -2454,11 +2710,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexDeclaration(CONST D3DVERT
        c.send_data((uint32_t) pLssVtxDecl->getId());
      }
    }
@@ -1818,7 +1843,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2477,10 +2724,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexDeclaration(IDirect3DVertexD
+@@ -2477,10 +2740,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexDeclaration(IDirect3DVertexD
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetVertexDeclaration()", D3DERR_INVALIDCALL, currentUID);
@@ -1831,7 +1856,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2500,7 +2748,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetVertexDeclaration(IDirect3DVertexD
+@@ -2500,7 +2764,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetVertexDeclaration(IDirect3DVertexD
  }
  
  template<bool EnableSync>
@@ -1841,7 +1866,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    UID currentUID = 0;
-@@ -2516,10 +2765,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetFVF(DWORD FVF) {
+@@ -2516,10 +2781,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetFVF(DWORD FVF) {
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetFVF()", D3DERR_INVALIDCALL, currentUID);
@@ -1854,7 +1879,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2535,7 +2785,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetFVF(DWORD* pFVF) {
+@@ -2535,7 +2801,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetFVF(DWORD* pFVF) {
  }
  
  template<bool EnableSync>
@@ -1864,7 +1889,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2565,11 +2816,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexShader(CONST DWORD* pFunc
+@@ -2565,11 +2832,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateVertexShader(CONST DWORD* pFunc
      c.send_data(dataSize, (void*) pFunction);
      
    }
@@ -1886,7 +1911,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2594,10 +2852,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexShader(IDirect3DVertexShader
+@@ -2594,10 +2868,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexShader(IDirect3DVertexShader
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetVertexShader()", D3DERR_INVALIDCALL, currentUID);
@@ -1899,7 +1924,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2620,7 +2879,8 @@ using ShaderType = BaseDirect3DDevice9Ex_LSS::ShaderConstants::ShaderType;
+@@ -2620,7 +2895,8 @@ using ShaderType = BaseDirect3DDevice9Ex_LSS::ShaderConstants::ShaderType;
  using ConstantType = BaseDirect3DDevice9Ex_LSS::ShaderConstants::ConstantType;
  
  template<bool EnableSync>
@@ -1909,7 +1934,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2649,10 +2909,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexShaderConstantF(UINT StartRe
+@@ -2649,10 +2925,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexShaderConstantF(UINT StartRe
      WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetVertexShaderConstantF()", D3DERR_INVALIDCALL, currentUID);
    }
    return hresult;
@@ -1922,7 +1947,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2674,7 +2935,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetVertexShaderConstantF(UINT StartRe
+@@ -2674,7 +2951,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetVertexShaderConstantF(UINT StartRe
  }
  
  template<bool EnableSync>
@@ -1932,7 +1957,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2702,10 +2964,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexShaderConstantI(UINT StartRe
+@@ -2702,10 +2980,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexShaderConstantI(UINT StartRe
      WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetVertexShaderConstantI()", D3DERR_INVALIDCALL, currentUID);
    }
    return hresult;
@@ -1945,7 +1970,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2728,7 +2991,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetVertexShaderConstantI(UINT StartRe
+@@ -2728,7 +3007,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetVertexShaderConstantI(UINT StartRe
  }
  
  template<bool EnableSync>
@@ -1955,7 +1980,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2757,10 +3021,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexShaderConstantB(UINT StartRe
+@@ -2757,10 +3037,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetVertexShaderConstantB(UINT StartRe
      WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetVertexShaderConstantB()", D3DERR_INVALIDCALL, currentUID);
    }
    return hresult;
@@ -1968,7 +1993,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2782,7 +3047,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetVertexShaderConstantB(UINT StartRe
+@@ -2782,7 +3063,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetVertexShaderConstantB(UINT StartRe
  }
  
  template<bool EnableSync>
@@ -1978,7 +2003,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    auto* const pLssStreamData = bridge_cast<Direct3DVertexBuffer9_LSS*>(pStreamData);
-@@ -2791,6 +3057,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
+@@ -2791,6 +3073,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
    {
      {
        BRIDGE_DEVICE_LOCKGUARD();
@@ -1997,7 +2022,7 @@ index 1abdf20..4b2b7a3 100644
        if (m_stateRecording) {
          m_stateRecording->m_captureState.streams[StreamNumber] = MakeD3DAutoPtr(pLssStreamData);
          if (pStreamData != nullptr) {
-@@ -2814,10 +3092,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
+@@ -2814,10 +3108,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetStreamSource()", D3DERR_INVALIDCALL, currentUID);
@@ -2010,7 +2035,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2839,7 +3118,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetStreamSource(UINT StreamNumber, ID
+@@ -2839,7 +3134,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetStreamSource(UINT StreamNumber, ID
  }
  
  template<bool EnableSync>
@@ -2020,7 +2045,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    UID currentUID = 0;
-@@ -2860,10 +3140,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSourceFreq(UINT StreamNumber
+@@ -2860,10 +3156,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSourceFreq(UINT StreamNumber
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetStreamSourceFreq()", D3DERR_INVALIDCALL, currentUID);
@@ -2033,7 +2058,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    if (Divider == nullptr) {
-@@ -2877,7 +3158,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetStreamSourceFreq(UINT StreamNumber
+@@ -2877,7 +3174,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetStreamSourceFreq(UINT StreamNumber
  }
  
  template<bool EnableSync>
@@ -2043,7 +2068,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    auto* const pLssIndexData = bridge_cast<Direct3DIndexBuffer9_LSS*>(pIndexData);
-@@ -2886,6 +3168,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetIndices(IDirect3DIndexBuffer9* pIn
+@@ -2886,6 +3184,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetIndices(IDirect3DIndexBuffer9* pIn
    {
      {
        BRIDGE_DEVICE_LOCKGUARD();
@@ -2059,7 +2084,7 @@ index 1abdf20..4b2b7a3 100644
        if (m_stateRecording) {
          m_stateRecording->m_captureState.indices = MakeD3DAutoPtr(pLssIndexData);
          m_stateRecording->m_dirtyFlags.indices = true;
-@@ -2900,10 +3191,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetIndices(IDirect3DIndexBuffer9* pIn
+@@ -2900,10 +3207,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetIndices(IDirect3DIndexBuffer9* pIn
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetIndices()", D3DERR_INVALIDCALL, currentUID);
@@ -2072,7 +2097,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2923,7 +3215,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetIndices(IDirect3DIndexBuffer9** pp
+@@ -2923,7 +3231,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetIndices(IDirect3DIndexBuffer9** pp
  }
  
  template<bool EnableSync>
@@ -2082,7 +2107,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
   
-@@ -2957,11 +3250,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreatePixelShader(CONST DWORD* pFunct
+@@ -2957,11 +3266,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreatePixelShader(CONST DWORD* pFunct
      c.send_data(dataSize);
      c.send_data(dataSize, (void*) pFunction);
    }
@@ -2104,7 +2129,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    Direct3DPixelShader9_LSS* pLssPixelShader = bridge_cast<Direct3DPixelShader9_LSS*>(pShader);
-@@ -2982,10 +3282,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShader(IDirect3DPixelShader9*
+@@ -2982,10 +3298,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShader(IDirect3DPixelShader9*
      c.send_data(id);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetPixelShader()", D3DERR_INVALIDCALL, currentUID);
@@ -2117,7 +2142,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3005,7 +3306,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShader(IDirect3DPixelShader9*
+@@ -3005,7 +3322,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShader(IDirect3DPixelShader9*
  }
  
  template<bool EnableSync>
@@ -2127,7 +2152,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3029,10 +3331,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantF(UINT StartReg
+@@ -3029,10 +3347,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantF(UINT StartReg
      WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetPixelShaderConstantF()", D3DERR_INVALIDCALL, currentUID);
    }
    return hresult;
@@ -2140,7 +2165,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3049,7 +3352,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantF(UINT StartReg
+@@ -3049,7 +3368,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantF(UINT StartReg
  }
  
  template<bool EnableSync>
@@ -2150,7 +2175,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3072,10 +3376,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantI(UINT StartReg
+@@ -3072,10 +3392,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantI(UINT StartReg
      WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetPixelShaderConstantI()", D3DERR_INVALIDCALL, currentUID);
    }
    return hresult;
@@ -2163,7 +2188,7 @@ index 1abdf20..4b2b7a3 100644
    LogFunctionCall();
  
    HRESULT hresult = D3DERR_INVALIDCALL;
-@@ -3087,7 +3392,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantI(UINT StartReg
+@@ -3087,7 +3408,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantI(UINT StartReg
  }
  
  template<bool EnableSync>
@@ -2173,7 +2198,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3110,10 +3416,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantB(UINT StartReg
+@@ -3110,10 +3432,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantB(UINT StartReg
      WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetPixelShaderConstantB()", D3DERR_INVALIDCALL, currentUID);
    }
    return hresult;
@@ -2186,7 +2211,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3127,6 +3434,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantB(UINT StartReg
+@@ -3127,6 +3450,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantB(UINT StartReg
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawRectPatch(UINT Handle, CONST float* pNumSegs, CONST D3DRECTPATCH_INFO* pRectPatchInfo) {
@@ -2194,7 +2219,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogMissingFunctionCall();
    return D3D_OK;
-@@ -3134,6 +3442,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawRectPatch(UINT Handle, CONST floa
+@@ -3134,6 +3458,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawRectPatch(UINT Handle, CONST floa
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawTriPatch(UINT Handle, CONST float* pNumSegs, CONST D3DTRIPATCH_INFO* pTriPatchInfo) {
@@ -2202,7 +2227,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogMissingFunctionCall();
    return D3D_OK;
-@@ -3141,6 +3450,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawTriPatch(UINT Handle, CONST float
+@@ -3141,6 +3466,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawTriPatch(UINT Handle, CONST float
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DeletePatch(UINT Handle) {
@@ -2210,7 +2235,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogMissingFunctionCall();
    return D3D_OK;
-@@ -3148,6 +3458,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DeletePatch(UINT Handle) {
+@@ -3148,6 +3474,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DeletePatch(UINT Handle) {
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateQuery(D3DQUERYTYPE Type, IDirect3DQuery9** ppQuery) {
@@ -2218,7 +2243,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    // MSDN: This parameter can be set to NULL to see if a query is supported. 
-@@ -3164,11 +3475,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateQuery(D3DQUERYTYPE Type, IDirec
+@@ -3164,11 +3491,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateQuery(D3DQUERYTYPE Type, IDirec
      currentUID = c.get_uid();
      c.send_many(Type, (uint32_t) pLssQuery->getId());
    }
@@ -2236,7 +2261,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3183,10 +3498,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetConvolutionMonoKernel(UINT width,
+@@ -3183,10 +3514,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetConvolutionMonoKernel(UINT width,
      c.send_data(sizeof(float) * height, (void*) columns);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetConvolutionMonoKernel()", E_FAIL, currentUID);
@@ -2250,7 +2275,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3212,10 +3528,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ComposeRects(IDirect3DSurface9* pSrc,
+@@ -3212,10 +3544,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ComposeRects(IDirect3DSurface9* pSrc,
      }
    }
    return D3DERR_INVALIDCALL;
@@ -2264,7 +2289,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogMissingFunctionCall();
    assert(m_ex);
-@@ -3224,7 +3542,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CO
+@@ -3224,7 +3558,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CO
    // out here so we don't spend time waiting on the Present semaphore or trying
    // to send keyboard state to the server.
    if (!gbBridgeRunning) {
@@ -2273,7 +2298,7 @@ index 1abdf20..4b2b7a3 100644
    }
  
    return m_pSwapchain->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, dwFlags);
-@@ -3232,8 +3550,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CO
+@@ -3232,8 +3566,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CO
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetGPUThreadPriority(INT* pPriority) {
@@ -2286,7 +2311,7 @@ index 1abdf20..4b2b7a3 100644
  
    // Function does not claim to support returning D3DERR_INVALIDCALL
    if (pPriority == nullptr) {
-@@ -3249,6 +3571,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetGPUThreadPriority(INT* pPriority)
+@@ -3249,6 +3587,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetGPUThreadPriority(INT* pPriority)
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetGPUThreadPriority(INT Priority) {
@@ -2294,7 +2319,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    {
-@@ -3260,6 +3583,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetGPUThreadPriority(INT Priority) {
+@@ -3260,6 +3599,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetGPUThreadPriority(INT Priority) {
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::WaitForVBlank(UINT iSwapChain) {
@@ -2302,7 +2327,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogMissingFunctionCall();
  
-@@ -3269,6 +3593,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::WaitForVBlank(UINT iSwapChain) {
+@@ -3269,6 +3609,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::WaitForVBlank(UINT iSwapChain) {
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckResourceResidency(IDirect3DResource9** pResourceArray, UINT32 NumResources) {
@@ -2310,7 +2335,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogMissingFunctionCall();
  
-@@ -3277,6 +3602,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckResourceResidency(IDirect3DResou
+@@ -3277,6 +3618,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckResourceResidency(IDirect3DResou
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetMaximumFrameLatency(UINT MaxLatency) {
@@ -2318,7 +2343,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
    {
-@@ -3288,6 +3614,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetMaximumFrameLatency(UINT MaxLatenc
+@@ -3288,6 +3630,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetMaximumFrameLatency(UINT MaxLatenc
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetMaximumFrameLatency(UINT* pMaxLatency) {
@@ -2326,7 +2351,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3303,7 +3630,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetMaximumFrameLatency(UINT* pMaxLate
+@@ -3303,7 +3646,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetMaximumFrameLatency(UINT* pMaxLate
  }
  
  template<bool EnableSync>
@@ -2336,7 +2361,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3319,10 +3647,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckDeviceState(HWND hDestinationWin
+@@ -3319,10 +3663,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckDeviceState(HWND hDestinationWin
    DeviceBridge::pop_front();
  
    return res;
@@ -2351,7 +2376,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3353,11 +3683,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
+@@ -3353,11 +3699,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
      c.send_many(Width, Height, Format, MultiSample, MultisampleQuality, Lockable, Usage, pLssSurface->getId());
    }
  
@@ -2374,7 +2399,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3366,18 +3704,10 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+@@ -3366,18 +3720,10 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
      return D3DERR_INVALIDCALL;
    }
  
@@ -2395,7 +2420,7 @@ index 1abdf20..4b2b7a3 100644
    (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
  
    UID currentUID = 0;
-@@ -3388,11 +3718,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+@@ -3388,11 +3734,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
      c.send_many(Width, Height, Format, Pool, Usage, pLssSurface->getId());
    }
  
@@ -2418,7 +2443,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3421,53 +3759,50 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
+@@ -3421,53 +3775,50 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
      c.send_many(Width, Height, Format, MultiSample, MultisampleQuality, Discard, Usage, pLssSurface->getId());
    }
  
@@ -2502,7 +2527,7 @@ index 1abdf20..4b2b7a3 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3501,7 +3836,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetDisplayModeEx(UINT iSwapChain, D3D
+@@ -3501,7 +3852,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetDisplayModeEx(UINT iSwapChain, D3D
    }
    DeviceBridge::pop_front();
    return hresult;
@@ -2511,7 +2536,7 @@ index 1abdf20..4b2b7a3 100644
  
  using ShaderType = BaseDirect3DDevice9Ex_LSS::ShaderConstants::ShaderType;
  using ConstantType = BaseDirect3DDevice9Ex_LSS::ShaderConstants::ConstantType;
-@@ -3517,10 +3852,60 @@ HRESULT BaseDirect3DDevice9Ex_LSS::setShaderConstants(const uint32_t startRegist
+@@ -3517,10 +3868,60 @@ HRESULT BaseDirect3DDevice9Ex_LSS::setShaderConstants(const uint32_t startRegist
    const auto [commonHresult, adjCount] =
      commonGetSetConstants<ShaderT, ConstantT, T>(startRegister, pConstantData, count);
    if (!SUCCEEDED(commonHresult) || adjCount == 0) {
@@ -2572,7 +2597,7 @@ index 1abdf20..4b2b7a3 100644
      if constexpr (ConstantT == ConstantType::Float) {
        const size_t size = adjCount * sizeof(Vec4f);
        std::memcpy(set.fConsts[startRegister].data, pConstantData, size);
-@@ -3642,6 +4027,10 @@ std::tuple<HRESULT, size_t> BaseDirect3DDevice9Ex_LSS::commonGetSetConstants(con
+@@ -3642,6 +4043,10 @@ std::tuple<HRESULT, size_t> BaseDirect3DDevice9Ex_LSS::commonGetSetConstants(con
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ResetState() {
@@ -2583,7 +2608,7 @@ index 1abdf20..4b2b7a3 100644
    for (uint32_t stageIdx = 0; stageIdx < kNumStageSamplers; ++stageIdx) {
      // Reset Texture States
      m_state.textureStageStates[stageIdx][TextureStageStateType::ColorOp] = stageIdx == 0 ? D3DTOP_MODULATE : D3DTOP_DISABLE;
-@@ -3876,31 +4265,32 @@ void Direct3DDevice9Ex_LSS<EnableSync>::initImplicitDepthStencil() {
+@@ -3876,31 +4281,32 @@ void Direct3DDevice9Ex_LSS<EnableSync>::initImplicitDepthStencil() {
  
  template<bool EnableSync>
  void Direct3DDevice9Ex_LSS<EnableSync>::destroyImplicitObjects() {
@@ -2695,7 +2720,7 @@ index df90d5f..33ca519 100644
  };
 -
 diff --git a/bridge/src/client/d3d9_device_base.cpp b/bridge/src/client/d3d9_device_base.cpp
-index 00264c5..e78ee10 100644
+index 00264c5..fd39e4b 100644
 --- a/bridge/src/client/d3d9_device_base.cpp
 +++ b/bridge/src/client/d3d9_device_base.cpp
 @@ -1,3 +1,7 @@
@@ -2715,7 +2740,7 @@ index 00264c5..e78ee10 100644
    
    // Initialize WndProc logic
    WndProc::set(getWinProcHwnd());
-@@ -95,21 +99,23 @@ BaseDirect3DDevice9Ex_LSS::BaseDirect3DDevice9Ex_LSS(const bool bExtended,
+@@ -95,20 +99,20 @@ BaseDirect3DDevice9Ex_LSS::BaseDirect3DDevice9Ex_LSS(const bool bExtended,
      }
      c.send_data(sizeof(D3DPRESENT_PARAMETERS), &m_presParams);
    }
@@ -2732,18 +2757,17 @@ index 00264c5..e78ee10 100644
    }
 -  Logger::debug("...create device response received from server...");
 +  Logger::debugLazy([&]() { return "...create device response received from server..."; });
-   const auto header = DeviceBridge::pop_front();
- 
-   // Grab hresult from server
--  hresultOut = (HRESULT) DeviceBridge::get_data();
++  // Grab hresult while its Header still gates other response waiters.
 +  try { hresultOut = (HRESULT) DeviceBridge::get_data(); }
 +  catch (const BridgeReadFailure&) { hresultOut = D3DERR_DEVICELOST; WndProc::unset(); return; }
+   const auto header = DeviceBridge::pop_front();
+-
+-  // Grab hresult from server
+-  hresultOut = (HRESULT) DeviceBridge::get_data();
    assert(DeviceBridge::get_data_pos() == header.dataOffset);
-+  DeviceBridge::end_read_data();
  
    if (FAILED(hresultOut)) {
-     Logger::err(format_string("...server-side D3D9 device creation failed with %x.", hresultOut));
-@@ -117,8 +123,8 @@ BaseDirect3DDevice9Ex_LSS::BaseDirect3DDevice9Ex_LSS(const bool bExtended,
+@@ -117,8 +121,8 @@ BaseDirect3DDevice9Ex_LSS::BaseDirect3DDevice9Ex_LSS(const bool bExtended,
      WndProc::unset();
      return;
    }
@@ -2828,7 +2852,7 @@ index 1593d51..31fe6f3 100644
 +  return DeviceBridge::healthy() ? D3D_OK : D3DERR_DEVICELOST;
  }
 diff --git a/bridge/src/client/d3d9_lss.cpp b/bridge/src/client/d3d9_lss.cpp
-index 300aaf5..f3d7b8d 100644
+index 300aaf5..efd49c0 100644
 --- a/bridge/src/client/d3d9_lss.cpp
 +++ b/bridge/src/client/d3d9_lss.cpp
 @@ -1,3 +1,7 @@
@@ -2996,7 +3020,7 @@ index 300aaf5..f3d7b8d 100644
  
      // Find path of original executable to properly set up paths
      if (!initFileSys(hModule)) {
-@@ -521,25 +561,48 @@ bool RemixAttach(HMODULE hModule) {
+@@ -521,25 +561,49 @@ bool RemixAttach(HMODULE hModule) {
  
      // Initialize logger
      Logger::init();
@@ -3043,6 +3067,7 @@ index 300aaf5..f3d7b8d 100644
 +    Logger::info("==================\nL4D2 D3D9 Bridge Client\n==================");
 +    Logger::info("All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.");
 +    Logger::info(std::string("Project build: ") + std::string(BRIDGE_VERSION));
++    bridge_data::buildIdentity = BRIDGE_VERSION;
 +    Logger::info("Based on NVIDIA RTX Remix Bridge (MIT); original code belongs to its original authors.");
      auto clientPath = getModuleFilePath();
 -    Logger::info(format_string("Loaded d3d9.dll from %s", clientPath.c_str()));
@@ -3050,7 +3075,7 @@ index 300aaf5..f3d7b8d 100644
  
      DInputHookAttach();
  
-@@ -606,6 +669,13 @@ void RemixDetach() {
+@@ -606,6 +670,13 @@ void RemixDetach() {
      // Clean up resources
      delete gpPresent;
  
@@ -4064,7 +4089,7 @@ index 13afedc..4422be8 100644
 \ No newline at end of file
 +} catch (const BridgeReadFailure&) { return D3DERR_DEVICELOST; }
 diff --git a/bridge/src/client/d3d9_swapchain.cpp b/bridge/src/client/d3d9_swapchain.cpp
-index 86a19d4..f86b451 100644
+index 86a19d4..2ab41d6 100644
 --- a/bridge/src/client/d3d9_swapchain.cpp
 +++ b/bridge/src/client/d3d9_swapchain.cpp
 @@ -1,3 +1,7 @@
@@ -4132,7 +4157,28 @@ index 86a19d4..f86b451 100644
  }
  
  HRESULT Direct3DSwapChain9_LSS::GetFrontBufferData(IDirect3DSurface9* pDestSurface) {
-@@ -308,4 +320,4 @@ HRESULT Direct3DSwapChain9_LSS::GetPresentParameters(D3DPRESENT_PARAMETERS* pPre
+@@ -207,6 +219,7 @@ HRESULT Direct3DSwapChain9_LSS::GetFrontBufferData(IDirect3DSurface9* pDestSurfa
+ 
+ HRESULT Direct3DSwapChain9_LSS::GetBackBuffer(UINT iBackBuffer, D3DBACKBUFFER_TYPE Type,
+                                               IDirect3DSurface9** ppBackBuffer) {
++  if (!gbBridgeRunning.load(std::memory_order_acquire)) { return D3DERR_DEVICELOST; }
+   ZoneScoped;
+   LogFunctionCall();
+ 
+@@ -246,7 +259,11 @@ HRESULT Direct3DSwapChain9_LSS::GetBackBuffer(UINT iBackBuffer, D3DBACKBUFFER_TY
+     c.send_data(pLssSurface->getId());
+   }
+   
+-  WAIT_FOR_OPTIONAL_SERVER_RESPONSE("GetBackBuffer()", D3DERR_INVALIDCALL, currentUID);
++  const auto result = [&]() -> HRESULT { try {
++    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("GetBackBuffer()", D3DERR_INVALIDCALL, currentUID);
++  } catch (const BridgeReadFailure&) { return D3DERR_DEVICELOST; } }();
++  if (FAILED(result)) { *ppBackBuffer = nullptr; pLssSurface->Release(); }
++  return result;
+ }
+ 
+ HRESULT Direct3DSwapChain9_LSS::GetRasterStatus(D3DRASTER_STATUS* pRasterStatus) {
+@@ -308,4 +325,4 @@ HRESULT Direct3DSwapChain9_LSS::GetPresentParameters(D3DPRESENT_PARAMETERS* pPre
      return D3DERR_INVALIDCALL;
    *pPresentationParameters = m_presParam;
    return D3D_OK;
@@ -4486,7 +4532,7 @@ index 620bb2c..eb11c3c 100644
 \ No newline at end of file
 +};
 diff --git a/bridge/src/client/d3d9_volume.cpp b/bridge/src/client/d3d9_volume.cpp
-index 11704cf..c9e6bd4 100644
+index 11704cf..b6f6216 100644
 --- a/bridge/src/client/d3d9_volume.cpp
 +++ b/bridge/src/client/d3d9_volume.cpp
 @@ -20,9 +20,14 @@
@@ -4647,7 +4693,7 @@ index 11704cf..c9e6bd4 100644
  #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
 -    c.end_data_blob();
 +      c.end_data_blob();
-+    }
++    } else { return D3DERR_DEVICELOST; }
  #endif
 +    if (!layoutValid) { c.abort(); return D3DERR_INVALIDCALL; }
 +    if (c.finish() != Result::Success) { return D3DERR_DEVICELOST; }
@@ -7334,10 +7380,10 @@ index 0000000..39becf6
 +}
 diff --git a/bridge/src/client/retention_runtime.h b/bridge/src/client/retention_runtime.h
 new file mode 100644
-index 0000000..9e57c76
+index 0000000..23efccd
 --- /dev/null
 +++ b/bridge/src/client/retention_runtime.h
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,154 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -7418,7 +7464,9 @@ index 0000000..9e57c76
 +        if (FAILED(hr)) { return hr; }
 +        LARGE_INTEGER begin {}, end {};
 +        if (l4d2_observation::recoveryTiming) { QueryPerformanceCounter(&begin); }
-+        { ClientMessage command(Commands::Bridge_TestReadbackRecovery, r.resourceId); command.send_data(static_cast<uint32_t>(sizeof(r)), &r); }
++        { ClientMessage command(Commands::Bridge_TestReadbackRecovery, r.resourceId);
++          command.send_data(static_cast<uint32_t>(sizeof(r)), &r);
++          if (command.finish() != Result::Success) { return D3DERR_DEVICELOST; } }
 +        const auto wait = temporary.wait(20000);
 +        elapsed = 0;
 +        if (l4d2_observation::recoveryTiming) { QueryPerformanceCounter(&end); elapsed = l4d2_readback::microseconds(begin, end); }
@@ -8532,7 +8580,7 @@ index 0000000..72eb1ad
 +};
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..2cb179c 100644
+index 86434ec..23230a0 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -10234,7 +10282,7 @@ index 86434ec..2cb179c 100644
    if (!result) {
      DWORD error = GetLastError();
      Logger::err(format_string("RegisterExitCallback() failed with error code %d", error));
-@@ -3482,22 +3993,50 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3482,22 +3993,51 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
  
    Config::init(Config::App::Server);
    GlobalOptions::init();
@@ -10274,6 +10322,7 @@ index 86434ec..2cb179c 100644
 +  Logger::info("==================\nL4D2 D3D9 Bridge Server\n==================");
 +  Logger::info("All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.");
 +  Logger::info(std::string("Project build: ") + std::string(BRIDGE_VERSION));
++    bridge_data::buildIdentity = BRIDGE_VERSION;
 +  Logger::info("Based on NVIDIA RTX Remix Bridge (MIT); original code belongs to its original authors.");
  #ifdef _WIN64
    Logger::info("Running in x64 mode!");
@@ -10288,7 +10337,7 @@ index 86434ec..2cb179c 100644
      Logger::info("Launched server with GUID " + gUniqueIdentifier.toString());
    } else {
      Logger::err("Server was invoked with invalid GUID! Unable to establish bridge, exiting...");
-@@ -3541,6 +4080,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3541,6 +4081,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    // Pulling default data sent from client to have the data queue in sync
    {
      PULL_U(uid);
@@ -10296,7 +10345,7 @@ index 86434ec..2cb179c 100644
    }
    Logger::info("Registering exit callback in case client exits unexpectedly.");
    RegisterExitCallback(synResponse.pHandle);
-@@ -3554,6 +4094,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3554,6 +4095,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    }
    const SentryShutdownOnExit sentryShutdownOnExit;
  
@@ -10305,7 +10354,7 @@ index 86434ec..2cb179c 100644
    // (3) Send ACK to Client. Connection has been established
    Logger::info("Sync request received, sending ACK response...");
    ServerMessage { Commands::Bridge_Ack, (uintptr_t) gpClientMessageChannel->getWorkerThreadId() };
-@@ -3576,6 +4118,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3576,6 +4119,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    // Pulling default data sent from client to have the data queue in sync
    {
      PULL_U(uid);
@@ -10313,7 +10362,7 @@ index 86434ec..2cb179c 100644
    }
    // (5) Ready to listen for incoming commands
    Logger::info("Handshake completed! Now waiting for incoming commands...");
-@@ -3589,12 +4132,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3589,12 +4133,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    bSignalDone.store(true);
    moduleCmdProcessingThread.join();
  
@@ -10330,7 +10379,7 @@ index 86434ec..2cb179c 100644
    if (ghModule) {
      // Skip unloading the d3d9.dll for now, since it seems to be doing more harm than good
      // especially with other dependencies loaded by dxvk and threads that may deadlock due
-@@ -3610,6 +4156,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3610,6 +4157,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      hWait = NULL;
    }
  
@@ -10341,7 +10390,7 @@ index 86434ec..2cb179c 100644
    Logger::info("Shutdown cleanup successful, exiting now!");
  
    const auto timeEnd = std::chrono::high_resolution_clock::now();
-@@ -3624,4 +4174,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +4175,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;
@@ -12813,10 +12862,10 @@ index 0000000..57fe0d0
 +}
 diff --git a/bridge/src/util/data_ring_contract.h b/bridge/src/util/data_ring_contract.h
 new file mode 100644
-index 0000000..dbaaa95
+index 0000000..30bd459
 --- /dev/null
 +++ b/bridge/src/util/data_ring_contract.h
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,106 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -12831,6 +12880,8 @@ index 0000000..dbaaa95
 +// The existing 64-byte channel control reservation is the complete wire layout.
 +constexpr uint32_t Magic = 0x3242444c; // LDB2
 +constexpr uint32_t Version = 2;
++// Initialized once by Client/Host startup; used only on the fault path.
++inline const char* buildIdentity = "startup";
 +struct alignas(64) Control {
 +  uint32_t magic;
 +  uint32_t version;
@@ -14757,7 +14808,7 @@ index 3ed228a..d7d7676 100644
          return 0;
        }
 diff --git a/bridge/src/util/util_bridgecommand.cpp b/bridge/src/util/util_bridgecommand.cpp
-index a3bed63..4202138 100644
+index a3bed63..de7d905 100644
 --- a/bridge/src/util/util_bridgecommand.cpp
 +++ b/bridge/src/util/util_bridgecommand.cpp
 @@ -1,3 +1,7 @@
@@ -14768,12 +14819,11 @@ index a3bed63..4202138 100644
  /*
   * Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
   *
-@@ -20,15 +24,17 @@
+@@ -20,15 +24,16 @@
   * DEALINGS IN THE SOFTWARE.
   */
  #include "util_bridgecommand.h"
 +#include "device_reset.h"
-+#include "version.h"
  #include "log/log_strings.h"
  
  namespace {
@@ -14788,7 +14838,7 @@ index a3bed63..4202138 100644
    }
  }
  
-@@ -55,79 +61,143 @@ DECL_BRIDGE_FUNC(void, init,
+@@ -55,79 +60,153 @@ DECL_BRIDGE_FUNC(void, init,
    bIsInit = true;
  }
  
@@ -14849,7 +14899,7 @@ index a3bed63..4202138 100644
 +    if (peer) { CloseHandle(peer); }
 +    const auto consumed = channel.control->consumed.load(std::memory_order_acquire);
 +    Logger::err(format_string("IPC_DATA_FAULT run=%s build=%s protocol=%u channel=%s self_pid=%lu peer_pid=%lu command=%u uid=%u request_words=%llu capacity=%u reserved=%llu published=%llu consumed=%llu wait_begin_ms=%llu elapsed_ms=%llu progress_changed=%u peer_alive=%s result=%s was_running=%u",
-+      gUniqueIdentifier.toString().c_str(), BRIDGE_VERSION, bridge_data::Version, channel.data->getName().c_str(),
++      gUniqueIdentifier.toString().c_str(), bridge_data::buildIdentity, bridge_data::Version, channel.data->getName().c_str(),
 +      GetCurrentProcessId(), static_cast<unsigned long>(peerPid), command, uid,
 +      static_cast<unsigned long long>(words), static_cast<unsigned>(channel.data->get_total_size()),
 +      static_cast<unsigned long long>(channel.data->cursor()), static_cast<unsigned long long>(channel.control->published.load()),
@@ -14866,8 +14916,9 @@ index a3bed63..4202138 100644
 +  const auto capacity = static_cast<uint32_t>(channel.data->get_total_size());
 +  const auto current = channel.data->cursor();
 +  if (!r.valid || r.end < s_curBatchStartPos || r.end - s_curBatchStartPos > capacity || !healthy()) {
++    reportFault("invalid-reservation-or-cancelled", s_curCommand, s_curUID, words);
 +    return Result::Failure;
-+  }
+   }
 +  if (bridge_data::available(r.end, channel.cachedConsumed, capacity)) { return Result::Success; }
 +  const auto begin = GetTickCount64();
 +  const auto initialConsumed = channel.cachedConsumed;
@@ -14892,26 +14943,6 @@ index a3bed63..4202138 100644
 +  }
 +  return Result::Success;
 +}
-+
-+DECL_BRIDGE_FUNC(void, startRead, const Header& header) {
-+  const auto& channel = getReaderChannel();
-+  const auto capacity = static_cast<uint32_t>(channel.data->get_total_size());
-+  if (!bridge_data::compatible(*channel.control, capacity)) {
-+    Logger::err("IPC protocol/control layout mismatch; mixed Client/Host refused");
-+    failRead();
-   }
-+  if (s_readActive) { return; }
-+  if (header.dataOffset >= capacity) { failRead(); }
-+  const auto start = channel.data->cursor();
-+  uint64_t words = (static_cast<uint64_t>(header.dataOffset) + capacity - channel.data->get_pos()) % capacity;
-+  if (header.flags & Commands::FlagBits::DataFullRing) {
-+    if (words) { failRead(); }
-+    words = capacity;
-+  }
-+  if (start > UINT64_MAX - words || start + words > channel.control->published.load(std::memory_order_acquire)) { failRead(); }
-+  s_readEnd = start + words;
-+  s_readActive = true;
-+}
  
 -  /*
 -    * overwrite conditions
@@ -14923,17 +14954,39 @@ index a3bed63..4202138 100644
 -       || (s_curBatchStartPos > serverCount && expectedClientDataPos < s_curBatchStartPos)
 -       || ((s_curBatchStartPos <= serverCount) && *s_pWriterChannel->serverResetPosRequired))) {
 -    handleOverwriteCondition();
++DECL_BRIDGE_FUNC(void, startRead, const Header& header) {
++  const auto& channel = getReaderChannel();
++  const auto capacity = static_cast<uint32_t>(channel.data->get_total_size());
++  if (!bridge_data::compatible(*channel.control, capacity)) {
++    Logger::err("IPC protocol/control layout mismatch; mixed Client/Host refused");
++    failRead();
+   }
++  if (s_readActive) { return; }
++  if (header.dataOffset >= capacity) { failRead(); }
++  const auto start = channel.data->cursor();
++  const auto position = static_cast<uint32_t>(channel.data->get_pos());
++  uint64_t words = header.dataOffset >= position ? header.dataOffset - position
++    : capacity - (position - header.dataOffset);
++  if (header.flags & Commands::FlagBits::DataFullRing) {
++    if (words) { failRead(); }
++    words = capacity;
++  }
++  if (start > UINT64_MAX - words || start + words > channel.control->published.load(std::memory_order_acquire)) { failRead(); }
++  s_readEnd = start + words;
++  s_readActive = true;
+ }
+ 
 +DECL_BRIDGE_FUNC(void, ensureRead, uint64_t words, bool blob) {
 +  if (!s_readActive) {
 +    Result result;
 +    const auto header = getReaderChannel().commands->peek(result, 1);
 +    if (result != Result::Success) { failRead(); }
 +    startRead(header);
-   }
++  }
 +  const auto r = getReaderChannel().data->reservation(words, blob);
 +  if (!r.valid || r.end > s_readEnd) { failRead(); }
- }
- 
++}
++
 +DECL_BRIDGE_FUNC(void, failRead) {
 +  getReaderChannel().control->fault.store(1, std::memory_order_release);
 +  gbBridgeRunning.store(false, std::memory_order_release);
@@ -14961,17 +15014,24 @@ index a3bed63..4202138 100644
 +#ifdef REMIX_BRIDGE_CLIENT
 +  l4d2_api_wait::Span apiResponseTiming(l4d2_api_wait::Metric::ResponseWait);
 +#endif
++#ifdef REMIX_BRIDGE_CLIENT
++  // Finish the payload before exposing the next Header to another UID waiter.
++  // CommandQueue pull publishes its consumer index with release; peek has an
++  // acquire fence after loading that index. The next matching waiter therefore
++  // also observes the completed data cursor and inactive packet state.
++  if (s_readActive) {
++    if (getReaderChannel().data->cursor() != s_readEnd) { failRead(); }
++    end_read_data();
++  }
++#endif
    const auto response = getReaderChannel().commands->pull(result, get_default_timeout());
    if (RESULT_FAILURE(result)) {
      // For now just log when things go wrong, but could use some robustness improvements
      Logger::err("CommandQueue get_response: Failed to retrieve the command response!");
    }
 +  if (RESULT_SUCCESS(result)) {
++#ifdef REMIX_BRIDGE_SERVER
 +    startRead(response);
-+#ifdef REMIX_BRIDGE_CLIENT
-+    // Reply consumers call pop after copying data. The device constructor is
-+    // the sole early-pop payload case and explicitly completes afterwards.
-+    if (getReaderChannel().data->cursor() == s_readEnd) { end_read_data(); }
 +#endif
 +    // NV-DXVK start: Optional data/resource tracing.
 +    l4d2_data::received(static_cast<uint16_t>(response.command), std::is_same<BridgeId, ::BridgeId::Module>::value);
@@ -14987,7 +15047,7 @@ index a3bed63..4202138 100644
    if (getReaderChannel().commands->isEmpty()) {
      return bridge_util::Result::Success;
    }
-@@ -152,13 +222,17 @@ DECL_BRIDGE_FUNC(bridge_util::Result, ensureQueueEmpty) {
+@@ -152,13 +231,17 @@ DECL_BRIDGE_FUNC(bridge_util::Result, ensureQueueEmpty) {
  
  DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Command& command,
                                                        DWORD overrideTimeoutMS,
@@ -15007,7 +15067,7 @@ index a3bed63..4202138 100644
    }
  #endif
  #if defined(_DEBUG) || defined(DEBUGOPT)
-@@ -169,7 +243,12 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -169,7 +252,12 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
    bool infiniteRetries = false;
    bool bEarlyOut = false;
    uint32_t attemptNum = 0;
@@ -15020,7 +15080,7 @@ index a3bed63..4202138 100644
      Result result;
      Header header = getReaderChannel().commands->peek(result, peekTimeoutMS, pbEarlyOutSignal);
  
-@@ -186,9 +265,10 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -186,9 +274,10 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
        if ((command == Commands::Bridge_Any) || (header.command == command) && uidVerified) {
  #ifdef ENABLE_WAIT_FOR_COMMAND_TRACE
          if (command != Commands::Bridge_Any) {
@@ -15032,7 +15092,7 @@ index a3bed63..4202138 100644
          return Result::Success;
        } else {
  #if defined(_DEBUG) || defined(DEBUGOPT)
-@@ -229,13 +309,13 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -229,13 +318,13 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
          // Drop the flag - we're in the normal loop now.
          infiniteRetries = false;
        }
@@ -15048,7 +15108,7 @@ index a3bed63..4202138 100644
        return Result::Failure;
      }
  
-@@ -256,7 +336,9 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -256,7 +345,9 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
  DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
                             uintptr_t pHandle,
                             const Commands::Flags commandFlags)
@@ -15059,7 +15119,7 @@ index a3bed63..4202138 100644
    , m_handle((uint32_t) (size_t) pHandle)
    , m_commandFlags(commandFlags) {
    // If the assert or exception gets triggered it means that there is more than one Command
-@@ -276,76 +358,65 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
+@@ -276,76 +367,65 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
  #endif
  
  #ifdef REMIX_BRIDGE_CLIENT
@@ -15182,7 +15242,7 @@ index a3bed63..4202138 100644
    s_pWriterChannel->pbCmdInProgress->store(false);
  #ifdef REMIX_BRIDGE_CLIENT
    ++s_cmdUID;
-@@ -353,5 +424,6 @@ DECL_COMMAND_FUNC(,~Command) {
+@@ -353,5 +433,6 @@ DECL_COMMAND_FUNC(,~Command) {
  #endif
  }
  

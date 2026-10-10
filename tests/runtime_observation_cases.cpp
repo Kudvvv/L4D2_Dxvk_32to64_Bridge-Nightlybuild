@@ -106,6 +106,33 @@ static void learnedLoop(const char* mode) {
 int main(int argc, char** argv) {
   assert(argc == 2);
   using namespace diagnostic_work;
+  if (!std::strcmp(argv[1], "ipc-submit-failure")) {
+    using namespace l4d2_readback;
+    failIpcSubmission=true;
+    l4d2_residency::Runtime residency;
+    l4d2_residency::Context& c=residency.context;
+    const D3DSURFACE_DESC desc {D3DFMT_DXT1,D3DRTYPE_SURFACE,0,D3DPOOL_MANAGED,D3DMULTISAMPLE_NONE,0,64,64};
+    Layout layout;assert(l4d2_readback::layout(64,64,D3DFMT_DXT1,layout));
+    PagefileShadow backing;auto* original=backing.acquire(layout.bytes,0);assert(original);std::memset(original,0x71,layout.bytes);backing.release(0);
+    l4d2_residency::Entry entry(c,backing,19,desc);entry.type=l4d2_shadow::Type::Texture2DLevel;entry.uploaded(layout.bytes);
+    LARGE_INTEGER begin{},end{},frequency{};QueryPerformanceFrequency(&frequency);QueryPerformanceCounter(&begin);
+    assert(!entry.synchronize() && entry.pendingSynchronization());
+    assert(backing.backingBytes()==layout.bytes && !backing.recoveryMissing());
+    configuredPolicy="learned-aggressive";configuredDb="ipc-submit-failure.db";std::filesystem::remove(configuredDb);
+    l4d2_retention::Runtime retention;assert(retention.context.enabled && !retention.context.fallback);
+    Request request;request.resourceId=19;request.parentId=18;request.width=request.height=64;request.format=D3DFMT_DXT1;request.bytes=layout.bytes;request.operation=3;
+    swprintf_s(request.name,L"Local\\L4D2Recovery-%lu-submit-failure",GetCurrentProcessId());
+    DWORD beforeHandles=0,afterHandles=0;GetProcessHandleCount(GetCurrentProcess(),&beforeHandles);
+    for(unsigned i=0;i<100;++i){
+      Temporary temporary;Response response;uint64_t elapsed=0;
+      assert(retention.context.exchange(request,temporary,response,elapsed)==D3DERR_DEVICELOST);
+      assert(response.stage==Stage::Pending && response.bytes==0 && retention.context.db.records()==0);
+    }
+    GetProcessHandleCount(GetCurrentProcess(),&afterHandles);assert(afterHandles==beforeHandles);
+    QueryPerformanceCounter(&end);assert(static_cast<double>(end.QuadPart-begin.QuadPart)/frequency.QuadPart<2.0);
+    assert(ipcSubmissions==101 && backing.backingBytes()==layout.bytes);
+    std::puts("IPC_REQUEST_FAILURE_PASS default residency+retention exchange no-wait no-completion no-eviction no-handle-leak");return 0;
+  }
   if (!std::strcmp(argv[1], "observer-failure")) {
     std::atomic<unsigned> calls { 0 };
     l4d2_observation::Observer observer;
