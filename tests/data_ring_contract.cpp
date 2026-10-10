@@ -34,7 +34,7 @@ int main() {
   uint64_t words=0;
   require(blobWords(0,words) && words==1,"zero-length prefix");
   require(blobWords(UINT32_MAX,words) && words==1073741825ULL,"uint32 boundary");
-  if (sizeof(size_t)>4) { require(!blobWords(static_cast<size_t>(UINT32_MAX)+1,words),"native to wire overflow"); }
+  if constexpr (sizeof(size_t)>4) { require(!blobWords(static_cast<size_t>(UINT32_MAX)+1,words),"native to wire overflow"); }
   Control c{}; c.magic=Magic;c.version=Version;c.bytes=sizeof(c);c.capacity=8;
   require(compatible(c,8),"matching protocol");
   ++c.version;require(!compatible(c,8),"protocol rejection");--c.version;

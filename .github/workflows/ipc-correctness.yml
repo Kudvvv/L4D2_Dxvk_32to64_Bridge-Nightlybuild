@@ -66,7 +66,7 @@ jobs:
           ./scripts/test_runtime_observation.ps1
           python -m unittest discover -s tests -p test_runtime_separation.py
           if ($LASTEXITCODE -ne 0) { throw 'Runtime separation contract tests failed' }
-      - name: Test PageBlock residency, GC and L4N v2 callbacks
+      - name: Test PageBlock residency and GC (unchanged optional plugin skipped)
         shell: powershell
         run: |
           ./scripts/test_pageblock_gc.ps1 -SkipPluginTests
