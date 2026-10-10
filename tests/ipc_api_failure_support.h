@@ -10,7 +10,6 @@
 #include "util_commands.h"
 #include "api_wait_diagnostics.h"
 using namespace bridge_util;
-using UID=uint32_t;
 struct BridgeReadFailure {};
 inline std::atomic<bool> gbBridgeRunning{true};
 inline bool failSubmission=false, failReply=false, malformedReply=false, optionalReply=false;
