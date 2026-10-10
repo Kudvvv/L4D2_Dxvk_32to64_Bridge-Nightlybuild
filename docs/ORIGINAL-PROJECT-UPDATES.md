@@ -21,8 +21,6 @@
 
 2026-10-10 后续完成[手电专项对照与命令热路径优化](FLASHLIGHT-PERFORMANCE-2026-10-10.md)。仅减少就绪队列计时和进程内保护标志的冗余开销；没有添加绑核策略、替换后端或更改默认配置。实测受本机双 CCD 调度影响，尚未证实稳定 FPS 增益；详细数据和发布重建边界见该报告。上游完整同步基准不变。
 
-同日完成[重复缓冲区绑定引用优化与对照](BINDING-PERFORMANCE-2026-10-10.md)，减少四处相同资源绑定的增减引用，保留全部 Host 命令与状态更新。正确性和 CI 验证通过；实测平均帧略高、1% low 略低，维护者了解结果后授权正式发布，不宣称稳定性能提升。该生产补丁的游戏候选固定于 NVIDIA `5fd30eae2d397f369bdf5660f3ddd0bc0bd1fa58`；发布沿用当前 NVIDIA `3a75b814600bdf7ef7b0d3a0bae55b9a8c81f34b` 并重新执行完整构建与回归，最终 ZIP 未重新进行游戏实测。原项目完整同步基准仍为 `cf49175`。
-
 补丁必须分别对 NVIDIA 原始基准 `9aa74f8dfad2188efbd0f717c64d9f8fa909787e` 和固定构建源 `5fd30eae2d397f369bdf5660f3ddd0bc0bd1fa58` 通过应用校验。完整 Python 回归、上游原生测试和 Nightly 的资源/边界/日志/异步/ThinFlex 回归是发布门槛；CI 构建 x86 Client、x64/x86 Host 和 L4N 设置插件，再下载核验最终全量包。
 
 本地验证：164 项 Python 回归全部通过（包含实际 ThinFlex 原生工具和准备后的 runtime separation，无跳过）；上游 Volume、Reset、PageBlock、配置与跨进程 readback/adapter 测试在 GCC x86/x64 通过。Nightly 上传、资源清理、日志、输入、异步 DLL 及原缺陷负对照通过。正式 MSVC 完整编译和测试仍由对应 Actions 判定，未用 GCC 的兼容参数降低 CI `/W4 /WX` 门槛。

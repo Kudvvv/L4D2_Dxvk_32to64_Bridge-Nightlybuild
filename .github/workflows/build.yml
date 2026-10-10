@@ -26,13 +26,6 @@ jobs:
       - name: Test actual Client and Host command publication
         shell: powershell
         run: ./scripts/test_command_guard.ps1
-      - name: Test binding ownership, StateBlock and preserved commands
-        shell: powershell
-        run: |
-          foreach ($arch in @('x86', 'x64')) {
-            & powershell.exe -NoProfile -File ./scripts/test_binding_references.ps1 -Platform $arch
-            if ($LASTEXITCODE -ne 0) { throw "Binding reference tests failed for $arch" }
-          }
       - name: Test Python contracts and package validation
         run: python -m unittest discover -s tests -p 'test_*.py'
       - uses: actions/upload-artifact@v4
