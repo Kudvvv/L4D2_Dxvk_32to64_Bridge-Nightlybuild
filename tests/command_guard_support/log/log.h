@@ -15,7 +15,9 @@ public:
   static void warn(const std::string&) {}
   // Throw instead of opening a fatal-error dialog. This also lets the harness
   // verify the actual Host Command constructor rejects overlapping lifetimes.
-  static void err(const std::string& value) { throw std::runtime_error(value); }
+  // Keep the ordinary error logger out of line, as in production. An inline
+  // unconditional throw makes MSVC diagnose Guid's following throw as C4702.
+  static void err(const std::string& value);
   [[noreturn]] static void errLogMessageBoxAndExit(const std::string& value) {
     throw std::runtime_error(value);
   }

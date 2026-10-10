@@ -16,6 +16,16 @@ $testDirectory = Join-Path $repoRoot '.deps/command-guard-test'
 $support = Join-Path $repoRoot 'tests/command_guard_support'
 $variants = @('current', 'seq_cst', 'relaxed')
 $utf8 = [Text.UTF8Encoding]::new($false)
+$files = @(
+  'util_bridgecommand.cpp', 'util_bridgecommand.h', 'util_ipcchannel.h', 'util_atomiccircularqueue.h',
+  'util_blockingcircularqueue.h', 'util_circularbuffer.h', 'util_circularqueue.h',
+  'util_sharedmemory.h', 'util_sharedmemory.cpp', 'util_semaphore.h', 'util_semaphore.cpp',
+  'util_guid.h', 'util_common.h', 'util_commands.h', 'util_bridge_state.h', 'util_singleton.h',
+  'api_wait_diagnostics.h', 'queue_wait_diagnostics.h', 'runtime_observation.h',
+  'exception_diagnostics.h', 'data_diagnostics.h', 'device_reset.h', 'log/log_strings.h'
+)
+$testSource = Join-Path $repoRoot 'tests/command_guard_ipc.cpp'
+$harnessHash = (Get-FileHash -LiteralPath $testSource -Algorithm SHA256).Hash
 if ($MingwDirectory) { $MingwDirectory = (Resolve-Path -LiteralPath $MingwDirectory).Path }
 if ($RunOnly -and $CompileArchitecture) { throw 'RunOnly cannot be combined with CompileArchitecture' }
 $supportHashes = [ordered]@{}
@@ -35,6 +45,7 @@ if (!$CompileArchitecture) {
   }
   # Also check fresh builds: refuse stale/mixed binaries or source changed while
   # the other architecture compiled. RunOnly is safe only for identical inputs.
+  $buildMode = $null
   foreach ($arch in @('x86', 'x64')) {
     foreach ($variant in $variants) {
       $build = Join-Path $testDirectory "$arch/$variant"
@@ -42,6 +53,15 @@ if (!$CompileArchitecture) {
       if ($metadata.architecture -ne $arch -or $metadata.variant -ne $variant -or $metadata.source -ne $source) {
         throw "Mismatched Command guard build metadata: $arch / $variant"
       }
+      if ((@($metadata.source_sha256.PSObject.Properties.Name | Sort-Object) -join "`n") -cne
+          (@($files | Sort-Object) -join "`n") -or
+          (@($metadata.support_sha256.PSObject.Properties.Name | Sort-Object) -join "`n") -cne
+          (@($supportHashes.Keys | Sort-Object) -join "`n")) {
+        throw "Command guard input file set changed or metadata is incomplete: $arch / $variant"
+      }
+      $mode = if ($metadata.mingw_header_adaptations) { 'mingw' } else { 'msvc' }
+      if ($null -eq $buildMode) { $buildMode = $mode }
+      elseif ($mode -ne $buildMode) { throw 'Command guard binaries mix MSVC and MinGW builds; rebuild both architectures' }
       foreach ($entry in $metadata.source_sha256.PSObject.Properties) {
         $actual = (Get-FileHash -LiteralPath (Join-Path $source "bridge/src/util/$($entry.Name)") -Algorithm SHA256).Hash
         if ($actual -ne $entry.Value) { throw "Production source changed; rebuild before running: $($entry.Name)" }
@@ -51,7 +71,8 @@ if (!$CompileArchitecture) {
           throw "Command guard support changed; rebuild before running: $file"
         }
       }
-      if ((Get-FileHash -LiteralPath (Join-Path $repoRoot 'tests/command_guard_ipc.cpp') -Algorithm SHA256).Hash -ne $metadata.harness_sha256 -or
+      if ((Get-FileHash -LiteralPath $testSource -Algorithm SHA256).Hash -ne $harnessHash -or
+          $harnessHash -ne $metadata.harness_sha256 -or
           (Get-FileHash -LiteralPath (Join-Path $build 'command-guard.exe') -Algorithm SHA256).Hash -ne $metadata.executable_sha256) {
         throw "Command guard executable or harness changed; rebuild before running: $arch / $variant"
       }
@@ -89,14 +110,6 @@ if ($MingwDirectory) {
   $compiler = (Get-Command cl.exe -ErrorAction Stop).Source
 }
 
-$files = @(
-  'util_bridgecommand.cpp', 'util_bridgecommand.h', 'util_ipcchannel.h', 'util_atomiccircularqueue.h',
-  'util_blockingcircularqueue.h', 'util_circularbuffer.h', 'util_circularqueue.h',
-  'util_sharedmemory.h', 'util_sharedmemory.cpp', 'util_semaphore.h', 'util_semaphore.cpp',
-  'util_guid.h', 'util_common.h', 'util_commands.h', 'util_bridge_state.h', 'util_singleton.h',
-  'api_wait_diagnostics.h', 'queue_wait_diagnostics.h', 'runtime_observation.h',
-  'exception_diagnostics.h', 'data_diagnostics.h', 'device_reset.h', 'log/log_strings.h'
-)
 $sourceHashes = [ordered]@{}
 foreach ($file in $files) {
   $sourceHashes[$file] = (Get-FileHash -LiteralPath (Join-Path $sourceUtil $file) -Algorithm SHA256).Hash
@@ -176,7 +189,6 @@ foreach ($variant in $variants) {
     throw "Command translation unit differs beyond the guard memory orders: $variant"
   }
 
-  $testSource = Join-Path $repoRoot 'tests/command_guard_ipc.cpp'
   $adapterSource = Join-Path $support 'diagnostic_adapters.cpp'
   $prelude = Join-Path $support 'prelude.h'
   $productionSources = @($commandFile, (Join-Path $util 'util_sharedmemory.cpp'), (Join-Path $util 'util_semaphore.cpp'))
@@ -205,6 +217,9 @@ foreach ($variant in $variants) {
       & $compiler /nologo command_guard_ipc.obj diagnostic_adapters.obj util_bridgecommand.obj util_sharedmemory.obj util_semaphore.obj ole32.lib /Fe:command-guard.exe
       if ($LASTEXITCODE -ne 0) { throw "Command guard link failed: $variant / $CompileArchitecture" }
     }
+    if ((Get-FileHash -LiteralPath $testSource -Algorithm SHA256).Hash -ne $harnessHash) {
+      throw 'Command guard harness changed during compilation; rebuild before running'
+    }
     [ordered]@{
       variant = $variant
       architecture = $CompileArchitecture
@@ -214,7 +229,7 @@ foreach ($variant in $variants) {
       source = $source
       source_sha256 = $sourceHashes
       command_translation_unit_sha256 = (Get-FileHash -LiteralPath $commandFile -Algorithm SHA256).Hash
-      harness_sha256 = (Get-FileHash -LiteralPath $testSource -Algorithm SHA256).Hash
+      harness_sha256 = $harnessHash
       support_sha256 = $supportHashes
       executable_sha256 = (Get-FileHash -LiteralPath 'command-guard.exe' -Algorithm SHA256).Hash
       mingw_header_adaptations = [bool]$MingwDirectory
