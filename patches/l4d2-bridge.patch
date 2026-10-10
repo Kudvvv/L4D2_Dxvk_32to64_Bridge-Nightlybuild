@@ -407,7 +407,7 @@ index 4af81775aea4b6bc84a8a8ef599de8f57823ad61..6aec65f4f55e5e29b3eef24facf59dd1
 \ No newline at end of file
 +};
 diff --git a/bridge/src/client/d3d9_device.cpp b/bridge/src/client/d3d9_device.cpp
-index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99d8ff1ca4 100644
+index 1abdf20..9bee345 100644
 --- a/bridge/src/client/d3d9_device.cpp
 +++ b/bridge/src/client/d3d9_device.cpp
 @@ -1,3 +1,7 @@
@@ -941,12 +941,12 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
 -  if (ppSurface == nullptr || Width == 0 || Height == 0) {
 +  // NV-DXVK start: Every failed call leaves a null output.
 +  if (ppSurface == nullptr) {
-+    return D3DERR_INVALIDCALL;
-+  }
-+  *ppSurface = nullptr;
-+  if (Width == 0 || Height == 0) {
      return D3DERR_INVALIDCALL;
    }
++  *ppSurface = nullptr;
++  if (Width == 0 || Height == 0) {
++    return D3DERR_INVALIDCALL;
++  }
 +  // NV-DXVK end
  
 +  // NV-DXVK start: Retain the wrapper until its creation result is known.
@@ -999,12 +999,12 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
 -  if (ppSurface == nullptr || Width == 0 || Height == 0) {
 +  // NV-DXVK start: Every failed call leaves a null output.
 +  if (ppSurface == nullptr) {
-     return D3DERR_INVALIDCALL;
-   }
-+  *ppSurface = nullptr;
-+  if (Width == 0 || Height == 0) {
 +    return D3DERR_INVALIDCALL;
 +  }
++  *ppSurface = nullptr;
++  if (Width == 0 || Height == 0) {
+     return D3DERR_INVALIDCALL;
+   }
 +  // NV-DXVK end
  
 +  // NV-DXVK start: Retain the wrapper until its creation result is known.
@@ -1142,7 +1142,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
      if (m_stateRecording) {
        m_stateRecording->m_captureState.textures[idx] = std::move(objectRef);
        m_stateRecording->m_captureState.textureTypes[idx] = type;
-@@ -2791,6 +3062,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
+@@ -2791,8 +3062,22 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
    {
      {
        BRIDGE_DEVICE_LOCKGUARD();
@@ -1159,9 +1159,25 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
 +      }
 +      // NV-DXVK end
        if (m_stateRecording) {
-         m_stateRecording->m_captureState.streams[StreamNumber] = MakeD3DAutoPtr(pLssStreamData);
+-        m_stateRecording->m_captureState.streams[StreamNumber] = MakeD3DAutoPtr(pLssStreamData);
++        if (*m_stateRecording->m_captureState.streams[StreamNumber] != pLssStreamData) {
++          m_stateRecording->m_captureState.streams[StreamNumber] = MakeD3DAutoPtr(pLssStreamData);
++        }
          if (pStreamData != nullptr) {
-@@ -2886,6 +3169,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetIndices(IDirect3DIndexBuffer9* pIn
+           m_stateRecording->m_captureState.streamOffsets[StreamNumber] = OffsetInBytes;
+           m_stateRecording->m_captureState.streamStrides[StreamNumber] = Stride;
+@@ -2800,7 +3085,9 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
+         }
+         m_stateRecording->m_dirtyFlags.streams[StreamNumber] = true;
+       } else {
+-        m_state.streams[StreamNumber] = MakeD3DAutoPtr(pLssStreamData);
++        if (*m_state.streams[StreamNumber] != pLssStreamData) {
++          m_state.streams[StreamNumber] = MakeD3DAutoPtr(pLssStreamData);
++        }
+         if (pStreamData != nullptr) {
+           m_state.streamOffsets[StreamNumber] = OffsetInBytes;
+           m_state.streamStrides[StreamNumber] = Stride;
+@@ -2886,11 +3173,24 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetIndices(IDirect3DIndexBuffer9* pIn
    {
      {
        BRIDGE_DEVICE_LOCKGUARD();
@@ -1175,9 +1191,20 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
 +      }
 +      // NV-DXVK end
        if (m_stateRecording) {
-         m_stateRecording->m_captureState.indices = MakeD3DAutoPtr(pLssIndexData);
+-        m_stateRecording->m_captureState.indices = MakeD3DAutoPtr(pLssIndexData);
++        if (*m_stateRecording->m_captureState.indices != pLssIndexData) {
++          m_stateRecording->m_captureState.indices = MakeD3DAutoPtr(pLssIndexData);
++        }
          m_stateRecording->m_dirtyFlags.indices = true;
-@@ -3216,6 +3508,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ComposeRects(IDirect3DSurface9* pSrc,
+       } else {
+-        m_state.indices = MakeD3DAutoPtr(pLssIndexData);
++        if (*m_state.indices != pLssIndexData) {
++          m_state.indices = MakeD3DAutoPtr(pLssIndexData);
++        }
+       }
+     }
+     {
+@@ -3216,6 +3516,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ComposeRects(IDirect3DSurface9* pSrc,
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion, DWORD dwFlags) {
@@ -1185,7 +1212,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
    ZoneScoped;
    LogMissingFunctionCall();
    assert(m_ex);
-@@ -3234,6 +3527,9 @@ template<bool EnableSync>
+@@ -3234,6 +3535,9 @@ template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetGPUThreadPriority(INT* pPriority) {
    ZoneScoped;
    LogFunctionCall();
@@ -1195,7 +1222,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
  
    // Function does not claim to support returning D3DERR_INVALIDCALL
    if (pPriority == nullptr) {
-@@ -3323,6 +3619,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckDeviceState(HWND hDestinationWin
+@@ -3323,6 +3627,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckDeviceState(HWND hDestinationWin
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Lockable, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle, DWORD Usage) {
@@ -1203,7 +1230,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3330,7 +3627,13 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
+@@ -3330,7 +3635,13 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
    if (ppSurface == nullptr) {
      return D3DERR_INVALIDCALL;
    }
@@ -1217,7 +1244,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
    D3DSURFACE_DESC desc;
    desc.Width = Width;
    desc.Height = Height;
-@@ -3342,7 +3645,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
+@@ -3342,7 +3653,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
    desc.Type = D3DRTYPE_SURFACE;
  
    // Insert our own IDirect3DSurface9 interface implementation
@@ -1226,7 +1253,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
    (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
  
    UID currentUID = 0;
-@@ -3353,11 +3656,30 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
+@@ -3353,11 +3664,30 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
      c.send_many(Width, Height, Format, MultiSample, MultisampleQuality, Lockable, Usage, pLssSurface->getId());
    }
  
@@ -1258,7 +1285,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3365,19 +3687,17 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+@@ -3365,19 +3695,17 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
    if (ppSurface == nullptr) {
      return D3DERR_INVALIDCALL;
    }
@@ -1286,7 +1313,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
    (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
  
    UID currentUID = 0;
-@@ -3388,11 +3708,30 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+@@ -3388,11 +3716,30 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
      c.send_many(Width, Height, Format, Pool, Usage, pLssSurface->getId());
    }
  
@@ -1318,7 +1345,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3400,7 +3739,13 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
+@@ -3400,7 +3747,13 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
    if (ppSurface == nullptr) {
      return D3DERR_INVALIDCALL;
    }
@@ -1332,7 +1359,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
    D3DSURFACE_DESC desc;
    desc.Width = Width;
    desc.Height = Height;
-@@ -3411,7 +3756,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
+@@ -3411,7 +3764,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
    desc.Pool = D3DPOOL_DEFAULT;
    desc.Type = D3DRTYPE_SURFACE;
  
@@ -1341,7 +1368,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
    (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
  
    UID currentUID = 0;
-@@ -3421,49 +3766,56 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
+@@ -3421,49 +3774,56 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
      c.send_many(Width, Height, Format, MultiSample, MultisampleQuality, Discard, Usage, pLssSurface->getId());
    }
  
@@ -1429,7 +1456,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
  }
  
  template<bool EnableSync>
-@@ -3517,10 +3869,60 @@ HRESULT BaseDirect3DDevice9Ex_LSS::setShaderConstants(const uint32_t startRegist
+@@ -3517,10 +3877,60 @@ HRESULT BaseDirect3DDevice9Ex_LSS::setShaderConstants(const uint32_t startRegist
    const auto [commonHresult, adjCount] =
      commonGetSetConstants<ShaderT, ConstantT, T>(startRegister, pConstantData, count);
    if (!SUCCEEDED(commonHresult) || adjCount == 0) {
@@ -1490,7 +1517,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
      if constexpr (ConstantT == ConstantType::Float) {
        const size_t size = adjCount * sizeof(Vec4f);
        std::memcpy(set.fConsts[startRegister].data, pConstantData, size);
-@@ -3642,6 +4044,9 @@ std::tuple<HRESULT, size_t> BaseDirect3DDevice9Ex_LSS::commonGetSetConstants(con
+@@ -3642,6 +4052,9 @@ std::tuple<HRESULT, size_t> BaseDirect3DDevice9Ex_LSS::commonGetSetConstants(con
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ResetState() {
@@ -1500,7 +1527,7 @@ index 1abdf202102af7b252f46a4b96f5b3ed0ac091e2..1593d591c1bdf661a8ecbc116c67be99
    for (uint32_t stageIdx = 0; stageIdx < kNumStageSamplers; ++stageIdx) {
      // Reset Texture States
      m_state.textureStageStates[stageIdx][TextureStageStateType::ColorOp] = stageIdx == 0 ? D3DTOP_MODULATE : D3DTOP_DISABLE;
-@@ -3876,31 +4281,32 @@ void Direct3DDevice9Ex_LSS<EnableSync>::initImplicitDepthStencil() {
+@@ -3876,31 +4289,32 @@ void Direct3DDevice9Ex_LSS<EnableSync>::initImplicitDepthStencil() {
  
  template<bool EnableSync>
  void Direct3DDevice9Ex_LSS<EnableSync>::destroyImplicitObjects() {
