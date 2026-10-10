@@ -32,7 +32,7 @@ L4N 本体和 Bridge 常用设置菜单插件一同随包安装，插件直接�
 
 回退 Bridge 时同时恢复配对的客户端和 Host；回退 ThinFlex 时恢复本机保存的原始 `studiorender.dll`。卸载时移除本包安装的文件并恢复备份。
 
-[性能实测](docs/PERFORMANCE-2026-10-10.md) 记录三组同场景对照与适用范围；更多验证步骤见 [游戏验收与性能基线](docs/GAME-VALIDATION.md)。
+[手电性能对照](docs/FLASHLIGHT-PERFORMANCE-2026-10-10.md) 记录本次命令热路径优化与调度影响：受控条件下手电降幅接近无桥，尚未证实稳定 FPS 或 low 帧提升。[早期性能实测](docs/PERFORMANCE-2026-10-10.md) 属于此前版本；更多验证步骤见 [游戏验收与性能基线](docs/GAME-VALIDATION.md)。
 
 基于 [NVIDIA dxvk-remix Bridge](https://github.com/NVIDIAGameWorks/dxvk-remix)，沿用 [L4D2 原项目](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge) 的补丁，自动构建适用于 32 位《求生之路 2》的 x86 客户端与 x86/x64 Host。
 

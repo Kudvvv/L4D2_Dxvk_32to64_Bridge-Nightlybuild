@@ -32,7 +32,7 @@ Fresh installs use upstream's learned-aggressive retention policy and disable ro
 
 Roll back the Bridge client and Host together. Restore your original `studiorender.dll` backup to undo ThinFlex. To uninstall, remove the installed files and restore your backups.
 
-See the [three paired performance runs and limitations](docs/PERFORMANCE-2026-10-10.md) and [game validation guide](docs/GAME-VALIDATION.md).
+The [flashlight comparison](docs/FLASHLIGHT-PERFORMANCE-2026-10-10.md) documents the command-path changes and CPU scheduling effects: flashlight cost approaches the direct-DXVK reference under temporary CPU control, but stable FPS or low-frame gains are not established. The [earlier paired runs](docs/PERFORMANCE-2026-10-10.md) concern a previous version; see also the [game validation guide](docs/GAME-VALIDATION.md).
 
 Based on [NVIDIA dxvk-remix Bridge](https://github.com/NVIDIAGameWorks/dxvk-remix), this repository retains the patches from the [original L4D2 project](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge) and automatically builds an x86 client and both x86/x64 Hosts for 32-bit Left 4 Dead 2.
 

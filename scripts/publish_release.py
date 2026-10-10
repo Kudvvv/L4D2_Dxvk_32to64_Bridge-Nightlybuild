@@ -117,7 +117,7 @@ def publish():
         f"- 完整合并 L4D2 原项目 **{original['version']}**（`{original['commit']}`），包括 PageBlock/retention/readback、ReShade Presenter、Steam 输入支持、诊断体系、x86 Host 和 L4N 控制插件。\n"
         f"- 合并范围及本分支保留项见[更新记录](https://github.com/{repo}/blob/{recipe}/docs/ORIGINAL-PROJECT-UPDATES.md)。默认继续使用 GPLALL 后端和 x64 Host；可选功能按仓库文档启用。\n"
         "- 同一完整包包含配套 x86 Client、x86/x64 Host、两种架构的 GPLALL 后端，以及 `bin/neko/plugins/L4D2BridgePlugin.dll`。Bridge 设置菜单随包安装；不需要菜单时退出游戏后移走该 DLL。\n"
-        f"- 本次完整合并版本尚未进行游戏 FPS 对照，不宣称性能提升。此前[性能报告](https://github.com/{repo}/blob/{recipe}/docs/PERFORMANCE-2026-10-10.md)对应旧版与固定回放，性能测试未安装 ThinFlex，不能当作本次完整合并后的性能结果。\n"
+        f"- 本次减少队列就绪时的多余计时及进程内命令标志同步开销。对应生产补丁的候选已完成[手电性能对照](https://github.com/{repo}/blob/{recipe}/docs/FLASHLIGHT-PERFORMANCE-2026-10-10.md)：在临时统一 CPU 核心范围后，手电降幅接近无桥，但未证实稳定 FPS 或 low 帧提升。发布包由相同生产补丁重建，不能称为已逐字节实测；没有加入绑核或默认配置改动，也未证明消除了自然调度下的异常低档。此前[性能报告](https://github.com/{repo}/blob/{recipe}/docs/PERFORMANCE-2026-10-10.md)对应旧版与固定回放，性能测试未安装 ThinFlex，不能当作本次优化的收益。\n"
         f"- 玩家包不包含补丁工具；先阅读包内 `README.txt`，详细安装与回退见[说明](https://github.com/{repo}/blob/{recipe}/docs/THINFLEX-TEST-README.txt)。升级前关闭游戏及 Host，备份原文件，保留已有配置及自定义后端。已打补丁的玩家须保留最初原版 DLL 备份，不能用修复文件覆盖它。\n"
         "- 支持的原始 `studiorender.dll` SHA-256："
         "`3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85`；"

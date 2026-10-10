@@ -1,5 +1,7 @@
 # 游戏验收与性能基线
 
+后续手电专项：已完成 v1.1.4、优化候选与同版本无桥 GPLALL 的 [实测对照](FLASHLIGHT-PERFORMANCE-2026-10-10.md)。报告记录临时 CPU 控制、恢复校验和自然调度波动；未证实稳定 FPS / low 帧提升，不应混用下述早期版本的收益数据。
+
 状态：2026-10-10 已完成三对固定 L4N 回放的性能对照，详见 [测量结果与限制](PERFORMANCE-2026-10-10.md)。该对照保留原始 `studiorender.dll`，没有安装 ThinFlex；用户另反馈 v1.0.10 ThinFlex 修复有效，二者证据范围分开记录。CI 的 volume 测试执行真实 lock/unlock 源码，但模拟传输与后端，不替代画面对比。偏色定位与原修复 credits：[keyou91 / PR #3](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/pull/3)。
 
 2026-10-08 的候选版本已尝试启动，受到 Source 单实例限制，未进入渲染阶段；原有配对文件已恢复。详情及独立 CPU 微基准见 [资源清理与传输优化验证](RUNTIME-RELIABILITY.md)。该次尝试不计为游戏验收通过。
