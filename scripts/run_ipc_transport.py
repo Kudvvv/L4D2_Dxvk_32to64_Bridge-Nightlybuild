@@ -9,15 +9,15 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 TEST = ROOT / '.deps/ipc-transport'
 
-def pair(host_role, count, threaded=False, rpc=False):
-    args=[str(uuid.uuid4()),str(count)]+(['rpc' if rpc else 'threaded'] if threaded else [])
+def pair(host_role, count, threaded=False, rpc=False, known=False):
+    args=[str(uuid.uuid4()),str(count)]+(['known'] if known else ['rpc' if rpc else 'threaded'] if threaded else [])
     host=subprocess.Popen([str(TEST/f'transport-{host_role}.exe'),*args],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     client=subprocess.Popen([str(TEST/'transport-client32.exe'),*args],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     try:
         client_log=client.communicate(timeout=120)[0]
         host_log=host.communicate(timeout=20)[0]
         print(client_log,host_log,sep='',flush=True)
-        print(f'IPC_PAIR_EXIT host={host_role} threaded={threaded} client={client.returncode} host={host.returncode}',flush=True)
+        print(f'IPC_PAIR_EXIT host={host_role} threaded={threaded} known={known} client={client.returncode} host={host.returncode}',flush=True)
         if client.returncode or host.returncode: raise RuntimeError('Native transport failed')
     finally:
         for process in (client,host):
@@ -27,10 +27,17 @@ for role in ('host32','host64'):
     pair(role,100000)
     pair(role,4000,True)
     pair(role,4000,True,True)
-for mode in ('serializer','oversize','timeout','partial-timeout','header-full','wait-failure','peer-exit','normal-peer-exit','protocol'):
+    pair(role,50000,known=True)
+for mode in ('serializer','oversize','timeout','partial-timeout','header-full','wait-failure','peer-exit','normal-peer-exit','protocol',
+             'known-oversize','known-timeout','known-unwind','known-open-blob'):
     result=subprocess.run([str(TEST/'transport-client32.exe'),mode],capture_output=True,text=True,timeout=20)
     print(result.stdout,result.stderr,sep='',flush=True)
     if result.returncode: raise RuntimeError(f'Native fault failed: {mode} code={result.returncode}')
+for role in ('client32','host32','host64'):
+    for mode in ('known-read-truncated','known-read-length','known-read-extra'):
+        result=subprocess.run([str(TEST/f'transport-{role}.exe'),mode],capture_output=True,text=True,timeout=20)
+        print(result.stdout,result.stderr,sep='',flush=True)
+        if result.returncode: raise RuntimeError(f'Native known read failed: {role} {mode}')
 for role in ('host32','host64'):
     result=subprocess.run([str(TEST/f'transport-{role}.exe'),'pins'],capture_output=True,text=True,timeout=20)
     print(result.stdout,result.stderr,sep='',flush=True)

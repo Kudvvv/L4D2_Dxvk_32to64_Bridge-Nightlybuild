@@ -384,7 +384,7 @@ index 9de506f..7a4901a 100644
 \ No newline at end of file
 +}
 diff --git a/bridge/src/client/d3d9_device.cpp b/bridge/src/client/d3d9_device.cpp
-index 1abdf20..6f16fad 100644
+index 1abdf20..4582655 100644
 --- a/bridge/src/client/d3d9_device.cpp
 +++ b/bridge/src/client/d3d9_device.cpp
 @@ -1,3 +1,7 @@
@@ -2022,7 +2022,15 @@ index 1abdf20..6f16fad 100644
        if (m_stateRecording) {
          m_stateRecording->m_captureState.streams[StreamNumber] = MakeD3DAutoPtr(pLssStreamData);
          if (pStreamData != nullptr) {
-@@ -2814,10 +3108,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
+@@ -2808,16 +3102,17 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetStreamSource(UINT StreamNumber, ID
+       }
+     }
+     {
+-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetStreamSource, getId());
++      ClientMessage c(Commands::IDirect3DDevice9Ex_SetStreamSource, getId(), 0,
++        bridge_data::fields(StreamNumber, id, OffsetInBytes, Stride));
+       currentUID = c.get_uid();
+-      c.send_many(StreamNumber, id, OffsetInBytes, Stride);
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetStreamSource()", D3DERR_INVALIDCALL, currentUID);
@@ -2084,7 +2092,14 @@ index 1abdf20..6f16fad 100644
        if (m_stateRecording) {
          m_stateRecording->m_captureState.indices = MakeD3DAutoPtr(pLssIndexData);
          m_stateRecording->m_dirtyFlags.indices = true;
-@@ -2900,10 +3207,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetIndices(IDirect3DIndexBuffer9* pIn
+@@ -2894,16 +3201,16 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetIndices(IDirect3DIndexBuffer9* pIn
+       }
+     }
+     {
+-      ClientMessage c(Commands::IDirect3DDevice9Ex_SetIndices, getId());
++      ClientMessage c(Commands::IDirect3DDevice9Ex_SetIndices, getId(), 0, bridge_data::fields(id));
+       currentUID = c.get_uid();
+-      c.send_data(id);
      }
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetIndices()", D3DERR_INVALIDCALL, currentUID);
@@ -2097,7 +2112,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -2923,7 +3231,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetIndices(IDirect3DIndexBuffer9** pp
+@@ -2923,7 +3230,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetIndices(IDirect3DIndexBuffer9** pp
  }
  
  template<bool EnableSync>
@@ -2107,7 +2122,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
   
-@@ -2957,11 +3266,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreatePixelShader(CONST DWORD* pFunct
+@@ -2957,11 +3265,18 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreatePixelShader(CONST DWORD* pFunct
      c.send_data(dataSize);
      c.send_data(dataSize, (void*) pFunction);
    }
@@ -2129,7 +2144,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
    Direct3DPixelShader9_LSS* pLssPixelShader = bridge_cast<Direct3DPixelShader9_LSS*>(pShader);
-@@ -2982,10 +3298,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShader(IDirect3DPixelShader9*
+@@ -2982,10 +3297,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShader(IDirect3DPixelShader9*
      c.send_data(id);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetPixelShader()", D3DERR_INVALIDCALL, currentUID);
@@ -2142,7 +2157,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3005,7 +3322,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShader(IDirect3DPixelShader9*
+@@ -3005,7 +3321,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShader(IDirect3DPixelShader9*
  }
  
  template<bool EnableSync>
@@ -2152,7 +2167,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3029,10 +3347,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantF(UINT StartReg
+@@ -3029,10 +3346,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantF(UINT StartReg
      WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetPixelShaderConstantF()", D3DERR_INVALIDCALL, currentUID);
    }
    return hresult;
@@ -2165,7 +2180,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3049,7 +3368,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantF(UINT StartReg
+@@ -3049,7 +3367,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantF(UINT StartReg
  }
  
  template<bool EnableSync>
@@ -2175,7 +2190,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3072,10 +3392,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantI(UINT StartReg
+@@ -3072,10 +3391,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantI(UINT StartReg
      WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetPixelShaderConstantI()", D3DERR_INVALIDCALL, currentUID);
    }
    return hresult;
@@ -2188,7 +2203,7 @@ index 1abdf20..6f16fad 100644
    LogFunctionCall();
  
    HRESULT hresult = D3DERR_INVALIDCALL;
-@@ -3087,7 +3408,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantI(UINT StartReg
+@@ -3087,7 +3407,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantI(UINT StartReg
  }
  
  template<bool EnableSync>
@@ -2198,7 +2213,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3110,10 +3432,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantB(UINT StartReg
+@@ -3110,10 +3431,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetPixelShaderConstantB(UINT StartReg
      WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetPixelShaderConstantB()", D3DERR_INVALIDCALL, currentUID);
    }
    return hresult;
@@ -2211,7 +2226,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3127,6 +3450,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantB(UINT StartReg
+@@ -3127,6 +3449,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetPixelShaderConstantB(UINT StartReg
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawRectPatch(UINT Handle, CONST float* pNumSegs, CONST D3DRECTPATCH_INFO* pRectPatchInfo) {
@@ -2219,7 +2234,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogMissingFunctionCall();
    return D3D_OK;
-@@ -3134,6 +3458,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawRectPatch(UINT Handle, CONST floa
+@@ -3134,6 +3457,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawRectPatch(UINT Handle, CONST floa
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawTriPatch(UINT Handle, CONST float* pNumSegs, CONST D3DTRIPATCH_INFO* pTriPatchInfo) {
@@ -2227,7 +2242,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogMissingFunctionCall();
    return D3D_OK;
-@@ -3141,6 +3466,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawTriPatch(UINT Handle, CONST float
+@@ -3141,6 +3465,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DrawTriPatch(UINT Handle, CONST float
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DeletePatch(UINT Handle) {
@@ -2235,7 +2250,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogMissingFunctionCall();
    return D3D_OK;
-@@ -3148,6 +3474,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DeletePatch(UINT Handle) {
+@@ -3148,6 +3473,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::DeletePatch(UINT Handle) {
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateQuery(D3DQUERYTYPE Type, IDirect3DQuery9** ppQuery) {
@@ -2243,7 +2258,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
    // MSDN: This parameter can be set to NULL to see if a query is supported. 
-@@ -3164,11 +3491,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateQuery(D3DQUERYTYPE Type, IDirec
+@@ -3164,11 +3490,15 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateQuery(D3DQUERYTYPE Type, IDirec
      currentUID = c.get_uid();
      c.send_many(Type, (uint32_t) pLssQuery->getId());
    }
@@ -2261,7 +2276,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3183,10 +3514,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetConvolutionMonoKernel(UINT width,
+@@ -3183,10 +3513,11 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetConvolutionMonoKernel(UINT width,
      c.send_data(sizeof(float) * height, (void*) columns);
    }
    WAIT_FOR_OPTIONAL_SERVER_RESPONSE("SetConvolutionMonoKernel()", E_FAIL, currentUID);
@@ -2275,7 +2290,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3212,10 +3544,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ComposeRects(IDirect3DSurface9* pSrc,
+@@ -3212,10 +3543,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ComposeRects(IDirect3DSurface9* pSrc,
      }
    }
    return D3DERR_INVALIDCALL;
@@ -2289,7 +2304,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogMissingFunctionCall();
    assert(m_ex);
-@@ -3224,7 +3558,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CO
+@@ -3224,7 +3557,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CO
    // out here so we don't spend time waiting on the Present semaphore or trying
    // to send keyboard state to the server.
    if (!gbBridgeRunning) {
@@ -2298,7 +2313,7 @@ index 1abdf20..6f16fad 100644
    }
  
    return m_pSwapchain->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, dwFlags);
-@@ -3232,8 +3566,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CO
+@@ -3232,8 +3565,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::PresentEx(CONST RECT* pSourceRect, CO
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetGPUThreadPriority(INT* pPriority) {
@@ -2311,7 +2326,7 @@ index 1abdf20..6f16fad 100644
  
    // Function does not claim to support returning D3DERR_INVALIDCALL
    if (pPriority == nullptr) {
-@@ -3249,6 +3587,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetGPUThreadPriority(INT* pPriority)
+@@ -3249,6 +3586,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetGPUThreadPriority(INT* pPriority)
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetGPUThreadPriority(INT Priority) {
@@ -2319,7 +2334,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
    {
-@@ -3260,6 +3599,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetGPUThreadPriority(INT Priority) {
+@@ -3260,6 +3598,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetGPUThreadPriority(INT Priority) {
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::WaitForVBlank(UINT iSwapChain) {
@@ -2327,7 +2342,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogMissingFunctionCall();
  
-@@ -3269,6 +3609,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::WaitForVBlank(UINT iSwapChain) {
+@@ -3269,6 +3608,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::WaitForVBlank(UINT iSwapChain) {
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckResourceResidency(IDirect3DResource9** pResourceArray, UINT32 NumResources) {
@@ -2335,7 +2350,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogMissingFunctionCall();
  
-@@ -3277,6 +3618,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckResourceResidency(IDirect3DResou
+@@ -3277,6 +3617,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckResourceResidency(IDirect3DResou
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetMaximumFrameLatency(UINT MaxLatency) {
@@ -2343,7 +2358,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
    {
-@@ -3288,6 +3630,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetMaximumFrameLatency(UINT MaxLatenc
+@@ -3288,6 +3629,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::SetMaximumFrameLatency(UINT MaxLatenc
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetMaximumFrameLatency(UINT* pMaxLatency) {
@@ -2351,7 +2366,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3303,7 +3646,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetMaximumFrameLatency(UINT* pMaxLate
+@@ -3303,7 +3645,8 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetMaximumFrameLatency(UINT* pMaxLate
  }
  
  template<bool EnableSync>
@@ -2361,7 +2376,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    LogFunctionCall();
  
-@@ -3319,10 +3663,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckDeviceState(HWND hDestinationWin
+@@ -3319,10 +3662,12 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CheckDeviceState(HWND hDestinationWin
    DeviceBridge::pop_front();
  
    return res;
@@ -2376,7 +2391,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3353,11 +3699,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
+@@ -3353,11 +3698,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateRenderTargetEx(UINT Width, UINT
      c.send_many(Width, Height, Format, MultiSample, MultisampleQuality, Lockable, Usage, pLssSurface->getId());
    }
  
@@ -2399,7 +2414,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3366,18 +3720,10 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+@@ -3366,18 +3719,10 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
      return D3DERR_INVALIDCALL;
    }
  
@@ -2420,7 +2435,7 @@ index 1abdf20..6f16fad 100644
    (*ppSurface) = (IDirect3DSurface9*) pLssSurface;
  
    UID currentUID = 0;
-@@ -3388,11 +3734,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
+@@ -3388,11 +3733,19 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateOffscreenPlainSurfaceEx(UINT Wi
      c.send_many(Width, Height, Format, Pool, Usage, pLssSurface->getId());
    }
  
@@ -2443,7 +2458,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3421,53 +3775,50 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
+@@ -3421,53 +3774,50 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::CreateDepthStencilSurfaceEx(UINT Widt
      c.send_many(Width, Height, Format, MultiSample, MultisampleQuality, Discard, Usage, pLssSurface->getId());
    }
  
@@ -2527,7 +2542,7 @@ index 1abdf20..6f16fad 100644
    ZoneScoped;
    assert(m_ex);
    LogFunctionCall();
-@@ -3501,7 +3852,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetDisplayModeEx(UINT iSwapChain, D3D
+@@ -3501,7 +3851,7 @@ HRESULT Direct3DDevice9Ex_LSS<EnableSync>::GetDisplayModeEx(UINT iSwapChain, D3D
    }
    DeviceBridge::pop_front();
    return hresult;
@@ -2536,7 +2551,7 @@ index 1abdf20..6f16fad 100644
  
  using ShaderType = BaseDirect3DDevice9Ex_LSS::ShaderConstants::ShaderType;
  using ConstantType = BaseDirect3DDevice9Ex_LSS::ShaderConstants::ConstantType;
-@@ -3517,10 +3868,60 @@ HRESULT BaseDirect3DDevice9Ex_LSS::setShaderConstants(const uint32_t startRegist
+@@ -3517,10 +3867,60 @@ HRESULT BaseDirect3DDevice9Ex_LSS::setShaderConstants(const uint32_t startRegist
    const auto [commonHresult, adjCount] =
      commonGetSetConstants<ShaderT, ConstantT, T>(startRegister, pConstantData, count);
    if (!SUCCEEDED(commonHresult) || adjCount == 0) {
@@ -2597,7 +2612,7 @@ index 1abdf20..6f16fad 100644
      if constexpr (ConstantT == ConstantType::Float) {
        const size_t size = adjCount * sizeof(Vec4f);
        std::memcpy(set.fConsts[startRegister].data, pConstantData, size);
-@@ -3642,6 +4043,10 @@ std::tuple<HRESULT, size_t> BaseDirect3DDevice9Ex_LSS::commonGetSetConstants(con
+@@ -3642,6 +4042,10 @@ std::tuple<HRESULT, size_t> BaseDirect3DDevice9Ex_LSS::commonGetSetConstants(con
  
  template<bool EnableSync>
  HRESULT Direct3DDevice9Ex_LSS<EnableSync>::ResetState() {
@@ -2608,7 +2623,7 @@ index 1abdf20..6f16fad 100644
    for (uint32_t stageIdx = 0; stageIdx < kNumStageSamplers; ++stageIdx) {
      // Reset Texture States
      m_state.textureStageStates[stageIdx][TextureStageStateType::ColorOp] = stageIdx == 0 ? D3DTOP_MODULATE : D3DTOP_DISABLE;
-@@ -3876,31 +4281,32 @@ void Direct3DDevice9Ex_LSS<EnableSync>::initImplicitDepthStencil() {
+@@ -3876,31 +4280,32 @@ void Direct3DDevice9Ex_LSS<EnableSync>::initImplicitDepthStencil() {
  
  template<bool EnableSync>
  void Direct3DDevice9Ex_LSS<EnableSync>::destroyImplicitObjects() {
@@ -5178,7 +5193,7 @@ index 5897be9..d23817b 100644
  extern void DInputSetDefaultWindow(HWND hwnd);
  
 diff --git a/bridge/src/client/lockable_buffer.h b/bridge/src/client/lockable_buffer.h
-index fbfc565..27fa7b3 100644
+index fbfc565..26685ed 100644
 --- a/bridge/src/client/lockable_buffer.h
 +++ b/bridge/src/client/lockable_buffer.h
 @@ -1,3 +1,7 @@
@@ -5328,14 +5343,39 @@ index fbfc565..27fa7b3 100644
        {
          Commands::Flags cmdFlags = 0;
  
-@@ -220,11 +256,13 @@ protected:
-           // Now send the buffer bytes
-           c.send_data(size, ptr);
+@@ -205,20 +241,18 @@ protected:
+           }
          }
-+        if (c.finish() != Result::Success) { return D3DERR_DEVICELOST; }
+ 
+-        // Send the buffer lock parameters and handle
+-        ClientMessage c(UnlockCmd, getId(), cmdFlags);
+-        c.send_many(offset, size, lockInfo.flags);
+-
+-        if (m_bUseSharedHeap) {
+-          c.send_data(lockInfo.bufferId);
+-        } else if (m_optimizedLock) {
+-          // Now send data offset in the channel
+-          const uint32_t dataOffset = static_cast<uint32_t*>(ptr) -
+-            DeviceBridge::getWriterChannel().get_data_ptr();
+-          c.send_many(dataOffset);
++        // The complete wire layout is known for every buffer size. Reserve
++        // UID, fields and payload together; FULL_SHADOW and upload bytes stay unchanged.
++        if (m_bUseSharedHeap || m_optimizedLock) {
++          const uint32_t reference = m_bUseSharedHeap ? lockInfo.bufferId :
++            static_cast<uint32_t*>(ptr) - DeviceBridge::getWriterChannel().get_data_ptr();
++          ClientMessage c(UnlockCmd, getId(), cmdFlags,
++            bridge_data::fields(offset, size, lockInfo.flags, reference));
++          if (c.finish() != Result::Success) { return D3DERR_DEVICELOST; }
+         } else {
+-          // Now send the buffer bytes
+-          c.send_data(size, ptr);
++          ClientMessage c(UnlockCmd, getId(), cmdFlags,
++            bridge_data::payload(size, ptr, offset, size, lockInfo.flags));
++          if (c.finish() != Result::Success) { return D3DERR_DEVICELOST; }
+         }
        }
        if (lockInfo.discardedBufferId != SharedHeap::kInvalidId) {
-         SharedHeap::deallocate(lockInfo.discardedBufferId);
+@@ -226,5 +260,6 @@ protected:
        }
      }
      m_lockInfos.pop();
@@ -8580,7 +8620,7 @@ index 0000000..72eb1ad
 +};
 +}
 diff --git a/bridge/src/server/main.cpp b/bridge/src/server/main.cpp
-index 86434ec..23230a0 100644
+index 86434ec..506c594 100644
 --- a/bridge/src/server/main.cpp
 +++ b/bridge/src/server/main.cpp
 @@ -1,3 +1,7 @@
@@ -9470,7 +9510,33 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1568,6 +1834,10 @@ void ProcessDeviceCommandQueue() {
+@@ -1514,10 +1780,11 @@ void ProcessDeviceCommandQueue() {
+       case IDirect3DDevice9Ex_SetStreamSource:
+       {
+         GET_RES(pD3DDevice, gpD3DDevices);
+-        PULL_U(StreamNumber);
+-        PULL_U(pHandle);
+-        PULL_U(OffsetInBytes);
+-        PULL_U(Stride);
++        const auto packet = DeviceBridge::get_packet<4>(false);
++        const auto StreamNumber = packet.fields[0];
++        const auto pHandle = packet.fields[1];
++        const auto OffsetInBytes = packet.fields[2];
++        const auto Stride = packet.fields[3];
+         IDirect3DVertexBuffer9* pStreamData = nullptr;
+         if (pHandle != NULL) {
+           pStreamData = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
+@@ -1544,7 +1811,8 @@ void ProcessDeviceCommandQueue() {
+       case IDirect3DDevice9Ex_SetIndices:
+       {
+         GET_RES(pD3DDevice, gpD3DDevices);
+-        PULL_U(pHandle);
++        const auto packet = DeviceBridge::get_packet<1>(false);
++        const auto pHandle = packet.fields[0];
+         IDirect3DIndexBuffer9* pIndexData = NULL;
+         if (pHandle != NULL) {
+           pIndexData = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
+@@ -1568,6 +1836,10 @@ void ProcessDeviceCommandQueue() {
          if (SUCCEEDED(hresult)) {
            gpD3DPixelShaders[pHandle] = pShader;
          }
@@ -9481,7 +9547,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1581,6 +1851,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1581,6 +1853,7 @@ void ProcessDeviceCommandQueue() {
            pShader = gpD3DPixelShaders[pHandle];
          }
          const auto hresult = pD3DDevice->SetPixelShader(IN pShader);
@@ -9489,7 +9555,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1595,6 +1866,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1595,6 +1868,7 @@ void ProcessDeviceCommandQueue() {
          float* pConstantData = nullptr;
          PULL_DATA(Count * sizeof(float) * 4, pConstantData);
          const auto hresult = pD3DDevice->SetPixelShaderConstantF(IN StartRegister, IN pConstantData, IN Count);
@@ -9497,7 +9563,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
          break;
-@@ -1734,6 +2006,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1734,6 +2008,7 @@ void ProcessDeviceCommandQueue() {
          const auto& pSB = gpD3DStateBlocks[pHandle];
          assert(pSB != nullptr);
          const auto hresult = pSB->Apply();
@@ -9505,7 +9571,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -1749,7 +2022,17 @@ void ProcessDeviceCommandQueue() {
+@@ -1749,7 +2024,17 @@ void ProcessDeviceCommandQueue() {
        {
          GET_HND(pHandle);
          const auto& pSwapChain = gpD3DSwapChains[pHandle];
@@ -9524,7 +9590,7 @@ index 86434ec..23230a0 100644
          gpD3DSwapChains.erase(pHandle);
          break;
        }
-@@ -1757,7 +2040,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1757,7 +2042,7 @@ void ProcessDeviceCommandQueue() {
        {
          FrameMark;
  #ifdef ENABLE_PRESENT_SEMAPHORE_TRACE
@@ -9533,7 +9599,7 @@ index 86434ec..23230a0 100644
  #endif
  
          GET_RES(pSwapChain, gpD3DSwapChains);
-@@ -1767,9 +2050,9 @@ void ProcessDeviceCommandQueue() {
+@@ -1767,9 +2052,9 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RGNDATA, pDirtyRegion);
          PULL(uint32_t, dwFlags);
  
@@ -9545,7 +9611,7 @@ index 86434ec..23230a0 100644
  
          if (!SUCCEEDED(hresult)) {
            std::stringstream ss;
-@@ -1780,7 +2063,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1780,7 +2065,7 @@ void ProcessDeviceCommandQueue() {
          if (GlobalOptions::getPresentSemaphoreEnabled()) {
            gpPresent->release();
  #ifdef ENABLE_PRESENT_SEMAPHORE_TRACE
@@ -9554,7 +9620,7 @@ index 86434ec..23230a0 100644
  #endif
          }
          break;
-@@ -1793,6 +2076,7 @@ void ProcessDeviceCommandQueue() {
+@@ -1793,6 +2078,7 @@ void ProcessDeviceCommandQueue() {
          auto hresult = pSwapChain->GetFrontBufferData(pDestSurface);
          if (SUCCEEDED(hresult)) {
            gpD3DResources[pDestSurfaceHandle] = pDestSurface;
@@ -9562,7 +9628,7 @@ index 86434ec..23230a0 100644
          }
          hresult = ReturnSurfaceDataToClient(pDestSurface, hresult, currentUID);
          assert(SUCCEEDED(hresult));
-@@ -1807,7 +2091,9 @@ void ProcessDeviceCommandQueue() {
+@@ -1807,7 +2093,9 @@ void ProcessDeviceCommandQueue() {
          IDirect3DSurface9* pBackbuffer = nullptr;
          const auto hresult = pSwapChain->GetBackBuffer(iBackBuffer, Type, &pBackbuffer);
          if (SUCCEEDED(hresult)) {
@@ -9572,7 +9638,7 @@ index 86434ec..23230a0 100644
          }
          assert(SUCCEEDED(hresult));
          SEND_OPTIONAL_SERVER_RESPONSE(hresult, currentUID);
-@@ -2019,6 +2305,9 @@ void ProcessDeviceCommandQueue() {
+@@ -2019,6 +2307,9 @@ void ProcessDeviceCommandQueue() {
          const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pHandle];
          safeDestroy(pTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -9582,7 +9648,7 @@ index 86434ec..23230a0 100644
          break;
        }
        case IDirect3DTexture9_GetDevice:
-@@ -2063,7 +2352,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2063,7 +2354,7 @@ void ProcessDeviceCommandQueue() {
          PULL_U(Level);
          const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pHandle];
          D3DSURFACE_DESC pDesc;
@@ -9591,7 +9657,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2074,9 +2363,14 @@ void ProcessDeviceCommandQueue() {
+@@ -2074,9 +2365,14 @@ void ProcessDeviceCommandQueue() {
          PULL_HND(pSurfaceHandle);
          const auto& pTexture = (IDirect3DTexture9*) gpD3DResources[pTextureHandle];
          LPDIRECT3DSURFACE9 pSurfaceLevel;
@@ -9607,7 +9673,7 @@ index 86434ec..23230a0 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2120,6 +2414,9 @@ void ProcessDeviceCommandQueue() {
+@@ -2120,6 +2416,9 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
          safeDestroy(pVolumeTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -9617,7 +9683,7 @@ index 86434ec..23230a0 100644
          break;
        }
        case IDirect3DVolumeTexture9_GetDevice:
-@@ -2164,7 +2461,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2164,7 +2463,7 @@ void ProcessDeviceCommandQueue() {
          PULL_U(Level);
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
          D3DVOLUME_DESC pDesc;
@@ -9626,7 +9692,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2175,9 +2472,13 @@ void ProcessDeviceCommandQueue() {
+@@ -2175,9 +2474,13 @@ void ProcessDeviceCommandQueue() {
          PULL_HND(pVolumeLevelHandle);
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pVolumeTextureHandle];
          LPDIRECT3DVOLUME9 pVolumeLevel;
@@ -9641,7 +9707,7 @@ index 86434ec..23230a0 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2196,7 +2497,12 @@ void ProcessDeviceCommandQueue() {
+@@ -2196,7 +2499,12 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolumeTexture = (IDirect3DVolumeTexture9*) gpD3DResources[pHandle];
          // Now lock the box so we can copy the data into it
          D3DLOCKED_BOX pLockedVolume;
@@ -9655,7 +9721,7 @@ index 86434ec..23230a0 100644
          assert(S_OK == hresult);
          // Copy the data over
          PULL_U(bytesPerPixel);
-@@ -2204,10 +2510,16 @@ void ProcessDeviceCommandQueue() {
+@@ -2204,10 +2512,16 @@ void ProcessDeviceCommandQueue() {
          PULL_U(height);
          PULL_U(depth);
          const auto row_size = width * bytesPerPixel;
@@ -9672,7 +9738,7 @@ index 86434ec..23230a0 100644
  #endif
          for (uint32_t z = 0; z < depth; z++) {
            for (uint32_t y = 0; y < height; y++) {
-@@ -2217,6 +2529,8 @@ void ProcessDeviceCommandQueue() {
+@@ -2217,6 +2531,8 @@ void ProcessDeviceCommandQueue() {
  #else
              void* row = nullptr;
              const auto read_size = DeviceBridge::get_data(&row);
@@ -9681,7 +9747,7 @@ index 86434ec..23230a0 100644
              assert(row_size == read_size);
  #endif
              memcpy((void*) ptr, (void*) row, row_size);
-@@ -2225,7 +2539,16 @@ void ProcessDeviceCommandQueue() {
+@@ -2225,7 +2541,16 @@ void ProcessDeviceCommandQueue() {
  #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
          assert(pulledSize == depth * slice_size);
  #endif
@@ -9699,7 +9765,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2259,6 +2582,9 @@ void ProcessDeviceCommandQueue() {
+@@ -2259,6 +2584,9 @@ void ProcessDeviceCommandQueue() {
          const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pHandle];
          safeDestroy(pCubeTexture, pHandle);
          gpD3DResources.erase(pHandle);
@@ -9709,7 +9775,7 @@ index 86434ec..23230a0 100644
          break;
        }
        case IDirect3DCubeTexture9_GetDevice:
-@@ -2303,7 +2629,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2303,7 +2631,7 @@ void ProcessDeviceCommandQueue() {
          GET_HND(pHandle);
          const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pHandle];
          D3DSURFACE_DESC pDesc;
@@ -9718,7 +9784,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2315,9 +2641,10 @@ void ProcessDeviceCommandQueue() {
+@@ -2315,9 +2643,10 @@ void ProcessDeviceCommandQueue() {
          PULL_HND(pCubeMapSurfaceHandle);
          const auto& pCubeTexture = (IDirect3DCubeTexture9*) gpD3DResources[pCubeTextureHandle];
          LPDIRECT3DSURFACE9 pCubeMapSurface;
@@ -9730,7 +9796,7 @@ index 86434ec..23230a0 100644
          }
          assert(SUCCEEDED(hresult));
          break;
-@@ -2359,9 +2686,13 @@ void ProcessDeviceCommandQueue() {
+@@ -2359,9 +2688,13 @@ void ProcessDeviceCommandQueue() {
        case IDirect3DVertexBuffer9_Destroy:
        {
          GET_HND(pHandle);
@@ -9744,7 +9810,7 @@ index 86434ec..23230a0 100644
          break;
        }
        case IDirect3DVertexBuffer9_GetDevice:
-@@ -2384,6 +2715,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2384,6 +2717,7 @@ void ProcessDeviceCommandQueue() {
        {
          // This is a no-op right now because we're doing all the logic on Unlock
          GET_HND(pHandle);
@@ -9752,7 +9818,26 @@ index 86434ec..23230a0 100644
          void* data = nullptr;
          DeviceBridge::get_data(&data);
          break;
-@@ -2398,7 +2730,10 @@ void ProcessDeviceCommandQueue() {
+@@ -2391,30 +2725,40 @@ void ProcessDeviceCommandQueue() {
+       case IDirect3DVertexBuffer9_Unlock:
+       {
+         GET_HND(pHandle);
+-        PULL_U(OffsetToLock);
+-        PULL_U(SizeToLock);
+-        PULL_D(Flags);
++        uint32_t OffsetToLock, SizeToLock, Flags, reference = 0;
++        void* data = nullptr;
++        if (Commands::IsDataReserved(rpcHeader.flags) || Commands::IsDataInSharedHeap(rpcHeader.flags)) {
++          const auto packet = DeviceBridge::get_packet<4>(false);
++          OffsetToLock = packet.fields[0]; SizeToLock = packet.fields[1]; Flags = packet.fields[2];
++          reference = packet.fields[3];
++        } else {
++          const auto packet = DeviceBridge::get_packet<3>();
++          OffsetToLock = packet.fields[0]; SizeToLock = packet.fields[1]; Flags = packet.fields[2];
++          data = packet.data;
++          if (packet.bytes != SizeToLock) { DeviceBridge::faultChannel(); throw BridgeReadFailure {}; }
++        }
+         const auto& pVertexBuffer = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
  
          // Now lock the buffer so we can copy the data into it
          void* pbData = nullptr;
@@ -9764,8 +9849,18 @@ index 86434ec..23230a0 100644
          assert(S_OK == hresult);
  
          // Copy the data over
-@@ -2414,7 +2749,11 @@ void ProcessDeviceCommandQueue() {
-           assert(SizeToLock == size);
+-        void* data = nullptr;
+         if (Commands::IsDataReserved(rpcHeader.flags)) {
+-          PULL_D(DataOffset);
+-          data = DeviceBridge::Bridge::getReaderChannel().get_data_ptr() + DataOffset;
++          data = DeviceBridge::Bridge::getReaderChannel().get_data_ptr() + reference;
+         } else if (Commands::IsDataInSharedHeap(rpcHeader.flags)) {
+-          PULL_U(allocId);
+-          data = SharedHeap::getBuf(allocId) + OffsetToLock;
+-        } else {
+-          const auto size = DeviceBridge::get_data(&data);
+-          assert(SizeToLock == size);
++          data = SharedHeap::getBuf(reference) + OffsetToLock;
          }
          memcpy(pbData, data, SizeToLock);
 -        hresult = pVertexBuffer->Unlock();
@@ -9777,7 +9872,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
  
          break;
-@@ -2425,7 +2764,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2425,7 +2769,7 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(D3DVERTEXBUFFER_DESC, orig_desc);
          const auto& pVertexBuffer = (IDirect3DVertexBuffer9*) gpD3DResources[pHandle];
          D3DVERTEXBUFFER_DESC pDesc;
@@ -9786,7 +9881,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2445,9 +2784,13 @@ void ProcessDeviceCommandQueue() {
+@@ -2445,9 +2789,13 @@ void ProcessDeviceCommandQueue() {
        case IDirect3DIndexBuffer9_Destroy:
        {
          GET_HND(pHandle);
@@ -9800,7 +9895,7 @@ index 86434ec..23230a0 100644
          break;
        }
        case IDirect3DIndexBuffer9_GetDevice:
-@@ -2470,6 +2813,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2470,6 +2818,7 @@ void ProcessDeviceCommandQueue() {
        {
          // This is a no-op right now because we're doing all the logic on Unlock
          GET_HND(pHandle);
@@ -9808,7 +9903,26 @@ index 86434ec..23230a0 100644
          void* data = nullptr;
          DeviceBridge::get_data(&data);
          break;
-@@ -2484,7 +2828,10 @@ void ProcessDeviceCommandQueue() {
+@@ -2477,30 +2826,40 @@ void ProcessDeviceCommandQueue() {
+       case IDirect3DIndexBuffer9_Unlock:
+       {
+         GET_HND(pHandle);
+-        PULL_U(OffsetToLock);
+-        PULL_U(SizeToLock);
+-        PULL_D(Flags);
++        uint32_t OffsetToLock, SizeToLock, Flags, reference = 0;
++        void* data = nullptr;
++        if (Commands::IsDataReserved(rpcHeader.flags) || Commands::IsDataInSharedHeap(rpcHeader.flags)) {
++          const auto packet = DeviceBridge::get_packet<4>(false);
++          OffsetToLock = packet.fields[0]; SizeToLock = packet.fields[1]; Flags = packet.fields[2];
++          reference = packet.fields[3];
++        } else {
++          const auto packet = DeviceBridge::get_packet<3>();
++          OffsetToLock = packet.fields[0]; SizeToLock = packet.fields[1]; Flags = packet.fields[2];
++          data = packet.data;
++          if (packet.bytes != SizeToLock) { DeviceBridge::faultChannel(); throw BridgeReadFailure {}; }
++        }
+         const auto& pIndexBuffer = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
  
          // Now lock the buffer so we can copy the data into it
          void* pbData = nullptr;
@@ -9820,8 +9934,18 @@ index 86434ec..23230a0 100644
          assert(S_OK == hresult);
  
          // Copy the data over
-@@ -2500,7 +2847,11 @@ void ProcessDeviceCommandQueue() {
-           assert(SizeToLock == size);
+-        void* data = nullptr;
+         if (Commands::IsDataReserved(rpcHeader.flags)) {
+-          PULL_D(DataOffset);
+-          data = DeviceBridge::Bridge::getReaderChannel().get_data_ptr() + DataOffset;
++          data = DeviceBridge::Bridge::getReaderChannel().get_data_ptr() + reference;
+         } else if (Commands::IsDataInSharedHeap(rpcHeader.flags)) {
+-          PULL_U(allocId);
+-          data = SharedHeap::getBuf(allocId) + OffsetToLock;
+-        } else {
+-          const auto size = DeviceBridge::get_data(&data);
+-          assert(SizeToLock == size);
++          data = SharedHeap::getBuf(reference) + OffsetToLock;
          }
          memcpy(pbData, data, SizeToLock);
 -        hresult = pIndexBuffer->Unlock();
@@ -9833,7 +9957,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2510,7 +2861,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2510,7 +2869,7 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(D3DINDEXBUFFER_DESC, orig_desc);
          const auto& pIndexBuffer = (IDirect3DIndexBuffer9*) gpD3DResources[pHandle];
          D3DINDEXBUFFER_DESC pDesc;
@@ -9842,7 +9966,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2531,8 +2882,11 @@ void ProcessDeviceCommandQueue() {
+@@ -2531,8 +2890,11 @@ void ProcessDeviceCommandQueue() {
        {
          GET_HND(pHandle);
          const auto& pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
@@ -9855,7 +9979,7 @@ index 86434ec..23230a0 100644
          break;
        }
        case IDirect3DSurface9_GetDevice:
-@@ -2559,10 +2913,55 @@ void ProcessDeviceCommandQueue() {
+@@ -2559,10 +2921,55 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(D3DSURFACE_DESC, orig_desc);
          const auto& pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
          D3DSURFACE_DESC pDesc;
@@ -9912,7 +10036,7 @@ index 86434ec..23230a0 100644
        case IDirect3DSurface9_LockRect:
        {
          // Currently we only recieve calls for LockRect in cases where backbuffer data is to be copied for screenshots
-@@ -2578,18 +2977,77 @@ void ProcessDeviceCommandQueue() {
+@@ -2578,18 +2985,77 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(RECT, pRect);
          PULL_D(Flags);
          const auto pSurface = (IDirect3DSurface9*) gpD3DResources[pHandle];
@@ -9993,7 +10117,7 @@ index 86434ec..23230a0 100644
          // If we're using the shared heap, then pData will be pointing
          // to the equivalent of a fully allocated pitch line. If we're
          // using the data queue then we've only allocated just enough 
-@@ -2602,12 +3060,18 @@ void ProcessDeviceCommandQueue() {
+@@ -2602,12 +3068,18 @@ void ProcessDeviceCommandQueue() {
          } else {
            size_t pulledSize = DeviceBridge::get_data(&pData);
            const size_t numRows = bridge_util::calcStride(height, format);
@@ -10013,7 +10137,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
  
          break;
-@@ -2635,6 +3099,8 @@ void ProcessDeviceCommandQueue() {
+@@ -2635,6 +3107,8 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolume = gpD3DVolumes[pHandle];
          safeDestroy(pVolume, pHandle);
          gpD3DVolumes.erase(pHandle);
@@ -10022,7 +10146,7 @@ index 86434ec..23230a0 100644
          break;
        }
        case IDirect3DVolume9_GetDevice:
-@@ -2653,7 +3119,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2653,7 +3127,7 @@ void ProcessDeviceCommandQueue() {
          PULL_OBJ(D3DVOLUME_DESC, orig_desc);
          const auto& pVolume = gpD3DVolumes[pHandle];
          D3DVOLUME_DESC pDesc;
@@ -10031,7 +10155,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2670,7 +3136,12 @@ void ProcessDeviceCommandQueue() {
+@@ -2670,7 +3144,12 @@ void ProcessDeviceCommandQueue() {
          const auto& pVolume = gpD3DVolumes[pHandle];
          // Now lock the box so we can copy the data into it
          D3DLOCKED_BOX pLockedVolume;
@@ -10045,7 +10169,7 @@ index 86434ec..23230a0 100644
          assert(S_OK == hresult);
          // Copy the data over
          PULL_U(bytesPerPixel);
-@@ -2678,10 +3149,16 @@ void ProcessDeviceCommandQueue() {
+@@ -2678,10 +3157,16 @@ void ProcessDeviceCommandQueue() {
          PULL_U(height);
          PULL_U(depth);
          const auto row_size = width * bytesPerPixel;
@@ -10062,7 +10186,7 @@ index 86434ec..23230a0 100644
  #endif
          for (uint32_t z = 0; z < depth; z++) {
            for (uint32_t y = 0; y < height; y++) {
-@@ -2691,6 +3168,8 @@ void ProcessDeviceCommandQueue() {
+@@ -2691,6 +3176,8 @@ void ProcessDeviceCommandQueue() {
  #else
              void* row = nullptr;
              const auto read_size = DeviceBridge::get_data(&row);
@@ -10071,7 +10195,7 @@ index 86434ec..23230a0 100644
              assert(row_size == read_size);
  #endif
              memcpy((void*) ptr, (void*) row, row_size);
-@@ -2699,7 +3178,16 @@ void ProcessDeviceCommandQueue() {
+@@ -2699,7 +3186,16 @@ void ProcessDeviceCommandQueue() {
  #ifdef SEND_ALL_LOCK_DATA_AT_ONCE
          assert(pulledSize == depth * slice_size);
  #endif
@@ -10089,7 +10213,7 @@ index 86434ec..23230a0 100644
          assert(SUCCEEDED(hresult));
          break;
        }
-@@ -2769,7 +3257,7 @@ void ProcessDeviceCommandQueue() {
+@@ -2769,7 +3265,7 @@ void ProcessDeviceCommandQueue() {
          PULL_U(i);
          const int length = DeviceBridge::getReaderChannel().data->peek();
          void* text = nullptr;
@@ -10098,7 +10222,7 @@ index 86434ec..23230a0 100644
          std::stringstream ss;
          ss << "DebugMessage. i = " << i << ", length = " << length << " = " << size << ", text = '" << (char*) text << "'";
          Logger::info(ss.str().c_str());
-@@ -2805,13 +3293,17 @@ void ProcessDeviceCommandQueue() {
+@@ -2805,13 +3301,17 @@ void ProcessDeviceCommandQueue() {
        case Bridge_UnlinkResource:
        {
          GET_HND(pHandle);
@@ -10116,7 +10240,7 @@ index 86434ec..23230a0 100644
          break;
        }
        /*
-@@ -3156,11 +3648,11 @@ void ProcessDeviceCommandQueue() {
+@@ -3156,11 +3656,11 @@ void ProcessDeviceCommandQueue() {
        case RemixApi_SetConfigVariable:
        {
          void* var_ptr = nullptr;
@@ -10130,7 +10254,7 @@ index 86434ec..23230a0 100644
          std::string value_str((const char*) value_ptr, value_size);
  
          remixapi::g_remix.SetConfigVariable(var_str.c_str(), value_str.c_str());
-@@ -3191,41 +3683,29 @@ void ProcessDeviceCommandQueue() {
+@@ -3191,41 +3691,29 @@ void ProcessDeviceCommandQueue() {
        Logger::warn("Data not in sync");
      }
      assert(CHECK_DATA_OFFSET);
@@ -10182,7 +10306,7 @@ index 86434ec..23230a0 100644
    }
  }
  
-@@ -3268,14 +3748,26 @@ bool InitializeD3D() {
+@@ -3268,14 +3756,26 @@ bool InitializeD3D() {
    // If vanilla dxvk is enabled attempt to load that first.
    if (ServerOptions::getUseVanillaDxvk()) {
      Logger::info("Loading standard Non-RTX DXVK d3d9 dll.");
@@ -10212,7 +10336,7 @@ index 86434ec..23230a0 100644
      // Since vanilla dxvk is diabled attempt loading regular d3d9.dll which
      // could be either the system d3d9 one or our own Remix dxvk flavor of it.
      ghModule = LoadLibraryExA("d3d9.dll", nullptr,
-@@ -3285,6 +3777,10 @@ bool InitializeD3D() {
+@@ -3285,6 +3785,10 @@ bool InitializeD3D() {
    // create the D3D instance used for the lifetime of this process.
    if (ghModule != nullptr) {
      auto Direct3DCreate9 = (D3DC9) GetProcAddress(ghModule, "Direct3DCreate9");
@@ -10223,7 +10347,7 @@ index 86434ec..23230a0 100644
      if (nullptr == (gpD3D = Direct3DCreate9(D3D_SDK_VERSION))) {
        Logger::err(format_string("D3D9 interface object creation failed: %ld\n", GetLastError()));
        return false;
-@@ -3311,6 +3807,10 @@ bool InitializeD3D() {
+@@ -3311,6 +3815,10 @@ bool InitializeD3D() {
    }
  
    CheckD3D9Type(ghModule);
@@ -10234,7 +10358,7 @@ index 86434ec..23230a0 100644
    if (bDxvkModuleLoaded) {
      auto queryFeatureVersion = (version::QueryFunc)GetProcAddress(ghModule, version::QueryFuncName);
      if(queryFeatureVersion == NULL) {
-@@ -3343,18 +3843,29 @@ bool InitializeD3D() {
+@@ -3343,18 +3851,29 @@ bool InitializeD3D() {
  }
  
  void CALLBACK OnClientExited(void* context, BOOLEAN isTimeout) {
@@ -10273,7 +10397,7 @@ index 86434ec..23230a0 100644
  
    // Give the server some time to shut down, but then force quit so it doesn't hang forever
    uint32_t numRetries = 0;
-@@ -3371,7 +3882,7 @@ void CALLBACK OnClientExited(void* context, BOOLEAN isTimeout) {
+@@ -3371,7 +3890,7 @@ void CALLBACK OnClientExited(void* context, BOOLEAN isTimeout) {
  }
  
  bool RegisterExitCallback(const uint32_t hProcess) {
@@ -10282,7 +10406,7 @@ index 86434ec..23230a0 100644
    if (!result) {
      DWORD error = GetLastError();
      Logger::err(format_string("RegisterExitCallback() failed with error code %d", error));
-@@ -3482,22 +3993,51 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3482,22 +4001,51 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
  
    Config::init(Config::App::Server);
    GlobalOptions::init();
@@ -10337,7 +10461,7 @@ index 86434ec..23230a0 100644
      Logger::info("Launched server with GUID " + gUniqueIdentifier.toString());
    } else {
      Logger::err("Server was invoked with invalid GUID! Unable to establish bridge, exiting...");
-@@ -3541,6 +4081,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3541,6 +4089,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    // Pulling default data sent from client to have the data queue in sync
    {
      PULL_U(uid);
@@ -10345,7 +10469,7 @@ index 86434ec..23230a0 100644
    }
    Logger::info("Registering exit callback in case client exits unexpectedly.");
    RegisterExitCallback(synResponse.pHandle);
-@@ -3554,6 +4095,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3554,6 +4103,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    }
    const SentryShutdownOnExit sentryShutdownOnExit;
  
@@ -10354,7 +10478,7 @@ index 86434ec..23230a0 100644
    // (3) Send ACK to Client. Connection has been established
    Logger::info("Sync request received, sending ACK response...");
    ServerMessage { Commands::Bridge_Ack, (uintptr_t) gpClientMessageChannel->getWorkerThreadId() };
-@@ -3576,6 +4119,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3576,6 +4127,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    // Pulling default data sent from client to have the data queue in sync
    {
      PULL_U(uid);
@@ -10362,7 +10486,7 @@ index 86434ec..23230a0 100644
    }
    // (5) Ready to listen for incoming commands
    Logger::info("Handshake completed! Now waiting for incoming commands...");
-@@ -3589,12 +4133,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3589,12 +4141,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
    bSignalDone.store(true);
    moduleCmdProcessingThread.join();
  
@@ -10379,7 +10503,7 @@ index 86434ec..23230a0 100644
    if (ghModule) {
      // Skip unloading the d3d9.dll for now, since it seems to be doing more harm than good
      // especially with other dependencies loaded by dxvk and threads that may deadlock due
-@@ -3610,6 +4157,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3610,6 +4165,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      hWait = NULL;
    }
  
@@ -10390,7 +10514,7 @@ index 86434ec..23230a0 100644
    Logger::info("Shutdown cleanup successful, exiting now!");
  
    const auto timeEnd = std::chrono::high_resolution_clock::now();
-@@ -3624,4 +4175,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
+@@ -3624,4 +4183,4 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
      ServerMessage { Commands::Bridge_Ack };
    }
    return 0;
@@ -12862,10 +12986,10 @@ index 0000000..57fe0d0
 +}
 diff --git a/bridge/src/util/data_ring_contract.h b/bridge/src/util/data_ring_contract.h
 new file mode 100644
-index 0000000..30bd459
+index 0000000..09bef0d
 --- /dev/null
 +++ b/bridge/src/util/data_ring_contract.h
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,143 @@
 +// SPDX-License-Identifier: MIT
 +// Copyright (c) 2026 yeyunyyds.
 +// All newly added implementation code in this fork was generated by OpenAI Codex from prompts and specifications provided by yeyunyyds.
@@ -12875,6 +12999,7 @@ index 0000000..30bd459
 +#include <cstdint>
 +#include <limits>
 +#include <type_traits>
++#include <array>
 +
 +namespace bridge_data {
 +// The existing 64-byte channel control reservation is the complete wire layout.
@@ -12939,6 +13064,42 @@ index 0000000..30bd459
 +  if (bytes > std::numeric_limits<uint32_t>::max()) { return false; }
 +  words = (static_cast<uint64_t>(bytes) + 3) / 4 + 1;
 +  return true;
++}
++
++// A known packet consists of DWORD fields followed by an optional contiguous
++// blob. UID is another field supplied by Command, not a separate reservation.
++template<size_t N> struct Packet {
++  std::array<uint32_t, N> fields;
++  size_t bytes = 0;
++  const void* object = nullptr;
++  bool hasBlob = false;
++  bool reservedBlob = false;
++};
++template<typename... Ts> auto fields(Ts... values) {
++  return Packet<sizeof...(Ts)> {{ static_cast<uint32_t>(values)... }};
++}
++template<typename... Ts> auto payload(size_t bytes, const void* object, Ts... values) {
++  return Packet<sizeof...(Ts)> {{ static_cast<uint32_t>(values)... }, object ? bytes : 0, object, true, false };
++}
++template<typename... Ts> auto reservedPayload(size_t bytes, Ts... values) {
++  return Packet<sizeof...(Ts)> {{ static_cast<uint32_t>(values)... }, bytes, nullptr, true, true };
++}
++template<size_t N> struct PacketData {
++  std::array<uint32_t, N> fields;
++  uint32_t bytes = 0;
++  void* data = nullptr;
++};
++inline Reservation packetAt(uint64_t begin, uint32_t position, uint32_t capacity,
++                            uint64_t prefixWords, size_t bytes, bool hasBlob) {
++  auto r = planAt(begin, position, capacity, prefixWords, false);
++  if (!r.valid || !hasBlob) { return r; }
++  uint64_t words = 0;
++  if (!blobWords(bytes, words)) { return {}; }
++  const auto next = static_cast<uint32_t>(position + prefixWords >= capacity
++    ? position + prefixWords - capacity : position + prefixWords);
++  const auto blob = planAt(r.end, next, capacity, words, true);
++  if (!blob.valid || blob.end - begin > capacity) { return {}; }
++  return { blob.end, blob.end - begin, blob.payload, true };
 +}
 +inline bool available(uint64_t end, uint64_t consumed, uint32_t capacity) {
 +  return consumed <= end && end - consumed <= capacity;
@@ -14538,7 +14699,7 @@ index 0000000..307d155
 +};
 +}
 diff --git a/bridge/src/util/util_atomiccircularqueue.h b/bridge/src/util/util_atomiccircularqueue.h
-index 4be48da..828dd23 100644
+index 4be48da..36c5e89 100644
 --- a/bridge/src/util/util_atomiccircularqueue.h
 +++ b/bridge/src/util/util_atomiccircularqueue.h
 @@ -21,17 +21,24 @@
@@ -14647,18 +14808,34 @@ index 4be48da..828dd23 100644
        }
  
        assert(m_read->is_lock_free() && m_write->is_lock_free()); // Must be runtime check as it's CPU specific
-@@ -82,30 +136,49 @@ namespace bridge_util {
+@@ -82,30 +136,57 @@ namespace bridge_util {
      AtomicCircularQueue(const AtomicCircularQueue& q) = delete;
  
      ~AtomicCircularQueue() {
 +      if (m_wakeEvent) {
 +        CloseHandle(m_wakeEvent);
 +      }
++    }
++
++    // Publish a single Header without a clock, diagnostics span or retry budget.
++    // The armed reader handshake is unchanged, including its SC ordering.
++    Result try_push(const T& obj) {
++      const auto currentRead = m_read->load(std::memory_order_relaxed);
++      const auto nextRead = queueIdxInc(currentRead);
++      if (nextRead == m_write->load(std::memory_order_acquire)) { return Result::Failure; }
++      m_data[currentRead] = obj;
++      m_read->store(nextRead, std::memory_order_seq_cst);
++      if (m_wakeEvent && m_waiting->load(std::memory_order_seq_cst) &&
++          m_waiting->exchange(0, std::memory_order_seq_cst)) {
++        l4d2_queue::counters.signaled(SetEvent(m_wakeEvent) != FALSE);
++      }
++      return Result::Success;
      }
  
      // Push object to queue
 -    Result push(const T& obj) {
 +    Result push(const T& obj, DWORD boundedTimeoutMS = 0, const std::atomic<bool>* running = nullptr) {
++      if (try_push(obj) == Result::Success) { return Result::Success; }
        ULONGLONG start = 0, curTick;
 -      const DWORD timeoutMS = GlobalOptions::getCommandTimeout();
 +      ULONGLONG fullStart = 0;
@@ -14666,20 +14843,16 @@ index 4be48da..828dd23 100644
 +      l4d2_api_wait::Span apiFullTiming(l4d2_api_wait::Metric::CommandQueueWait, l4d2_api_wait::Api::Other, false);
 +      const DWORD timeoutMS = boundedTimeoutMS ? boundedTimeoutMS : GlobalOptions::getCommandTimeout();
        do {
-         const auto currentRead = m_read->load(std::memory_order_relaxed);
-         const auto nextRead = queueIdxInc(currentRead);
-         if (nextRead != m_write->load(std::memory_order_acquire)) {
-+          apiFullTiming.finish();
-           m_data[currentRead] = obj;
+-        const auto currentRead = m_read->load(std::memory_order_relaxed);
+-        const auto nextRead = queueIdxInc(currentRead);
+-        if (nextRead != m_write->load(std::memory_order_acquire)) {
+-          m_data[currentRead] = obj;
 -          // The store above is not atomic. Issue a membar after it to ensure
 -          // it is not reordered.
 -          std::atomic_thread_fence(std::memory_order_seq_cst);
 -          m_read->store(nextRead, std::memory_order_release);
-+          m_read->store(nextRead, std::memory_order_seq_cst);
-+          if (m_wakeEvent && m_waiting->load(std::memory_order_seq_cst) &&
-+              m_waiting->exchange(0, std::memory_order_seq_cst)) {
-+            l4d2_queue::counters.signaled(SetEvent(m_wakeEvent) != FALSE);
-+          }
++        if (try_push(obj) == Result::Success) {
++          apiFullTiming.finish();
 +          if (blocked && l4d2_observation::memoryMonitoring) { l4d2_queue::counters.blocked(GetTickCount64() - fullStart); }
            return Result::Success;
          }
@@ -14704,18 +14877,24 @@ index 4be48da..828dd23 100644
        return Result::Failure;
      }
  
-@@ -117,7 +190,9 @@ namespace bridge_util {
+@@ -117,26 +198,29 @@ namespace bridge_util {
      // Returns a ref to the first element in the queue
      // Note: Blocks if the queue is empty
      const T& peek(Result& result, const DWORD timeoutMS = 0, std::atomic<bool>* const pbEarlyOutSignal = nullptr) const {
 -      ULONGLONG start = 0, curTick;
-+      const ULONGLONG start = GetTickCount64();
++      ULONGLONG start = 0;
 +      uint32_t spins = 0;
 +      bool legacyCounted = false;
        do {
-         const auto currentWrite = m_write->load(std::memory_order_relaxed);
+-        const auto currentWrite = m_write->load(std::memory_order_relaxed);
++        // Acquire both the producer Header publication and the consumer index
++        // handoff. The latter carries Client payload completion to another UID
++        // waiter; no additional SC fence is needed after these acquire loads.
++        const auto currentWrite = m_write->load(std::memory_order_acquire);
          if (currentWrite != m_read->load(std::memory_order_acquire)) {
-@@ -127,16 +202,15 @@ namespace bridge_util {
+-          // Issue a membar before reading the data since it is not atomic
+-          std::atomic_thread_fence(std::memory_order_seq_cst);
+           result = Result::Success;
            return m_data[currentWrite];
          }
  
@@ -14724,6 +14903,7 @@ index 4be48da..828dd23 100644
 -        curTick = GetTickCount64();
 -        start = start > 0 ? start : curTick;
 -        
++        if (!start) { start = GetTickCount64(); }
          if (pbEarlyOutSignal && pbEarlyOutSignal->load()) {
            result = Result::Timeout;
            return m_default;
@@ -14737,18 +14917,19 @@ index 4be48da..828dd23 100644
  
        result = Result::Timeout;
  
-@@ -145,29 +219,30 @@ namespace bridge_util {
+@@ -145,29 +229,31 @@ namespace bridge_util {
  
      // Returns a copy to the first element in queue, AND removes it
      // Note: Blocks if queue is empty
 -    const T& pull(Result& result, const DWORD timeoutMS = 0, std::atomic<bool>* const pbEarlyOutSignal = nullptr) {
 -      ULONGLONG start = 0, curTick;
 +    T pull(Result& result, const DWORD timeoutMS = 0, std::atomic<bool>* const pbEarlyOutSignal = nullptr) {
-+      const ULONGLONG start = GetTickCount64();
++      ULONGLONG start = 0;
 +      uint32_t spins = 0;
 +      bool legacyCounted = false;
        do {
-         const auto currentWrite = m_write->load(std::memory_order_relaxed);
+-        const auto currentWrite = m_write->load(std::memory_order_relaxed);
++        const auto currentWrite = m_write->load(std::memory_order_acquire);
          if (currentWrite != m_read->load(std::memory_order_acquire)) {
 +          const T value = m_data[currentWrite];
            m_write->store(queueIdxInc(currentWrite), std::memory_order_release);
@@ -14764,6 +14945,7 @@ index 4be48da..828dd23 100644
 -        curTick = GetTickCount64();
 -        start = start > 0 ? start : curTick;
 -
++        if (!start) { start = GetTickCount64(); }
          if (pbEarlyOutSignal && pbEarlyOutSignal->load()) {
            result = Result::Timeout;
            return m_default;
@@ -14779,7 +14961,7 @@ index 4be48da..828dd23 100644
        return m_default;
      }
  
-@@ -214,4 +289,4 @@ namespace bridge_util {
+@@ -214,4 +300,4 @@ namespace bridge_util {
      }
    };
  
@@ -14808,7 +14990,7 @@ index 3ed228a..d7d7676 100644
          return 0;
        }
 diff --git a/bridge/src/util/util_bridgecommand.cpp b/bridge/src/util/util_bridgecommand.cpp
-index a3bed63..c74ddbc 100644
+index a3bed63..2f93e54 100644
 --- a/bridge/src/util/util_bridgecommand.cpp
 +++ b/bridge/src/util/util_bridgecommand.cpp
 @@ -1,3 +1,7 @@
@@ -14838,7 +15020,7 @@ index a3bed63..c74ddbc 100644
    }
  }
  
-@@ -55,79 +60,142 @@ DECL_BRIDGE_FUNC(void, init,
+@@ -55,79 +60,149 @@ DECL_BRIDGE_FUNC(void, init,
    bIsInit = true;
  }
  
@@ -14944,7 +15126,7 @@ index a3bed63..c74ddbc 100644
 +  if (!bridge_data::compatible(*channel.control, capacity)) {
 +    Logger::err("IPC protocol/control layout mismatch; mixed Client/Host refused");
 +    failRead();
-+  }
+   }
 +  if (header.dataOffset >= capacity) { failRead(); }
 +  const auto start = channel.data->cursor();
 +  const auto position = static_cast<uint32_t>(channel.data->get_pos());
@@ -14953,17 +15135,17 @@ index a3bed63..c74ddbc 100644
 +  if (header.flags & Commands::FlagBits::DataFullRing) {
 +    if (words) { failRead(); }
 +    words = capacity;
-   }
-+  if (start > UINT64_MAX - words || start + words > channel.control->published.load(std::memory_order_acquire)) { failRead(); }
++  }
++  if (start > UINT64_MAX - words) { failRead(); }
++  const auto end = start + words;
++  // A frontier already acquired from this channel remains a valid lower bound.
++  // Refresh only when the next Header extends beyond it, just like cachedConsumed.
++  if (end > channel.cachedPublished) {
++    channel.cachedPublished = channel.control->published.load(std::memory_order_acquire);
++    if (end > channel.cachedPublished) { failRead(); }
++  }
 +  s_readEnd = start + words;
 +  s_readActive = true;
-+}
-+
-+DECL_BRIDGE_FUNC(void, startPendingRead) {
-+    Result result;
-+    const auto header = getReaderChannel().commands->peek(result, 1);
-+    if (result != Result::Success) { failRead(); }
-+    startRead(header);
 +}
  
 -  /*
@@ -14976,6 +15158,13 @@ index a3bed63..c74ddbc 100644
 -       || (s_curBatchStartPos > serverCount && expectedClientDataPos < s_curBatchStartPos)
 -       || ((s_curBatchStartPos <= serverCount) && *s_pWriterChannel->serverResetPosRequired))) {
 -    handleOverwriteCondition();
++DECL_BRIDGE_FUNC(void, startPendingRead) {
++    Result result;
++    const auto header = getReaderChannel().commands->peek(result, 1);
++    if (result != Result::Success) { failRead(); }
++    startRead(header);
++}
++
 +DECL_BRIDGE_FUNC(void, failRead) {
 +  getReaderChannel().control->fault.store(1, std::memory_order_release);
 +  gbBridgeRunning.store(false, std::memory_order_release);
@@ -15005,8 +15194,8 @@ index a3bed63..c74ddbc 100644
 +#endif
 +#ifdef REMIX_BRIDGE_CLIENT
 +  // Finish the payload before exposing the next Header to another UID waiter.
-+  // CommandQueue pull publishes its consumer index with release; peek has an
-+  // acquire fence after loading that index. The next matching waiter therefore
++  // CommandQueue pull publishes its consumer index with release; peek acquires
++  // that index. The next matching waiter therefore
 +  // also observes the completed data cursor and inactive packet state.
 +  if (s_readActive) {
 +    if (getReaderChannel().data->cursor() != s_readEnd) { failRead(); }
@@ -15036,7 +15225,7 @@ index a3bed63..c74ddbc 100644
    if (getReaderChannel().commands->isEmpty()) {
      return bridge_util::Result::Success;
    }
-@@ -152,13 +220,17 @@ DECL_BRIDGE_FUNC(bridge_util::Result, ensureQueueEmpty) {
+@@ -152,13 +227,17 @@ DECL_BRIDGE_FUNC(bridge_util::Result, ensureQueueEmpty) {
  
  DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Command& command,
                                                        DWORD overrideTimeoutMS,
@@ -15056,7 +15245,7 @@ index a3bed63..c74ddbc 100644
    }
  #endif
  #if defined(_DEBUG) || defined(DEBUGOPT)
-@@ -169,7 +241,12 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -169,7 +248,12 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
    bool infiniteRetries = false;
    bool bEarlyOut = false;
    uint32_t attemptNum = 0;
@@ -15069,7 +15258,7 @@ index a3bed63..c74ddbc 100644
      Result result;
      Header header = getReaderChannel().commands->peek(result, peekTimeoutMS, pbEarlyOutSignal);
  
-@@ -186,9 +263,10 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -186,9 +270,10 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
        if ((command == Commands::Bridge_Any) || (header.command == command) && uidVerified) {
  #ifdef ENABLE_WAIT_FOR_COMMAND_TRACE
          if (command != Commands::Bridge_Any) {
@@ -15081,7 +15270,7 @@ index a3bed63..c74ddbc 100644
          return Result::Success;
        } else {
  #if defined(_DEBUG) || defined(DEBUGOPT)
-@@ -229,13 +307,13 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -229,13 +314,13 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
          // Drop the flag - we're in the normal loop now.
          infiniteRetries = false;
        }
@@ -15097,18 +15286,28 @@ index a3bed63..c74ddbc 100644
        return Result::Failure;
      }
  
-@@ -256,7 +334,9 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -256,7 +341,19 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
  DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
                             uintptr_t pHandle,
                             const Commands::Flags commandFlags)
 -  : m_command(command)
++  : Command(command, pHandle, commandFlags, DeferredUid {}) {
++#ifdef REMIX_BRIDGE_CLIENT
++  send_data(static_cast<UINT>(s_cmdUID));
++#endif
++}
++
++DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
++                           uintptr_t pHandle,
++                           const Commands::Flags commandFlags,
++                           DeferredUid)
 +  : m_exceptionContext(std::is_same<BridgeId, ::BridgeId::Device>::value ? bridge_exception::Queue::Device : bridge_exception::Queue::Module,
 +                       static_cast<uint16_t>(command), static_cast<uint32_t>(pHandle), "serialize_command")
 +  , m_command(command)
    , m_handle((uint32_t) (size_t) pHandle)
    , m_commandFlags(commandFlags) {
    // If the assert or exception gets triggered it means that there is more than one Command
-@@ -276,76 +356,65 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
+@@ -276,82 +373,78 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
  #endif
  
  #ifdef REMIX_BRIDGE_CLIENT
@@ -15120,7 +15319,7 @@ index a3bed63..c74ddbc 100644
 +  }
  #endif
  
-   assert(!s_pWriterChannel->pbCmdInProgress->load());
+-  assert(!s_pWriterChannel->pbCmdInProgress->load());
 -  if (s_pWriterChannel->pbCmdInProgress->load()) {
 -    Logger::errLogMessageBoxAndExit(logger_strings::MultipleActiveCommands);
 -  }
@@ -15128,11 +15327,16 @@ index a3bed63..c74ddbc 100644
 -  if (gbBridgeRunning) {
 -    s_pWriterChannel->data->begin_batch();
 -  }
-   s_pWriterChannel->pbCmdInProgress->store(true);
+-  s_pWriterChannel->pbCmdInProgress->store(true);
 -  s_curBatchStartPos = (int32_t) s_pWriterChannel->data->get_pos();
 -  s_cmdCounter++;
 -  if (gbBridgeRunning) {
 -    // Send command id as part of data queue for everycommand from client to server
++  // This local diagnostic flag publishes no payload or ownership. Client
++  // writers hold m_mutex; the Host writer is single-threaded. IPC publication
++  // and the armed-wait handshake keep their original memory ordering.
++  assert(!s_pWriterChannel->pbCmdInProgress->load(std::memory_order_relaxed));
++  s_pWriterChannel->pbCmdInProgress->store(true, std::memory_order_relaxed);
 +  m_begin = s_pWriterChannel->data->cursor();
 +  s_curBatchStartPos = m_begin;
 +  s_curCommand = static_cast<uint32_t>(m_command);
@@ -15143,21 +15347,19 @@ index a3bed63..c74ddbc 100644
 -      if (GlobalOptions::getLogAllCommands()) {
 -        Logger::info("Pushed UID: " + std::to_string(s_cmdUID));
 -      }
-+  s_curUID = s_cmdUID;
-+#else
-+  s_curUID = m_handle;
- #endif
+-#endif
 -      if (RESULT_FAILURE(result)) {
 -        // For now just log when things go wrong, but could use some robustness improvements
 -        Logger::err("DataQueue send_data: Failed to send data!");
 -      }
++  s_curUID = s_cmdUID;
++#else
++  s_curUID = m_handle;
+ #endif
+-  }
 +  m_uncaught = std::uncaught_exceptions();
 +  if (!healthy()) { m_status = Result::Failure; return; }
 +  accept(s_pWriterChannel->data->begin_batch());
-+#ifdef REMIX_BRIDGE_CLIENT
-+  send_data(static_cast<UINT>(s_cmdUID));
- #endif
--  }
  }
  
 -DECL_COMMAND_FUNC(,~Command) {
@@ -15188,17 +15390,22 @@ index a3bed63..c74ddbc 100644
 -      && gbBridgeRunning
 -#ifdef REMIX_BRIDGE_CLIENT
 -      && BridgeState::getServerState_NoLock() == BridgeState::ProcessState::Running
--#endif
--    );
 +    const auto end = s_pWriterChannel->data->cursor();
 +    const auto capacity = s_pWriterChannel->data->get_total_size();
 +    auto flags = m_commandFlags;
 +    if (end - m_begin == capacity) { flags |= Commands::FlagBits::DataFullRing; }
 +    s_pWriterChannel->control->published.store(end, std::memory_order_release);
++#ifndef USE_BLOCKING_QUEUE
++    m_status = s_pWriterChannel->commands->try_push({m_command, flags, static_cast<uint32_t>(s_pWriterChannel->data->get_pos()), m_handle});
++    if (m_status != Result::Success)
+ #endif
+-    );
++    {
 +    const auto configured = static_cast<uint64_t>(GlobalOptions::getCommandTimeout())
 +      * std::max<uint32_t>(1, GlobalOptions::getCommandRetries());
 +    const DWORD budget = static_cast<DWORD>(configured ? std::min<uint64_t>(configured, 120000) : 120000);
 +    m_status = s_pWriterChannel->commands->push({m_command, flags, static_cast<uint32_t>(s_pWriterChannel->data->get_pos()), m_handle}, budget, &gbBridgeRunning);
++    }
 +    if (m_status == Result::Success) {
 +      l4d2_api_wait::queued();
 +      bridge_exception::recordCommand(true, std::is_same<BridgeId, ::BridgeId::Device>::value ? bridge_exception::Queue::Device : bridge_exception::Queue::Module,
@@ -15221,6 +15428,7 @@ index a3bed63..c74ddbc 100644
 -      }
 +    } else { fault(); }
    }
+-  s_pWriterChannel->pbCmdInProgress->store(false);
 +  l4d2_data::sent(static_cast<uint16_t>(m_command), std::is_same<BridgeId, ::BridgeId::Module>::value,
 +    m_dataWire, m_status == Result::Success, m_status == Result::Success ? sizeof(Header) : 0);
 +  return m_status;
@@ -15228,10 +15436,10 @@ index a3bed63..c74ddbc 100644
 +
 +DECL_COMMAND_FUNC(,~Command) {
 +  try { finish(); } catch (...) { m_status = Result::Failure; fault(); }
-   s_pWriterChannel->pbCmdInProgress->store(false);
++  s_pWriterChannel->pbCmdInProgress->store(false, std::memory_order_relaxed);
  #ifdef REMIX_BRIDGE_CLIENT
    ++s_cmdUID;
-@@ -353,5 +422,6 @@ DECL_COMMAND_FUNC(,~Command) {
+   s_pWriterChannel->m_mutex.unlock();
  #endif
  }
  
@@ -15241,7 +15449,7 @@ index a3bed63..c74ddbc 100644
 \ No newline at end of file
 +template class Bridge<BridgeId::Device>;
 diff --git a/bridge/src/util/util_bridgecommand.h b/bridge/src/util/util_bridgecommand.h
-index a555f8c..5c86189 100644
+index a555f8c..a1f148c 100644
 --- a/bridge/src/util/util_bridgecommand.h
 +++ b/bridge/src/util/util_bridgecommand.h
 @@ -1,3 +1,7 @@
@@ -15309,7 +15517,7 @@ index a555f8c..5c86189 100644
  using namespace bridge_util;
  
  // Used structs over class enum for explicit type names while debugging
-@@ -128,45 +146,27 @@ public:
+@@ -128,45 +146,40 @@ public:
    //=========================//
    static inline const DataT& get_data() {
      ZoneScoped;
@@ -15320,8 +15528,8 @@ index a555f8c..5c86189 100644
 -      *getReaderChannel().serverResetPosRequired = false;
 -    }
 -    return retval;
-+    ensureRead(1, false);
-+    return getReaderChannel().data->pull();
++    const auto r = ensureRead(1, false);
++    return getReaderChannel().data->pull_reserved(r);
    }
  
    static inline const DataT& get_data(void** obj) {
@@ -15338,11 +15546,11 @@ index a555f8c..5c86189 100644
 +    const auto length = getReaderChannel().data->peek();
 +    uint64_t words = 0;
 +    if (!bridge_data::blobWords(length, words)) { failRead(); }
-+    ensureRead(words, true);
-+    return getReaderChannel().data->pull(obj);
++    const auto r = ensureRead(words, true);
++    return getReaderChannel().data->pull_blob_reserved(obj, r);
    }
  
-   template<typename T>
+-  template<typename T>
 -  static inline const size_t& copy_data(T& obj, bool checkSize = true) {
 -    ZoneScoped;
 -    size_t prevPos = get_data_pos();
@@ -15354,12 +15562,25 @@ index a555f8c..5c86189 100644
 -        Logger::err("DataQueue copy data: Size of source and target object does not match!");
 -      }
 -    }
--
++  // Consume the known remainder of a packet. Validate metadata before reading
++  // its untrusted length; then validate the complete span before exposing data.
++  template<size_t N> static bridge_data::PacketData<N> get_packet(bool blob = true) {
++    if (!s_readActive) { startPendingRead(); }
++    const auto& channel = getReaderChannel();
++    const auto begin = channel.data->cursor();
++    if (begin > s_readEnd || N + (blob ? 1 : 0) > s_readEnd - begin) { failRead(); }
++    const uint32_t bytes = blob ? channel.data->packetLength(N) : 0;
++    const auto r = channel.data->packetReservation(N, bytes, blob);
++    if (!r.valid || r.end != s_readEnd) { failRead(); }
++    return channel.data->template read_packet_reserved<N>(bytes, blob, r);
++  }
+ 
 -    // Check if the server completed a loop
 -    if (*getReaderChannel().serverResetPosRequired && get_data_pos() < prevPos) {
 -      *getReaderChannel().serverResetPosRequired = false;
 -    }
 -    return retval;
++  template<typename T>
 +  static inline const DataT& copy_data(T& obj, bool checkSize = true) {
 +    void* pointer = nullptr;
 +    const auto& size = get_data(&pointer);
@@ -15370,7 +15591,7 @@ index a555f8c..5c86189 100644
    }
  
    static inline size_t get_data_pos() {
-@@ -182,16 +182,37 @@ public:
+@@ -182,16 +195,39 @@ public:
      return bridge_util::Result::Failure;
    }
  
@@ -15381,12 +15602,14 @@ index a555f8c..5c86189 100644
 +  static size_t end_read_data();
 +  static Header pop_front();
 +  static inline bridge_util::Result syncDataQueue(uint64_t words, bool blob = false) {
++    return syncReservation(s_pWriterChannel->data->reservation(words, blob));
++  }
++  static inline bridge_util::Result syncReservation(const bridge_data::Reservation& r) {
 +    auto& channel = *s_pWriterChannel;
-+    const auto r = channel.data->reservation(words, blob);
 +    const auto capacity = static_cast<uint32_t>(channel.data->get_total_size());
 +    const auto current = channel.data->cursor();
 +    if (!r.valid || r.end < s_curBatchStartPos || r.end - s_curBatchStartPos > capacity || !healthy()) {
-+      reportFault("invalid-reservation-or-cancelled", s_curCommand, s_curUID, words);
++      reportFault("invalid-reservation-or-cancelled", s_curCommand, s_curUID, r.words);
 +      return Result::Failure;
      }
 -    return 0;
@@ -15416,7 +15639,7 @@ index a555f8c..5c86189 100644
    static bridge_util::Result ensureQueueEmpty();
  
    //=========================//
-@@ -202,7 +223,8 @@ public:
+@@ -202,7 +238,8 @@ public:
    // into an unrecoverable state otherwise.
    static bridge_util::Result waitForCommand(const Commands::D3D9Command& command = Commands::Bridge_Any,
                                              DWORD overrideTimeoutMS = 0,
@@ -15426,10 +15649,12 @@ index a555f8c..5c86189 100644
    // Waits for a command to appear in the command queue. Upon success the command will be removed from the queue
    // and discarded.
    static bridge_util::Result waitForCommandAndDiscard(const Commands::D3D9Command& command = Commands::Bridge_Any,
-@@ -228,67 +250,47 @@ public:
+@@ -226,69 +263,88 @@ public:
+     Command(const Commands::D3D9Command command,
+             uintptr_t pHandle,
              const Commands::Flags commandFlags);
-     ~Command();
- 
+-    ~Command();
+-
 -    inline void send_data(const DataT obj) {
 -      ZoneScoped;
 -      if (gbBridgeRunning) {
@@ -15440,16 +15665,7 @@ index a555f8c..5c86189 100644
 -          Logger::err("DataQueue send_data: Failed to send data!");
 -        }
 -      }
-+    bridge_util::Result finish();
-+    bridge_util::Result status() const { return m_status; }
-+    void abort() { m_status = Result::Failure; fault(); }
-+    inline void send_data(DataT value) {
-+      l4d2_api_wait::Span timing(l4d2_api_wait::Metric::Serialize);
-+      if (!reserve(1, false)) { return; }
-+      const auto result = s_pWriterChannel->data->push(value);
-+      m_dataWire.add(sizeof(DataT), 0, RESULT_SUCCESS(result));
-+      accept(result);
-     }
+-    }
 -
 -    inline void send_data(const DataT size, const void* obj) {
 -      ZoneScoped;
@@ -15461,17 +15677,33 @@ index a555f8c..5c86189 100644
 -          // For now just log when things go wrong, but could use some robustness improvements
 -          Logger::err("DataQueue send_data: Failed to send data object!");
 -        }
--      }
-+    inline void send_data(DataT size, const void* object) {
++    template<size_t N> Command(Commands::D3D9Command command, uintptr_t handle,
++        Commands::Flags flags, const bridge_data::Packet<N>& packet)
++      : Command(command, handle, flags, DeferredUid {}) {
++      if (m_status != Result::Success) { return; }
 +      l4d2_api_wait::Span timing(l4d2_api_wait::Metric::Serialize);
-+      uint64_t words = 1;
-+      if (object && !bridge_data::blobWords(size, words)) { abort(); return; }
-+      if (!reserve(words, object != nullptr)) { return; }
-+      const auto result = s_pWriterChannel->data->push(size, object);
-+      m_dataWire.add(static_cast<size_t>(words * 4), object ? size : 0, RESULT_SUCCESS(result));
-+      accept(result);
++#ifdef REMIX_BRIDGE_CLIENT
++      std::array<DataT, N + 1> fields {};
++      fields[0] = s_cmdUID;
++      for (size_t i = 0; i < N; ++i) { fields[i + 1] = packet.fields[i]; }
++#else
++      const auto& fields = packet.fields;
++#endif
++      const auto r = s_pWriterChannel->data->packetReservation(fields.size(), packet.bytes, packet.hasBlob);
++      m_status = syncReservation(r);
++      if (m_status != Result::Success) { fault(); return; }
++      m_packetBlob = s_pWriterChannel->data->write_packet_reserved(fields, packet.bytes, packet.hasBlob, r);
++      // packetReservation already validated the uint32 wire length.
++      const uint64_t blobWords = packet.hasBlob ? (static_cast<uint64_t>(packet.bytes) + 3) / 4 + 1 : 0;
++      m_dataWire.add(static_cast<size_t>((fields.size() + blobWords) * sizeof(DataT)),
++        packet.hasBlob ? packet.bytes : 0, true, packet.reservedBlob);
++      if (packet.hasBlob && !packet.reservedBlob) {
++        if (packet.bytes) { std::memcpy(m_packetBlob, packet.object, packet.bytes); }
++        s_pWriterChannel->data->end_blob_push();
+       }
      }
--
++    ~Command();
+ 
 -    template<typename... Ts>
 -    inline void send_many(const Ts... objs) {
 -      ZoneScoped;
@@ -15484,12 +15716,11 @@ index a555f8c..5c86189 100644
 -          Logger::err("DataQueue send_many: Failed to send multiple m_writerChanneldata items!");
 -        }
 -      }
-+    template<typename... Ts> inline void send_many(Ts... values) {
-+      l4d2_api_wait::Span timing(l4d2_api_wait::Metric::Serialize);
-+      if (!reserve(sizeof...(Ts), false)) { return; }
-+      const auto result = s_pWriterChannel->data->push_many(values...);
-+      m_dataWire.add(sizeof...(Ts) * sizeof(DataT), 0, RESULT_SUCCESS(result));
-+      accept(result);
++    bridge_util::Result finish();
++    bridge_util::Result status() const { return m_status; }
++    uint8_t* packet_blob() const {
++      return m_status == Result::Success && !m_finished && s_pWriterChannel->data->blobOpen()
++        ? m_packetBlob : nullptr;
      }
 -
 -    inline uint8_t* begin_data_blob(const size_t size) {
@@ -15505,23 +15736,56 @@ index a555f8c..5c86189 100644
 -        }
 -      }
 -      return blobPacketPtr;
-+    inline uint8_t* begin_data_blob(size_t size) {
-+      l4d2_api_wait::Span timing(l4d2_api_wait::Metric::BlobReserve);
-+      uint64_t words = 0;
-+      if (!bridge_data::blobWords(size, words)) { abort(); return nullptr; }
-+      if (!reserve(words, true)) { return nullptr; }
-+      uint8_t* pointer = nullptr;
-+      const auto result = s_pWriterChannel->data->begin_blob_push(size, pointer);
-+      m_dataWire.add(static_cast<size_t>(words * 4), size, RESULT_SUCCESS(result), true);
++    void abort() { m_status = Result::Failure; fault(); }
++    inline void send_data(DataT value) {
++      l4d2_api_wait::Span timing(l4d2_api_wait::Metric::Serialize);
++      const auto r = reserve(1, false);
++      if (!r.valid) { return; }
++      const auto result = s_pWriterChannel->data->push_reserved(value, r);
++      m_dataWire.add(sizeof(DataT), 0, RESULT_SUCCESS(result));
 +      accept(result);
-+      return RESULT_SUCCESS(result) ? pointer : nullptr;
      }
 -
 -    inline void end_data_blob() const {
 -      ZoneScoped;
 -      if (gbBridgeRunning) {
--        s_pWriterChannel->data->end_blob_push();
++    inline void send_data(DataT size, const void* object) {
++      l4d2_api_wait::Span timing(l4d2_api_wait::Metric::Serialize);
++      uint64_t words = 1;
++      if (object && !bridge_data::blobWords(size, words)) { abort(); return; }
++      const auto r = reserve(words, object != nullptr);
++      if (!r.valid) { return; }
++      Result result = Result::Success;
++      if (object) {
++        uint8_t* pointer = nullptr;
++        result = s_pWriterChannel->data->begin_blob_reserved(size, pointer, r);
++        if (size) { std::memcpy(pointer, object, size); }
+         s_pWriterChannel->data->end_blob_push();
 -      }
++      } else { result = s_pWriterChannel->data->push_reserved(0, r); }
++      m_dataWire.add(static_cast<size_t>(words * 4), object ? size : 0, RESULT_SUCCESS(result));
++      accept(result);
++    }
++    template<typename... Ts> inline void send_many(Ts... values) {
++      l4d2_api_wait::Span timing(l4d2_api_wait::Metric::Serialize);
++      const auto r = reserve(sizeof...(Ts), false);
++      if (!r.valid) { return; }
++      const auto result = s_pWriterChannel->data->push_many_reserved(r, values...);
++      m_dataWire.add(sizeof...(Ts) * sizeof(DataT), 0, RESULT_SUCCESS(result));
++      accept(result);
++    }
++    inline uint8_t* begin_data_blob(size_t size) {
++      l4d2_api_wait::Span timing(l4d2_api_wait::Metric::BlobReserve);
++      uint64_t words = 0;
++      if (!bridge_data::blobWords(size, words)) { abort(); return nullptr; }
++      const auto r = reserve(words, true);
++      if (!r.valid) { return nullptr; }
++      uint8_t* pointer = nullptr;
++      const auto result = s_pWriterChannel->data->begin_blob_reserved(size, pointer, r);
++      m_dataWire.add(static_cast<size_t>(words * 4), size, RESULT_SUCCESS(result), true);
++      accept(result);
++      return RESULT_SUCCESS(result) ? pointer : nullptr;
++    }
 +    inline void end_data_blob() {
 +      l4d2_api_wait::Span timing(l4d2_api_wait::Metric::BlobCommit);
 +      if (m_status == Result::Success && !m_finished) { s_pWriterChannel->data->end_blob_push(); }
@@ -15530,7 +15794,7 @@ index a555f8c..5c86189 100644
      static inline size_t get_counter() {
        return s_cmdCounter;
      }
-@@ -298,7 +300,9 @@ public:
+@@ -298,7 +354,9 @@ public:
      }
  
      static inline void reset_counter() {
@@ -15541,15 +15805,18 @@ index a555f8c..5c86189 100644
      }
      
      static inline void print_data(std::string prefix, std::vector<Commands::D3D9Command>& commandList)       {
-@@ -328,6 +332,31 @@ public:
+@@ -328,6 +386,35 @@ public:
      }
  
    private:
-+    bool reserve(uint64_t words, bool blob) {
-+      if (m_status != Result::Success || m_finished || s_pWriterChannel->data->blobOpen()) { return false; }
-+      m_status = syncDataQueue(words, blob);
-+      if (m_status != Result::Success) { fault(); return false; }
-+      return true;
++    struct DeferredUid {};
++    Command(Commands::D3D9Command command, uintptr_t handle, Commands::Flags flags, DeferredUid);
++    bridge_data::Reservation reserve(uint64_t words, bool blob) {
++      if (m_status != Result::Success || m_finished || s_pWriterChannel->data->blobOpen()) { return {}; }
++      const auto r = s_pWriterChannel->data->reservation(words, blob);
++      m_status = syncReservation(r);
++      if (m_status != Result::Success) { fault(); return {}; }
++      return r;
 +    }
 +    void accept(Result result) { if (result != Result::Success) { m_status = result; fault(); } }
 +    void fault() {
@@ -15565,6 +15832,7 @@ index a555f8c..5c86189 100644
 +    bool m_finished = false;
 +    uint64_t m_begin = 0;
 +    int m_uncaught = 0;
++    uint8_t* m_packetBlob = nullptr;
 +    // NV-DXVK start: Optional data/resource tracing.
 +    l4d2_data::Wire m_dataWire;
 +    // NV-DXVK end
@@ -15573,16 +15841,17 @@ index a555f8c..5c86189 100644
      const Commands::D3D9Command m_command;
      const uint32_t m_handle;
      const Commands::Flags m_commandFlags;
-@@ -337,12 +366,26 @@ private:
+@@ -337,12 +424,27 @@ private:
    Bridge() = delete;
    Bridge(const Bridge&) = delete;
    Bridge(const Bridge&&) = delete;
 +  static void startRead(const Header& header);
 +  static void startPendingRead();
-+  static inline void ensureRead(uint64_t words, bool blob) {
++  static inline bridge_data::Reservation ensureRead(uint64_t words, bool blob) {
 +    if (!s_readActive) { startPendingRead(); }
 +    const auto r = getReaderChannel().data->reservation(words, blob);
 +    if (!r.valid || r.end > s_readEnd) { failRead(); }
++    return r;
 +  }
 +  static bridge_util::Result waitDataQueue(uint64_t end, uint64_t current);
 +  [[noreturn]] static void failRead();
@@ -15602,10 +15871,10 @@ index a555f8c..5c86189 100644
    static constexpr char kWriterChannelName[] = "Client2Server";
    static constexpr char kReaderChannelName[] = "Server2Client";
 diff --git a/bridge/src/util/util_circularbuffer.h b/bridge/src/util/util_circularbuffer.h
-index 79310b6..23f8b0a 100644
+index 79310b6..5e7c236 100644
 --- a/bridge/src/util/util_circularbuffer.h
 +++ b/bridge/src/util/util_circularbuffer.h
-@@ -30,133 +30,104 @@
+@@ -30,133 +30,170 @@
  #include "log/log_strings.h"
  #include "log/log.h"
  
@@ -15613,6 +15882,8 @@ index 79310b6..23f8b0a 100644
 +#include "data_ring_contract.h"
 +#include <cstring>
 +#include <stdexcept>
++
++template<typename> class Bridge;
  
 +namespace bridge_util {
    template<typename T>
@@ -15653,12 +15924,9 @@ index 79310b6..23f8b0a 100644
 +    size_t get_pos() const { return Base::m_pos; }
 +    bool blobOpen() const { return m_blobOpen; }
 +    bridge_data::Reservation reservation(uint64_t words, bool blob) const { return reserve(words, blob); }
-+    Result push(T value) {
-+      const auto r = reserve(1, false);
-+      if (!r.valid || m_blobOpen) { return Result::Failure; }
-+      Base::m_data[Base::m_pos] = value;
-+      advanceTo(r.end);
-+      return Result::Success;
++    bridge_data::Reservation packetReservation(uint64_t fields, size_t bytes, bool blob) const {
++      return bridge_data::packetAt(m_cursor, static_cast<uint32_t>(Base::m_pos),
++        static_cast<uint32_t>(Base::m_size), fields, bytes, blob);
      }
 -
 -    template<typename DataType>
@@ -15673,30 +15941,15 @@ index 79310b6..23f8b0a 100644
 -        }
 -      }
 -      return Result::Failure;
-+    template<typename... Ts> Result push_many(Ts... values) {
-+      const auto r = reserve(sizeof...(Ts), false);
-+      if (!r.valid || m_blobOpen) { return Result::Failure; }
-+      // Preserve the production contiguous fast path for ordinary parameters.
-+      if (sizeof...(Ts) < Base::m_size - Base::m_pos) {
-+        new (Base::m_data + Base::m_pos) std::array { static_cast<T>(values)... };
-+        advanceTo(r.end);
-+      } else { (push(static_cast<T>(values)), ...); }
-+      return Result::Success;
-     }
+-    }
 -
 -    void end_blob_push() {
 -      // Nothing to do. Left for future checks.
-+    Result begin_blob_push(size_t bytes, uint8_t*& pointer) {
-+      pointer = nullptr;
-+      uint64_t words = 0;
-+      if (!bridge_data::blobWords(bytes, words) || m_blobOpen) { return Result::Failure; }
-+      const auto r = reserve(words, true);
-+      if (!r.valid) { return Result::Failure; }
-+      Base::m_data[Base::m_pos] = static_cast<T>(bytes);
-+      pointer = reinterpret_cast<uint8_t*>(Base::m_data + r.payload);
-+      advanceTo(r.end);
-+      m_blobOpen = true;
-+      return Result::Success;
++  private:
++    template<typename> friend class ::Bridge;
++    uint32_t packetLength(size_t fields) const {
++      const size_t next = Base::m_pos + fields;
++      return Base::m_data[next >= Base::m_size ? next - Base::m_size : next];
      }
 -
 -    // Push object of variable size to queue
@@ -15717,17 +15970,22 @@ index 79310b6..23f8b0a 100644
 -
 -        if (result == Result::Success)
 -          return result;
-+    void end_blob_push() { m_blobOpen = false; }
-+    Result push(size_t bytes, const void* object) {
-+      if (!object) { return push(0); }
++    template<size_t N> uint8_t* write_packet_reserved(const std::array<T, N>& fields,
++        size_t bytes, bool blob, const bridge_data::Reservation& r) {
++      size_t position = Base::m_pos;
++      for (T value : fields) {
++        Base::m_data[position] = value;
++        if (++position == Base::m_size) { position = 0; }
++      }
 +      uint8_t* pointer = nullptr;
-+      const auto result = begin_blob_push(bytes, pointer);
-+      if (result == Result::Success) {
-+        if (bytes) { std::memcpy(pointer, object, bytes); }
-+        end_blob_push();
++      if (blob) {
++        Base::m_data[position] = static_cast<T>(bytes);
++        pointer = reinterpret_cast<uint8_t*>(Base::m_data + r.payload);
++        m_blobOpen = true;
        }
 -      return Result::Failure;
-+      return result;
++      advanceTo(r.end);
++      return pointer;
      }
 -
 -    // Returns the size of the variable size object and sets the pointer
@@ -15740,15 +15998,20 @@ index 79310b6..23f8b0a 100644
 -        advance<true>(ensured_space);
 -      } else {
 -        *obj = nullptr;
--      }
++    template<size_t N> bridge_data::PacketData<N> read_packet_reserved(uint32_t bytes,
++        bool blob, const bridge_data::Reservation& r) {
++      bridge_data::PacketData<N> packet {};
++      size_t position = Base::m_pos;
++      for (auto& value : packet.fields) {
++        value = Base::m_data[position];
++        if (++position == Base::m_size) { position = 0; }
+       }
 -
 -      return size;
-+    const T& pull() {
-+      const auto r = reserve(1, false);
-+      if (!r.valid) { throw std::runtime_error("DataQueue cursor overflow"); }
-+      const T& value = Base::m_data[Base::m_pos];
++      packet.bytes = bytes;
++      if (blob && bytes) { packet.data = Base::m_data + r.payload; }
 +      advanceTo(r.end);
-+      return value;
++      return packet;
      }
 -
 -    // Returns the size of the variable size object and copies the
@@ -15760,16 +16023,43 @@ index 79310b6..23f8b0a 100644
 -      if (const size_t ensured_space = ensure_space(size)) {
 -        obj = reinterpret_cast<V&>(m_data[m_pos]);
 -        advance<true>(ensured_space);
--      } else {
++    // Bridge owns the batch and checks ownership/bounds using this exact plan.
++    // Keep the checked standalone entry points for other queue users.
++    Result push_reserved(T value, const bridge_data::Reservation& r) {
++      Base::m_data[Base::m_pos] = value;
++      advanceTo(r.end);
++      return Result::Success;
++    }
++    template<typename... Ts> Result push_many_reserved(const bridge_data::Reservation& r, Ts... values) {
++      if (sizeof...(Ts) <= Base::m_size - Base::m_pos) {
++        new (Base::m_data + Base::m_pos) std::array { static_cast<T>(values)... };
+       } else {
 -        obj = V();
--      }
++        size_t position = Base::m_pos;
++        auto store = [&](T value) {
++          Base::m_data[position] = value;
++          if (++position == Base::m_size) { position = 0; }
++        };
++        (store(static_cast<T>(values)), ...);
+       }
 -
-+    const T& pull(void** pointer) {
++      advanceTo(r.end);
++      return Result::Success;
++    }
++    Result begin_blob_reserved(size_t bytes, uint8_t*& pointer, const bridge_data::Reservation& r) {
++      Base::m_data[Base::m_pos] = static_cast<T>(bytes);
++      pointer = reinterpret_cast<uint8_t*>(Base::m_data + r.payload);
++      advanceTo(r.end);
++      m_blobOpen = true;
++      return Result::Success;
++    }
++    const T& pull_reserved(const bridge_data::Reservation& r) {
++      const T& value = Base::m_data[Base::m_pos];
++      advanceTo(r.end);
++      return value;
++    }
++    const T& pull_blob_reserved(void** pointer, const bridge_data::Reservation& r) {
 +      const T& size = Base::m_data[Base::m_pos];
-+      uint64_t words = 0;
-+      if (!bridge_data::blobWords(size, words)) { throw std::runtime_error("DataQueue blob length"); }
-+      const auto r = reserve(words, true);
-+      if (!r.valid) { throw std::runtime_error("DataQueue blob capacity"); }
 +      *pointer = size ? Base::m_data + r.payload : nullptr;
 +      advanceTo(r.end);
        return size;
@@ -15777,11 +16067,20 @@ index 79310b6..23f8b0a 100644
 -
 -    size_t get_total_size() const {
 -      return m_size;
--    }
++  public:
++    Result push(T value) {
++      const auto r = reserve(1, false);
++      if (!r.valid || m_blobOpen) { return Result::Failure; }
++      return push_reserved(value, r);
+     }
 -
 -    size_t get_pos() const {
 -      return m_pos;
--    }
++    template<typename... Ts> Result push_many(Ts... values) {
++      const auto r = reserve(sizeof...(Ts), false);
++      if (!r.valid || m_blobOpen) { return Result::Failure; }
++      return push_many_reserved(r, values...);
+     }
 -
 -  private:
 -    FORCEINLINE size_t ensure_space(size_t size) {
@@ -15795,7 +16094,14 @@ index 79310b6..23f8b0a 100644
 -        m_pos = 0;
 -      }
 -      return space_needed;
--    }
++    Result begin_blob_push(size_t bytes, uint8_t*& pointer) {
++      pointer = nullptr;
++      uint64_t words = 0;
++      if (!bridge_data::blobWords(bytes, words) || m_blobOpen) { return Result::Failure; }
++      const auto r = reserve(words, true);
++      if (!r.valid) { return Result::Failure; }
++      return begin_blob_reserved(bytes, pointer, r);
+     }
 -
 -    template<bool space_ensured>
 -    inline void advance(size_t step) {
@@ -15803,11 +16109,33 @@ index 79310b6..23f8b0a 100644
 -
 -      if (!space_ensured) {
 -        m_pos %= m_size;
--      }
--    }
++    void end_blob_push() { m_blobOpen = false; }
++    Result push(size_t bytes, const void* object) {
++      if (!object) { return push(0); }
++      uint8_t* pointer = nullptr;
++      const auto result = begin_blob_push(bytes, pointer);
++      if (result == Result::Success) {
++        if (bytes) { std::memcpy(pointer, object, bytes); }
++        end_blob_push();
+       }
++      return result;
+     }
 -
 -    constexpr size_t chunk_size(const size_t size) const {
 -      return align(size, sizeof(T)) / sizeof(T);
++    const T& pull() {
++      const auto r = reserve(1, false);
++      if (!r.valid) { throw std::runtime_error("DataQueue cursor overflow"); }
++      return pull_reserved(r);
++    }
++    const T& pull(void** pointer) {
++      const T& size = Base::m_data[Base::m_pos];
++      uint64_t words = 0;
++      if (!bridge_data::blobWords(size, words)) { throw std::runtime_error("DataQueue blob length"); }
++      const auto r = reserve(words, true);
++      if (!r.valid) { throw std::runtime_error("DataQueue blob capacity"); }
++      return pull_blob_reserved(pointer, r);
++    }
 +    template<typename V> const T& pull_and_copy(V& object) {
 +      void* pointer = nullptr;
 +      const T& size = pull(&pointer);
@@ -15989,7 +16317,7 @@ index 15915da..6571ee1 100644
  };
  
 diff --git a/bridge/src/util/util_ipcchannel.h b/bridge/src/util/util_ipcchannel.h
-index 462334e..ecb3f14 100644
+index 462334e..1f44226 100644
 --- a/bridge/src/util/util_ipcchannel.h
 +++ b/bridge/src/util/util_ipcchannel.h
 @@ -26,6 +26,7 @@
@@ -16042,7 +16370,7 @@ index 462334e..ecb3f14 100644
    }
  
    size_t get_data_pos() const {
-@@ -91,9 +95,8 @@ public:
+@@ -91,9 +95,9 @@ public:
    bridge_util::SharedMemory* const   sharedMem;
    const size_t                       m_cmdMemSize;
    const size_t                       m_dataMemSize;
@@ -16051,10 +16379,11 @@ index 462334e..ecb3f14 100644
 -  bool*                              serverResetPosRequired;
 +  bridge_data::Control* const        control;
 +  mutable uint64_t                   cachedConsumed = 0;
++  mutable uint64_t                   cachedPublished = 0;
    CommandQueue* const                commands;
    bridge_util::DataQueue* const      data;
    bridge_util::NamedSemaphore* const dataSemaphore;
-@@ -101,8 +104,7 @@ public:
+@@ -101,8 +105,7 @@ public:
    mutable std::mutex                 m_mutex;
  
    // Extra storage needed for data queue synchronization params

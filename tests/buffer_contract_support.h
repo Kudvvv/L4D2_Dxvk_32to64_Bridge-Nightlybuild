@@ -18,6 +18,7 @@
 #include <type_traits>
 #include <vector>
 #include "data_diagnostics.h"
+#include "data_ring_contract.h"
 #include "util_commands.h"
 #include "util_common.h"
 struct BaseDirect3DDevice9Ex_LSS {};
@@ -77,6 +78,12 @@ struct ClientMessage {
   Update update;
   bool accepted = true;
   ClientMessage(Commands::D3D9Command command, uint32_t, Commands::Flags = 0) : update { command, 0, 0, 0, {} } {}
+  template<size_t N> ClientMessage(Commands::D3D9Command command, uint32_t id, Commands::Flags flags,
+      const bridge_data::Packet<N>& packet) : ClientMessage(command, id, flags) {
+    static_assert(N == 3 || N == 4, "buffer upload wire fields");
+    send_many(packet.fields[0], packet.fields[1], packet.fields[2]);
+    if (packet.hasBlob) { send_data(packet.bytes, packet.object); }
+  }
   ~ClientMessage() { if (accepted) updates.push_back(std::move(update)); }
   template<typename A, typename B, typename C> void send_many(A offset, B size, C flags) {
     update.offset = static_cast<uint32_t>(offset); update.size = static_cast<uint32_t>(size); update.flags = static_cast<uint32_t>(flags);

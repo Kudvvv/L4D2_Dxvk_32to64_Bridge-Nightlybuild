@@ -9,6 +9,7 @@ permissions:
   contents: read
 jobs:
   baseline:
+    needs: windows-build
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +32,7 @@ jobs:
       - name: Test native Device and Module transport in both directions
         shell: powershell
         run: ./scripts/test_ipc_transport.ps1
-      - name: Compare native production transports with alternating batch A/B
+      - name: Compare x86/x86 and x86/x64 production A/B/C and staged attribution
         shell: powershell
         run: ./scripts/test_ipc_performance.ps1
       - uses: actions/upload-artifact@v4
@@ -44,6 +45,10 @@ jobs:
             .deps/ipc-performance-results/
             .deps/ipc-perf-A/source-manifest.json
             .deps/ipc-perf-B/source-manifest.json
+            .deps/ipc-perf-C/source-manifest.json
+            .deps/ipc-perf-F/source-manifest.json
+            .deps/ipc-perf-R/source-manifest.json
+            .deps/ipc-perf-*/*.asm
           if-no-files-found: error
   windows-build:
     runs-on: windows-2022

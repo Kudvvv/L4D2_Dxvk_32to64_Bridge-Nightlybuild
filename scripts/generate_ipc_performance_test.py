@@ -4,10 +4,12 @@
 """Extract both actual transports for same-machine native batch A/B."""
 import json
 import hashlib
+import shutil
 from pathlib import Path
 from generate_ipc_transport_test import generate, FILES, ROOT
 from generate_buffer_contract_test import method
 from prepare_ipc_baseline import prepare
+from prepare_ipc_pr6_before import prepare as prepare_before
 
 
 def baseline(source,output):
@@ -49,7 +51,35 @@ def baseline(source,output):
 
 if __name__=='__main__':
     old=prepare()
+    before=prepare_before()
     baseline(old,ROOT/'.deps/ipc-perf-A')
-    generate(ROOT/'.deps/dxvk-remix',ROOT/'.deps/ipc-perf-B')
-    p=ROOT/'.deps/ipc-perf-B/ipc_transport.cpp'
-    p.write_text(p.read_text().replace('#include "ipc_transport_cases.cpp"','#include "ipc_performance_cases.cpp"'))
+    generate(before,ROOT/'.deps/ipc-perf-B')
+    current=ROOT/'.deps/dxvk-remix'
+    generate(current,ROOT/'.deps/ipc-perf-C')
+    # Attribution stages are actual checked implementations, not diagnostic
+    # counters in the timed path. F isolates the local flag ordering; R adds
+    # reservation reuse / cached acquired frontier; Q uses C's generic API.
+    for variant,source in [('F',before),('R',current)]:
+        staged=ROOT/f'.deps/ipc-stage-{variant}-source'
+        util=staged/'bridge/src/util'
+        shutil.copytree(source/'bridge/src/util',util,dirs_exist_ok=True)
+        cpp=(util/'util_bridgecommand.cpp').read_text()
+        if variant=='F':
+            cpp=cpp.replace('pbCmdInProgress->load()', 'pbCmdInProgress->load(std::memory_order_relaxed)')
+            cpp=cpp.replace('pbCmdInProgress->store(true)', 'pbCmdInProgress->store(true, std::memory_order_relaxed)')
+            cpp=cpp.replace('pbCmdInProgress->store(false)', 'pbCmdInProgress->store(false, std::memory_order_relaxed)')
+        else:
+            shutil.copyfile(before/'bridge/src/util/util_atomiccircularqueue.h',util/'util_atomiccircularqueue.h')
+            start=cpp.index('#ifndef USE_BLOCKING_QUEUE\n    m_status = s_pWriterChannel->commands->try_push(')
+            end=cpp.index('    const auto configured =',start)
+            cpp=cpp[:start]+cpp[end:]
+            marker='budget, &gbBridgeRunning);\n    }\n'
+            if cpp.count(marker)!=1:raise RuntimeError('Unexpected bounded finish layout')
+            cpp=cpp.replace(marker,'budget, &gbBridgeRunning);\n',1)
+        (util/'util_bridgecommand.cpp').write_text(cpp)
+        generate(staged,ROOT/f'.deps/ipc-perf-{variant}')
+    for variant in ('B','C','F','R'):
+        p=ROOT/f'.deps/ipc-perf-{variant}/ipc_transport.cpp'
+        code=p.read_text().replace('#include "ipc_transport_cases.cpp"','#include "ipc_performance_cases.cpp"')
+        if variant=='C':code='#define IPC_KNOWN_PACKET\n'+code
+        p.write_text(code)

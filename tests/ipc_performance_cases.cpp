@@ -8,13 +8,14 @@ void require(bool value,const char* message) {
 uint64_t ticks(FILETIME value){return(static_cast<uint64_t>(value.dwHighDateTime)<<32)|value.dwLowDateTime;}
 uint64_t cpuNow(){FILETIME c{},e{},k{},u{};GetThreadTimes(GetCurrentThread(),&c,&e,&k,&u);return ticks(k)+ticks(u);}
 int wmain(int argc,wchar_t** argv){
-  require(argc==6,"arguments guid count bytes mode capacity");
+  require(argc==7,"arguments guid count bytes mode capacity layout");
   require(gUniqueIdentifier.setGuid(&argv[1]),"guid");
   const auto count=static_cast<uint32_t>(std::wcstoul(argv[2],nullptr,10));
   const auto size=static_cast<uint32_t>(std::wcstoul(argv[3],nullptr,10));
   const std::wstring mode=argv[4];
   const bool batched=mode==L"batch" || mode==L"near-full";
   const auto capacity=static_cast<uint32_t>(std::wcstoul(argv[5],nullptr,10));
+  const bool known=std::wstring(argv[6])==L"known";
   const uint32_t commandCapacity=32768;
   const size_t memory=commandCapacity*sizeof(Header)+256+static_cast<size_t>(capacity)*4;
 #ifdef REMIX_BRIDGE_CLIENT
@@ -36,11 +37,19 @@ int wmain(int argc,wchar_t** argv){
   ULONG64 cyclesBegin=0,cyclesEnd=0;QueryThreadCycleTime(GetCurrentThread(),&cyclesBegin);
   const auto cpuBegin=cpuNow();QueryPerformanceCounter(&begin);
   for(uint32_t sequence=0;mode!=L"idle" && sequence<count;++sequence){
+#ifdef IPC_KNOWN_PACKET
+    if(known){
+      Device::Command command(Commands::Bridge_Response,0,0,bridge_data::payload(size,size?bytes.data():nullptr,sequence,size));
+      require(command.finish()==Result::Success,"Client known submission");
+    } else
+#endif
+    {
     Device::Command command(Commands::Bridge_Response);
     command.send_many(sequence,size);command.send_data(size,size?bytes.data():nullptr);
 #ifndef IPC_OLD_BASELINE
     require(command.finish()==Result::Success,"Client submission");
 #endif
+    }
   }
   QueryPerformanceCounter(&end);const auto cpuEnd=cpuNow();QueryThreadCycleTime(GetCurrentThread(),&cyclesEnd);
   if(batched){SetEvent(start);}
@@ -53,10 +62,20 @@ int wmain(int argc,wchar_t** argv){
   if(mode==L"idle") {Result result;reader.commands->peek(result,500);require(result==Result::Timeout,"idle queue wait");}
   for(uint32_t sequence=0;mode!=L"idle" && sequence<count;++sequence){
     require(Device::waitForCommand()==Result::Success,"Host packet wait");const auto header=Device::pop_front();
+#ifdef IPC_KNOWN_PACKET
+    if(known){
+      const auto packet=Device::get_packet<3>();
+      require(packet.fields[0]==sequence && packet.fields[1]==sequence && packet.fields[2]==size,"Host known metadata order");
+      require(packet.bytes==size,"Host known blob size");
+      if(size){require(packet.data && static_cast<uint8_t*>(packet.data)[0]==0x6b && static_cast<uint8_t*>(packet.data)[size-1]==0x6b,"Host known payload integrity");}
+    } else
+#endif
+    {
     require(Device::get_data()==sequence,"Host UID order");require(Device::get_data()==sequence,"Host metadata order");
     require(Device::get_data()==size,"Host size");void* pointer=nullptr;
     require(Device::get_data(&pointer)==size,"Host blob size");
     if(size){require(pointer && static_cast<uint8_t*>(pointer)[0]==0x6b && static_cast<uint8_t*>(pointer)[size-1]==0x6b,"Host payload integrity");}
+    }
     require(Device::get_data_pos()==header.dataOffset,"Host packet boundary");
 #ifdef IPC_OLD_BASELINE
     benchmarkComplete();

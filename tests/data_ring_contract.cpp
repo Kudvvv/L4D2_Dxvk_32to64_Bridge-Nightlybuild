@@ -32,6 +32,28 @@ int main() {
     }
   }
   require(!plan(UINT64_MAX,8,1,false).valid,"cursor overflow");
+  uint64_t packetCases = 0;
+  for (uint32_t capacity=2; capacity<=35; ++capacity) {
+    for (uint32_t position=0; position<capacity; ++position) {
+      for (uint64_t prefix=0; prefix<=8; ++prefix) {
+        for (size_t bytes=0; bytes<=capacity*4; ++bytes) {
+          const uint64_t begin=capacity*3+position;
+          const auto actual=packetAt(begin,position,capacity,prefix,bytes,true);
+          const auto first=plan(begin,capacity,prefix,false);
+          uint64_t words=0; blobWords(bytes,words);
+          const auto last=first.valid?plan(first.end,capacity,words,true):Reservation {};
+          const bool valid=first.valid && last.valid && last.end-begin<=capacity;
+          require(actual.valid==valid,"whole packet valid span");
+          if (valid) {
+            require(actual.end==last.end && actual.words==last.end-begin
+              && actual.payload==last.payload,"whole packet equals incremental layout");
+          }
+          ++packetCases;
+        }
+      }
+    }
+  }
+  require(!packetAt(UINT64_MAX-1,2,8,2,1,true).valid,"whole packet overflow");
   require(!plan(UINT64_MAX-2,8,4,true).valid,"padding overflow");
   uint64_t words=0;
   require(blobWords(0,words) && words==1,"zero-length prefix");
@@ -61,6 +83,6 @@ int main() {
   require(!waitForSpace(c,12,8,[](){return uint64_t(4);},[](){return true;},[](){return false;}),"peer exited");
   c.fault=1;
   require(!waitForSpace(c,4,8,[](){return uint64_t(0);},[](){return true;},[](){return true;}),"poison blocks fast path");
-  std::printf("DATA_RING_CONTRACT_PASS checked_space_states=%llu pointer_bits=%u\n",
-    static_cast<unsigned long long>(cases),static_cast<unsigned>(sizeof(void*)*8));
+  std::printf("DATA_RING_CONTRACT_PASS checked_space_states=%llu packet_layout_cases=%llu pointer_bits=%u\n",
+    static_cast<unsigned long long>(cases),static_cast<unsigned long long>(packetCases),static_cast<unsigned>(sizeof(void*)*8));
 }
