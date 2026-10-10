@@ -1,3 +1,5 @@
+> 上游技术与实验记录：文中版本号、设备实测及旧分包方式属于原项目。Nightly 当前使用含两种 Host/GPLALL、ThinFlex 与可选 L4N 的单一全量包，默认 x64；安装和配置以 [README](../README.md) 与 [配置说明](CONFIGURATION.md) 为准。不要按历史步骤只更新一个 Client 或 Host。
+
 # Host 内存与 CPU 诊断 / Host memory and CPU diagnostics
 
 这是 v1.0.0 的诊断更新，用来定位 64 位桥进程的内存增长和 CPU 开销。当前 Host 日志使用 `schema=3`，新增资源分类／生命周期计数、地址空间提交量分类，以及桥自身的 GPU 内存统计。诊断不改变资源的创建／释放规则或 IPC 协议；尚未修复本轮观察到的反复进图内存增长。

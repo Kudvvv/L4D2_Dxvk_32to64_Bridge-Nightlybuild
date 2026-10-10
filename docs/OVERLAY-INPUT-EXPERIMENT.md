@@ -1,3 +1,5 @@
+> 上游技术与实验记录：文中版本号、设备实测及旧分包方式属于原项目。Nightly 当前使用含两种 Host/GPLALL、ThinFlex 与可选 L4N 的单一全量包，默认 x64；安装和配置以 [README](../README.md) 与 [配置说明](CONFIGURATION.md) 为准。不要按历史步骤只更新一个 Client 或 Host。
+
 # v1.1 ReShade 输入修复 / Input fix and retained experiment notes
 
 **后续 Steam 调查：**新实机证据表明游戏请求可打开并显示 Steam，但输入/关闭失效。输入路径调查已重启；[诊断方法与当前证据](STEAM-INPUT-INVESTIGATION.md)。这不改变 v1.1 的支持范围。
@@ -6,8 +8,8 @@
 
 ## 安装与启用
 
-1. 完全退出游戏与桥，备份当前 `bin/dxvk_d3d9.dll` 和 `bin/.l4d2bridge/L4D2Bridge64.exe`。
-2. 将实验包的 `bin` 合并到游戏根目录。包内不含 DXVK 后端和正式 `bridge.conf`，保留当前 `d3d9vk_x64.dll`、ReShade、retention DB 和策略设置。游戏根目录现有的 `d3d9.dll` 加载器保持现状。
+1. 完全退出游戏和 Host，按 [Nightly 安装说明](../README.md) 备份并安装同一完整包的 Client 和两个 Host。Client 默认名为 `bin/d3d9.dll`，`-vulkan` 模式为 `bin/dxvk_d3d9.dll`。
+2. Nightly 唯一全量包已经包含此功能和 GPLALL 后端；升级时从临时目录移除配置与自定义后端，保留 ReShade、retention DB 和策略设置。无需独立实验补丁包。
 3. 将 `OVERLAY-INPUT.conf` 的设置合并到 `bin/.l4d2bridge/bridge.conf`，同名键保留一份：
 
 ```ini

@@ -1,6 +1,6 @@
 # L4D2 原项目完整同步
 
-当前完整功能基准：[`cf49175e8a3c6c2fe45c99aec0680b0d1c864d24`](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/tree/cf49175e8a3c6c2fe45c99aec0680b0d1c864d24)，包含 **1.2.1** 主提交 `0d450b7` 和其后的插件附件发布修正。本仓库版本为 **Nightly 1.1**；两者版本号独立。
+当前完整功能基准：[`cf49175e8a3c6c2fe45c99aec0680b0d1c864d24`](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/tree/cf49175e8a3c6c2fe45c99aec0680b0d1c864d24)，包含 **1.2.1** 主提交 `0d450b7` 和其后的插件附件发布修正。本仓库完整合并版本始于 **Nightly 1.1**；两者版本号独立。
 
 用户于 2026-10-10 明确授权完整合并上游，包括上游新增功能。“不自行增加功能”不再作为筛除上游能力的理由。Git 合并保留两侧提交历史；以完整上游 Bridge 源码为基础融合 Nightly 修复，后续在此基准上增量同步。
 

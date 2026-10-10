@@ -1,3 +1,5 @@
+> 上游技术与实验记录：文中版本号、设备实测及旧分包方式属于原项目。Nightly 当前使用含两种 Host/GPLALL、ThinFlex 与可选 L4N 的单一全量包，默认 x64；安装和配置以 [README](../README.md) 与 [配置说明](CONFIGURATION.md) 为准。不要按历史步骤只更新一个 Client 或 Host。
+
 # Runtime / diagnostics separation
 
 本次基于 main/v1.2.0 `47c4da5403e3b8f1b1beca0ffa35474be3027394` 清理。实现前已完成 [逐路径分类审计](RUNTIME-DIAGNOSTICS-AUDIT.md)。本次不引入优化算法、修改渲染输出、资源生命周期、Host 选择、Reset 或 IPC 顺序。L4N 源码、菜单和控制 ABI 均未修改；不重编译/打包未修改插件。已发布 v1.2.0 构件保持原样，本文记录新的源码行为。

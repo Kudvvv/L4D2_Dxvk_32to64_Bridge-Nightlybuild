@@ -1,3 +1,5 @@
+> 上游技术与实验记录：文中版本号、设备实测及旧分包方式属于原项目。Nightly 当前使用含两种 Host/GPLALL、ThinFlex 与可选 L4N 的单一全量包，默认 x64；安装和配置以 [README](../README.md) 与 [配置说明](CONFIGURATION.md) 为准。不要按历史步骤只更新一个 Client 或 Host。
+
 # 地图加载 D3D9 API / IPC 等待诊断
 
 这是默认关闭的诊断功能，用来判断加载期间的时间是否花在 Bridge 的资源 API、响应等待或队列背压上。它不识别 Source 地图事件，不实现异步加载，不改变 D3D9、PageBlock retention、Host 选择、IPC 协议、输入、ReShade 或渲染语义。已有默认关闭、首版诊断和两端诊断的实机观察；它们不是受控性能 benchmark，也不是提速证明。当前版本进一步细分纹理上传的本地阶段。

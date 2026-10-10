@@ -1,3 +1,5 @@
+> 上游技术与实验记录：文中版本号、设备实测及旧分包方式属于原项目。Nightly 当前使用含两种 Host/GPLALL、ThinFlex 与可选 L4N 的单一全量包，默认 x64；安装和配置以 [README](../README.md) 与 [配置说明](CONFIGURATION.md) 为准。不要按历史步骤只更新一个 Client 或 Host。
+
 # Bridge 数据和资源追踪实验
 
 本轮只补充证据采集，供下一版本评估 VB、IB、Volume 3D 等优化。没有更改资源容量、Lock/Unlock 返回值、PageBlock 回收/恢复、GC、DXVK、Host 生命周期、控制 ABI 或 L4N 插件。不能根据锁标志、短期未使用或上传次数直接认定资源可安全卸载。

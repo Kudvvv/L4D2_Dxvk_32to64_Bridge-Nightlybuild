@@ -1,3 +1,5 @@
+> 上游技术与实验记录：文中版本号、设备实测及旧分包方式属于原项目。Nightly 当前使用含两种 Host/GPLALL、ThinFlex 与可选 L4N 的单一全量包，默认 x64；安装和配置以 [README](../README.md) 与 [配置说明](CONFIGURATION.md) 为准。不要按历史步骤只更新一个 Client 或 Host。
+
 # 实验：PageBlock drop、手动 GC 与 L4N v2 菜单
 
 完整进程/资源架构见 [ARCHITECTURE.md](ARCHITECTURE.md)；控制 ABI v1/v2 的字段、偏移、错误和调用示例见 [API.md](API.md#pageblock-control)。

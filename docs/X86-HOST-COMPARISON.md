@@ -1,32 +1,30 @@
 # v1.1 x86 Host：使用、实现与历史对照方法
 
-**v1.1 状态：**x86 Host 已实机确认正常启动/进图，现为正式可选模式。完整包同时包含 x86/x64 Host 和官方 DXVK 2.6.1 两种位数；一般使用保持 `learned-aggressive`，仅切换 `client.testX86Server`。作者观察到优化后 x86 总系统 RAM 约 16.7 GB、无桥约 16.5 GB；不是固定 +0.2 GB 保证。正常安装见 [README](../README.md)，证据见 [验证记录](V1.1-VALIDATION.md)。
+Nightly 完整合并上游 1.2.1 后，唯一全量包同时提供 x86/x64 Host 和对应 GPLALL 2.6.8-2 后端，**默认仍为 x64**（`client.testX86Server=False`）。切换时只改 Host 选择，不必改 retention 策略；`forceX64Server=True` 始终保留。实际配置以 [配置说明](CONFIGURATION.md) 为准。
 
-**当前默认：**后续开发版随包配置已改为 x86 Host（`client.testX86Server=True`），x64 保留为可选模式。已有升级包保留用户原配置；下文保留历史架构对照方法，当前累计变化见 [更新说明](CHANGES-SINCE-V1.1.md)。
-
-以下保留独立对照包及 KEEP 控制变量测试方法，**不是 v1.1 推荐配置的替代说明**。
+原项目曾验证 x86 Host 正常启动和进图，并报告其设备上的内存占用；这些是上游历史实测，不能外推为本 Nightly/GPLALL 组合已验证。下文的 KEEP 控制变量与独立对照方法保留用于复现实验，不是修改正常配置的要求。
 
 ## 安装与切换
 
-先完全退出游戏和桥，备份目前的 `bin/dxvk_d3d9.dll` 以及整个 `bin/.l4d2bridge` 文件夹。将本包的 `bin` 合并到游戏安装目录的 `bin`，保留现有配置和根目录 DLL 启动链。本包不覆盖 `bridge.conf`。
+先完全退出游戏和 Host，按 [README](../README.md) 备份客户端、Host、配置与引擎 DLL。从临时解压目录移除 `bin/.l4d2bridge/bridge.conf` 后再覆盖升级，以保留自己的配置。客户端默认为 `bin/d3d9.dll`；使用 `-vulkan` 时为 `bin/dxvk_d3d9.dll`。必须从同一完整包配对更新 Client 和两个 Host。
 
 文件布局：
 
 ```text
 Left 4 Dead 2/
 └─ bin/
-   ├─ dxvk_d3d9.dll                     # 同一份 32 位桥客户端
+   ├─ d3d9.dll                          # 32 位桥客户端；-vulkan 时改名
    └─ .l4d2bridge/
       ├─ bridge.conf                   # 现有配置，手动合并下面的片段
       ├─ L4D2Bridge32.exe               # 新编译的 32 位 SERVER
       ├─ L4D2Bridge64.exe               # 同提交的 64 位 SERVER
-      ├─ d3d9vk_x86.dll                 # 官方 DXVK 2.6.1 x32/d3d9.dll
-      └─ d3d9vk_x64.dll                 # 官方 DXVK 2.6.1 x64/d3d9.dll
+      ├─ d3d9vk_x86.dll                 # GPLALL x32/d3d9.dll
+      └─ d3d9vk_x64.dll                 # GPLALL x64/d3d9.dll
 ```
 
-本包自带的两个 DXVK DLL 来自同一官方归档，均未修改。若当前使用 mem1 或其他定制后端，先备份，再使用本包的两个官方 DLL 完成这一轮对照。不要将游戏客户端 DLL 当作后端 DLL，也不要只给 64 位 EXE 改名。
+本包自带的两个 GPLALL DLL 来自同一校验后的发行归档，均未修改。若当前使用 mem1 或其他自定义后端，先备份，并在对照中固定后端版本与配置。不要将游戏客户端 DLL 当作后端 DLL，也不要只给 64 位 EXE 改名。
 
-把 `X86-HOST.conf` 中的配置合并到 `bin/.l4d2bridge/bridge.conf`，同名键只保留一个有效值：
+日常切换使用 `config/X86-HOST.conf`；以下仅为历史 KEEP 对照实验的控制变量。把所需配置合并到 `bin/.l4d2bridge/bridge.conf`，同名键只保留一个有效值：
 
 ```ini
 server.useVanillaDxvk = True
