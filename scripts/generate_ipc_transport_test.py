@@ -84,8 +84,8 @@ struct GlobalOptions {
   }
   static void init(''',1)
     bodies=[]
-    for marker in ('DECL_BRIDGE_FUNC(void, reportFault,', 'DECL_BRIDGE_FUNC(bridge_util::Result, syncDataQueue,',
-                   'DECL_BRIDGE_FUNC(void, startRead,', 'DECL_BRIDGE_FUNC(void, ensureRead,',
+    for marker in ('DECL_BRIDGE_FUNC(void, reportFault,', 'DECL_BRIDGE_FUNC(bridge_util::Result, waitDataQueue,',
+                   'DECL_BRIDGE_FUNC(void, startRead,', 'DECL_BRIDGE_FUNC(void, startPendingRead)',
                    'DECL_BRIDGE_FUNC(void, failRead)', 'DECL_BRIDGE_FUNC(size_t, end_read_data)',
                    'DECL_BRIDGE_FUNC(Header, pop_front)', 'DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand,'):
         start,end=method(cpp,marker);bodies.append(cpp[start:end])

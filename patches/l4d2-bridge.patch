@@ -14808,7 +14808,7 @@ index 3ed228a..d7d7676 100644
          return 0;
        }
 diff --git a/bridge/src/util/util_bridgecommand.cpp b/bridge/src/util/util_bridgecommand.cpp
-index a3bed63..de7d905 100644
+index a3bed63..c74ddbc 100644
 --- a/bridge/src/util/util_bridgecommand.cpp
 +++ b/bridge/src/util/util_bridgecommand.cpp
 @@ -1,3 +1,7 @@
@@ -14838,7 +14838,7 @@ index a3bed63..de7d905 100644
    }
  }
  
-@@ -55,79 +60,153 @@ DECL_BRIDGE_FUNC(void, init,
+@@ -55,79 +60,142 @@ DECL_BRIDGE_FUNC(void, init,
    bIsInit = true;
  }
  
@@ -14910,16 +14910,9 @@ index a3bed63..de7d905 100644
 +  } catch (...) { /* Fault reporting must never prevent batch teardown. */ }
 +}
 +
-+DECL_BRIDGE_FUNC(bridge_util::Result, syncDataQueue, uint64_t words, bool blob) {
++DECL_BRIDGE_FUNC(bridge_util::Result, waitDataQueue, uint64_t end, uint64_t current) {
 +  auto& channel = *s_pWriterChannel;
-+  const auto r = channel.data->reservation(words, blob);
 +  const auto capacity = static_cast<uint32_t>(channel.data->get_total_size());
-+  const auto current = channel.data->cursor();
-+  if (!r.valid || r.end < s_curBatchStartPos || r.end - s_curBatchStartPos > capacity || !healthy()) {
-+    reportFault("invalid-reservation-or-cancelled", s_curCommand, s_curUID, words);
-+    return Result::Failure;
-   }
-+  if (bridge_data::available(r.end, channel.cachedConsumed, capacity)) { return Result::Success; }
 +  const auto begin = GetTickCount64();
 +  const auto initialConsumed = channel.cachedConsumed;
 +  const uint64_t configured = static_cast<uint64_t>(GlobalOptions::getCommandTimeout())
@@ -14927,7 +14920,7 @@ index a3bed63..de7d905 100644
 +  const uint64_t budget = configured ? std::min<uint64_t>(configured, 120000) : 120000;
 +  Result waitResult = Result::Success;
 +  l4d2_api_wait::Span timing(l4d2_api_wait::Metric::DataQueueWait);
-+  const bool success = bridge_data::waitForSpace(*channel.control, r.end, capacity,
++  const bool success = bridge_data::waitForSpace(*channel.control, end, capacity,
 +    [&]() { channel.cachedConsumed = channel.control->consumed.load(std::memory_order_seq_cst); return channel.cachedConsumed; },
 +    [&]() {
 +      const auto elapsed = GetTickCount64() - begin;
@@ -14938,10 +14931,39 @@ index a3bed63..de7d905 100644
 +  if (!success) {
 +    if (!gbBridgeRunning.load(std::memory_order_acquire)) { waitResult = Result::Failure; }
 +    reportFault(waitResult == Result::Timeout ? "timeout" : "wait-failed-or-peer-cancelled",
-+      s_curCommand, s_curUID, r.end - current, begin, initialConsumed);
++      s_curCommand, s_curUID, end - current, begin, initialConsumed);
 +    return waitResult == Result::Timeout ? Result::Timeout : Result::Failure;
 +  }
 +  return Result::Success;
++}
++
++DECL_BRIDGE_FUNC(void, startRead, const Header& header) {
++  if (s_readActive) { return; }
++  const auto& channel = getReaderChannel();
++  const auto capacity = static_cast<uint32_t>(channel.data->get_total_size());
++  if (!bridge_data::compatible(*channel.control, capacity)) {
++    Logger::err("IPC protocol/control layout mismatch; mixed Client/Host refused");
++    failRead();
++  }
++  if (header.dataOffset >= capacity) { failRead(); }
++  const auto start = channel.data->cursor();
++  const auto position = static_cast<uint32_t>(channel.data->get_pos());
++  uint64_t words = header.dataOffset >= position ? header.dataOffset - position
++    : capacity - (position - header.dataOffset);
++  if (header.flags & Commands::FlagBits::DataFullRing) {
++    if (words) { failRead(); }
++    words = capacity;
+   }
++  if (start > UINT64_MAX - words || start + words > channel.control->published.load(std::memory_order_acquire)) { failRead(); }
++  s_readEnd = start + words;
++  s_readActive = true;
++}
++
++DECL_BRIDGE_FUNC(void, startPendingRead) {
++    Result result;
++    const auto header = getReaderChannel().commands->peek(result, 1);
++    if (result != Result::Success) { failRead(); }
++    startRead(header);
 +}
  
 -  /*
@@ -14954,39 +14976,6 @@ index a3bed63..de7d905 100644
 -       || (s_curBatchStartPos > serverCount && expectedClientDataPos < s_curBatchStartPos)
 -       || ((s_curBatchStartPos <= serverCount) && *s_pWriterChannel->serverResetPosRequired))) {
 -    handleOverwriteCondition();
-+DECL_BRIDGE_FUNC(void, startRead, const Header& header) {
-+  const auto& channel = getReaderChannel();
-+  const auto capacity = static_cast<uint32_t>(channel.data->get_total_size());
-+  if (!bridge_data::compatible(*channel.control, capacity)) {
-+    Logger::err("IPC protocol/control layout mismatch; mixed Client/Host refused");
-+    failRead();
-   }
-+  if (s_readActive) { return; }
-+  if (header.dataOffset >= capacity) { failRead(); }
-+  const auto start = channel.data->cursor();
-+  const auto position = static_cast<uint32_t>(channel.data->get_pos());
-+  uint64_t words = header.dataOffset >= position ? header.dataOffset - position
-+    : capacity - (position - header.dataOffset);
-+  if (header.flags & Commands::FlagBits::DataFullRing) {
-+    if (words) { failRead(); }
-+    words = capacity;
-+  }
-+  if (start > UINT64_MAX - words || start + words > channel.control->published.load(std::memory_order_acquire)) { failRead(); }
-+  s_readEnd = start + words;
-+  s_readActive = true;
- }
- 
-+DECL_BRIDGE_FUNC(void, ensureRead, uint64_t words, bool blob) {
-+  if (!s_readActive) {
-+    Result result;
-+    const auto header = getReaderChannel().commands->peek(result, 1);
-+    if (result != Result::Success) { failRead(); }
-+    startRead(header);
-+  }
-+  const auto r = getReaderChannel().data->reservation(words, blob);
-+  if (!r.valid || r.end > s_readEnd) { failRead(); }
-+}
-+
 +DECL_BRIDGE_FUNC(void, failRead) {
 +  getReaderChannel().control->fault.store(1, std::memory_order_release);
 +  gbBridgeRunning.store(false, std::memory_order_release);
@@ -14999,13 +14988,13 @@ index a3bed63..de7d905 100644
 +  uint64_t consumed = channel.data->cursor();
 +  for (const auto& resource : s_readPins) {
 +    if (!resource.second.empty()) { consumed = std::min(consumed, resource.second.front()); }
-+  }
+   }
 +  channel.control->consumed.store(consumed, std::memory_order_seq_cst);
 +  if (channel.control->waiting.load(std::memory_order_seq_cst)) { channel.dataSemaphore->release(); }
 +  s_readActive = false;
 +  return channel.data->end_batch();
-+}
-+
+ }
+ 
 +
  DECL_BRIDGE_FUNC(Header, pop_front) {
    ZoneScoped;
@@ -15047,7 +15036,7 @@ index a3bed63..de7d905 100644
    if (getReaderChannel().commands->isEmpty()) {
      return bridge_util::Result::Success;
    }
-@@ -152,13 +231,17 @@ DECL_BRIDGE_FUNC(bridge_util::Result, ensureQueueEmpty) {
+@@ -152,13 +220,17 @@ DECL_BRIDGE_FUNC(bridge_util::Result, ensureQueueEmpty) {
  
  DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Command& command,
                                                        DWORD overrideTimeoutMS,
@@ -15067,7 +15056,7 @@ index a3bed63..de7d905 100644
    }
  #endif
  #if defined(_DEBUG) || defined(DEBUGOPT)
-@@ -169,7 +252,12 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -169,7 +241,12 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
    bool infiniteRetries = false;
    bool bEarlyOut = false;
    uint32_t attemptNum = 0;
@@ -15080,7 +15069,7 @@ index a3bed63..de7d905 100644
      Result result;
      Header header = getReaderChannel().commands->peek(result, peekTimeoutMS, pbEarlyOutSignal);
  
-@@ -186,9 +274,10 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -186,9 +263,10 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
        if ((command == Commands::Bridge_Any) || (header.command == command) && uidVerified) {
  #ifdef ENABLE_WAIT_FOR_COMMAND_TRACE
          if (command != Commands::Bridge_Any) {
@@ -15092,7 +15081,7 @@ index a3bed63..de7d905 100644
          return Result::Success;
        } else {
  #if defined(_DEBUG) || defined(DEBUGOPT)
-@@ -229,13 +318,13 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -229,13 +307,13 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
          // Drop the flag - we're in the normal loop now.
          infiniteRetries = false;
        }
@@ -15108,7 +15097,7 @@ index a3bed63..de7d905 100644
        return Result::Failure;
      }
  
-@@ -256,7 +345,9 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
+@@ -256,7 +334,9 @@ DECL_BRIDGE_FUNC(bridge_util::Result, waitForCommand, const Commands::D3D9Comman
  DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
                             uintptr_t pHandle,
                             const Commands::Flags commandFlags)
@@ -15119,7 +15108,7 @@ index a3bed63..de7d905 100644
    , m_handle((uint32_t) (size_t) pHandle)
    , m_commandFlags(commandFlags) {
    // If the assert or exception gets triggered it means that there is more than one Command
-@@ -276,76 +367,65 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
+@@ -276,76 +356,65 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
  #endif
  
  #ifdef REMIX_BRIDGE_CLIENT
@@ -15242,7 +15231,7 @@ index a3bed63..de7d905 100644
    s_pWriterChannel->pbCmdInProgress->store(false);
  #ifdef REMIX_BRIDGE_CLIENT
    ++s_cmdUID;
-@@ -353,5 +433,6 @@ DECL_COMMAND_FUNC(,~Command) {
+@@ -353,5 +422,6 @@ DECL_COMMAND_FUNC(,~Command) {
  #endif
  }
  
@@ -15252,7 +15241,7 @@ index a3bed63..de7d905 100644
 \ No newline at end of file
 +template class Bridge<BridgeId::Device>;
 diff --git a/bridge/src/util/util_bridgecommand.h b/bridge/src/util/util_bridgecommand.h
-index a555f8c..10a3738 100644
+index a555f8c..5c86189 100644
 --- a/bridge/src/util/util_bridgecommand.h
 +++ b/bridge/src/util/util_bridgecommand.h
 @@ -1,3 +1,7 @@
@@ -15381,7 +15370,7 @@ index a555f8c..10a3738 100644
    }
  
    static inline size_t get_data_pos() {
-@@ -182,16 +182,26 @@ public:
+@@ -182,16 +182,37 @@ public:
      return bridge_util::Result::Failure;
    }
  
@@ -15391,7 +15380,22 @@ index a555f8c..10a3738 100644
 -      return getReaderChannel().data->end_batch();
 +  static size_t end_read_data();
 +  static Header pop_front();
-+  static bridge_util::Result syncDataQueue(uint64_t words, bool blob = false);
++  static inline bridge_util::Result syncDataQueue(uint64_t words, bool blob = false) {
++    auto& channel = *s_pWriterChannel;
++    const auto r = channel.data->reservation(words, blob);
++    const auto capacity = static_cast<uint32_t>(channel.data->get_total_size());
++    const auto current = channel.data->cursor();
++    if (!r.valid || r.end < s_curBatchStartPos || r.end - s_curBatchStartPos > capacity || !healthy()) {
++      reportFault("invalid-reservation-or-cancelled", s_curCommand, s_curUID, words);
++      return Result::Failure;
+     }
+-    return 0;
++    if (bridge_data::available(r.end, channel.cachedConsumed, capacity)) { return Result::Success; }
++    return waitDataQueue(r.end, current);
+   }
+-
+-  static Header pop_front();
+-  static void syncDataQueue(size_t expectedMemUsage, bool posResetOnLastIndex = false);
 +  static bool healthy() {
 +    return gbBridgeRunning.load(std::memory_order_acquire)
 +      && s_pWriterChannel && !s_pWriterChannel->control->fault.load(std::memory_order_acquire);
@@ -15406,17 +15410,13 @@ index a555f8c..10a3738 100644
 +    if (it != s_readPins.end()) {
 +      if (!it->second.empty()) { it->second.pop_front(); }
 +      if (it->second.empty()) { s_readPins.erase(it); }
-     }
--    return 0;
-   }
--
--  static Header pop_front();
--  static void syncDataQueue(size_t expectedMemUsage, bool posResetOnLastIndex = false);
++    }
++  }
 +  static void destroyReadPins(uint32_t id) { s_readPins.erase(id); }
    static bridge_util::Result ensureQueueEmpty();
  
    //=========================//
-@@ -202,7 +212,8 @@ public:
+@@ -202,7 +223,8 @@ public:
    // into an unrecoverable state otherwise.
    static bridge_util::Result waitForCommand(const Commands::D3D9Command& command = Commands::Bridge_Any,
                                              DWORD overrideTimeoutMS = 0,
@@ -15426,7 +15426,7 @@ index a555f8c..10a3738 100644
    // Waits for a command to appear in the command queue. Upon success the command will be removed from the queue
    // and discarded.
    static bridge_util::Result waitForCommandAndDiscard(const Commands::D3D9Command& command = Commands::Bridge_Any,
-@@ -228,67 +239,47 @@ public:
+@@ -228,67 +250,47 @@ public:
              const Commands::Flags commandFlags);
      ~Command();
  
@@ -15530,7 +15530,7 @@ index a555f8c..10a3738 100644
      static inline size_t get_counter() {
        return s_cmdCounter;
      }
-@@ -298,7 +289,9 @@ public:
+@@ -298,7 +300,9 @@ public:
      }
  
      static inline void reset_counter() {
@@ -15541,7 +15541,7 @@ index a555f8c..10a3738 100644
      }
      
      static inline void print_data(std::string prefix, std::vector<Commands::D3D9Command>& commandList)       {
-@@ -328,6 +321,31 @@ public:
+@@ -328,6 +332,31 @@ public:
      }
  
    private:
@@ -15573,12 +15573,18 @@ index a555f8c..10a3738 100644
      const Commands::D3D9Command m_command;
      const uint32_t m_handle;
      const Commands::Flags m_commandFlags;
-@@ -337,12 +355,20 @@ private:
+@@ -337,12 +366,26 @@ private:
    Bridge() = delete;
    Bridge(const Bridge&) = delete;
    Bridge(const Bridge&&) = delete;
 +  static void startRead(const Header& header);
-+  static void ensureRead(uint64_t words, bool blob);
++  static void startPendingRead();
++  static inline void ensureRead(uint64_t words, bool blob) {
++    if (!s_readActive) { startPendingRead(); }
++    const auto r = getReaderChannel().data->reservation(words, blob);
++    if (!r.valid || r.end > s_readEnd) { failRead(); }
++  }
++  static bridge_util::Result waitDataQueue(uint64_t end, uint64_t current);
 +  [[noreturn]] static void failRead();
 +  static inline bool s_readActive = false;
 +  static inline uint64_t s_readEnd = 0;
