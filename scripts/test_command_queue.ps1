@@ -26,15 +26,22 @@ if ($CompileArchitecture) {
     & cl.exe @testArgs
     if ($LASTEXITCODE -ne 0) { throw "Queue test compilation failed for $CompileArchitecture" }
     if ($Benchmark) {
-      # The two benchmark headers differ only by the successful-peek SC fence.
+      # Restore the SC fence on every successful peek, including the ready fast path.
       $productionHeader = [IO.File]::ReadAllText((Join-Path $source 'bridge/src/util/util_atomiccircularqueue.h')).Replace("`r`n", "`n")
       $needle = "          result = Result::Success;`n          return m_data[currentWrite];"
+      $readyNeedle = "        result = Result::Success;`n        return m_data[readyWrite];"
+      $readyMatches = [regex]::Matches($productionHeader, [regex]::Escape($readyNeedle)).Count
       if ([regex]::Matches($productionHeader, [regex]::Escape($needle)).Count -ne 1 -or
+          $readyMatches -gt 1 -or ($productionHeader.Contains('readyWrite') -and $readyMatches -ne 1) -or
           $productionHeader.Contains('std::atomic_thread_fence(std::memory_order_seq_cst);')) {
         throw 'Expected the production peek implementation with no standalone SC fence'
       }
       $oldHeader = $productionHeader.Replace($needle,
         "          std::atomic_thread_fence(std::memory_order_seq_cst);`n$needle")
+      if ($readyMatches -eq 1) {
+        $oldHeader = $oldHeader.Replace($readyNeedle,
+          "        std::atomic_thread_fence(std::memory_order_seq_cst);`n$readyNeedle")
+      }
       foreach ($variant in @('current', 'old-fence')) {
         $includeDir = Join-Path $testDir "include-$variant"
         New-Item -ItemType Directory -Force $includeDir | Out-Null
