@@ -9,6 +9,7 @@ on:
       - codex/l4d2-demo
       - codex/development-1.1.2-dev.1
       - main
+      - codex/ipc-data-queue-correctness
   workflow_dispatch:
     inputs:
       build_l4n:
@@ -66,6 +67,12 @@ jobs:
           ./scripts/test_runtime_observation.ps1
           python -m unittest discover -s tests -p test_runtime_separation.py
           if ($LASTEXITCODE -ne 0) { throw 'Runtime separation contract tests failed' }
+      - name: Test IPC layouts, failure ownership and native cross-process transport
+        shell: powershell
+        run: |
+          ./scripts/test_data_ring_contract.ps1
+          ./scripts/test_ipc_api_failure.ps1
+          ./scripts/test_ipc_transport.ps1
       - name: Build optional L4N v2 HUD control plugin
         if: github.event_name != 'workflow_dispatch' || inputs.build_l4n
         shell: powershell
