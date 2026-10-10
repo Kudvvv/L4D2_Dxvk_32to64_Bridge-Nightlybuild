@@ -7,7 +7,7 @@ from generate_buffer_contract_test import method,ROOT
 src=ROOT/'.deps/dxvk-remix/bridge/src'
 header=(src/'util/util_bridgecommand.h').read_text(encoding='utf-8')
 cpp=(src/'client/d3d9_device.cpp').read_text(encoding='utf-8')
-macros=header[header.index('#define WAIT_FOR_SERVER_RESPONSE'):header.index('using namespace bridge_util;')]
+macros=header[header.index('#define WAIT_FOR_SERVER_RESPONSE'):header.index('struct BridgeReadFailure')]
 parts=['#include "ipc_api_failure_support.h"\n',macros]
 for name in ('CreateVertexBuffer','CreateIndexBuffer','CreateVertexShader','CreatePixelShader','CreateStateBlock','BeginStateBlock','EndStateBlock'):
     start,end=method(cpp,'HRESULT Direct3DDevice9Ex_LSS<EnableSync>::'+name+'(')
