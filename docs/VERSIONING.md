@@ -4,7 +4,7 @@
 
 提交钩子默认按小改动递增。重大更新时，在提交前手动将 VERSION 改为下一次版本号（例如 1.1）并暂存；钩子会保留该版本，不再额外递增。由 Codex 维护时根据实际变更判断，不以文件数量或提交消息关键词自动推断重大程度。定时构建与重跑不属于提交，不递增项目版本。
 
-维护者首次克隆后执行 `git config core.hooksPath .githooks`，并确保 `python` 可用。也可通过 `git config bridge.pythonPath <Python可执行文件绝对路径>` 指定解释器。Git 不会将 hooks 配置自动传播给其他克隆，网页提交也不会执行本地 hook；这些提交必须自行更新 VERSION。不要使用 `--no-verify` 绕过版本递增。
+维护者首次克隆后执行 `git config core.hooksPath .githooks`，并确保 `python` 可用。也可通过 `git config bridge.pythonPath <Python可执行文件绝对路径>` 指定解释器。Git 不会将 hooks 配置自动传播给其他克隆，网页提交也不会执行本地 hook；这些提交必须自行更新 VERSION。默认不要绕过版本递增。维护者明确要求同版本只精简并替换安装包时，可为该次提交跳过仅负责版本递增的钩子，保持 VERSION 与原二进制一致；必须验证运行文件原字节不变，并在原 Release 记录新的打包提交、原构建提交和附件校验值。
 
 提交钩子只更新并暂存 VERSION，不暂存其他文件；VERSION 有未暂存内容时会阻止提交。版本更新进入同一个提交，不额外生成版本提交。提交失败后重试不会再次递增。
 

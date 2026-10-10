@@ -1,4 +1,5 @@
 """The full ZIP carries only the exact engine repair and selected runtime files."""
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -21,7 +22,7 @@ class Packaging(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.source = self.root / "source"
         self.source.mkdir()
-        for name in runtime.REQUIRED + runtime.SUPPORT_FILES + ("UPSTREAM.json", "licenses/Bridge-MIT.txt"):
+        for name in runtime.REQUIRED + runtime.NOTICE_INPUTS + ("UPSTREAM.json",):
             path = self.source / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"fixture")
@@ -31,35 +32,50 @@ class Packaging(unittest.TestCase):
             destination = self.source / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
+        (self.source / "VERSION").write_bytes(b"1.1.4\n")
+        manifest = {name: hashlib.sha256((self.source / name).read_bytes()).hexdigest()
+                    for name in runtime.REQUIRED if name.endswith((".dll", ".exe"))}
+        (self.source / "SHA256.json").write_text(json.dumps(manifest), encoding="utf-8")
         self.output = self.root / "full.zip"
 
-    def test_full_package_contains_paired_runtime_and_exact_engine(self):
+    def test_full_package_contains_only_audited_runtime_and_two_text_documents(self):
         for name in ("bin/.l4d2bridge/ReShade.dll", "bin/.l4d2bridge/resource-retention.db",
-                     "bin/other-engine.dll", "player.dmp", "private.log"):
-            (self.source / name).write_bytes(b"must not ship")
+                     "bin/other-engine.dll", "player.dmp", "private.log", "docs/guide.md",
+                     "config/example.conf", "scripts/tool.py", "config.json", "licenses/private.txt"):
+            path = self.source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"must not ship")
         runtime.runtime_archive(self.source, self.output)
         with zipfile.ZipFile(self.output) as archive:
             names = set(archive.namelist())
-            self.assertTrue(set(runtime.REQUIRED).issubset(names))
-            self.assertIn("UPSTREAM.json", names)
-            self.assertFalse(any(name.startswith("tools/") for name in names))
-            for name, data in self.engine_files.items():
+            l4n_runtime = runtime.select_l4n_runtime(self.l4n_files)
+            expected = set(runtime.REQUIRED) | set(l4n_runtime) | {
+                "bin/studiorender.dll", "README.txt", "THIRD-PARTY-NOTICES.txt"}
+            self.assertEqual(names, expected)
+            self.assertEqual(len(names), 63)
+            for name in runtime.REQUIRED:
+                self.assertEqual(archive.read(name), (self.source / name).read_bytes())
+            self.assertEqual(archive.read("bin/studiorender.dll"), self.engine_files["bin/studiorender.dll"])
+            for name, data in l4n_runtime.items():
                 self.assertEqual(archive.read(name), data)
-            for name, data in self.l4n_files.items():
-                self.assertEqual(archive.read(name), data)
-            self.assertEqual({name for name in names if name.endswith(".dll")},
-                             {"bin/d3d9.dll", "bin/.l4d2bridge/d3d9vk_x64.dll", "bin/.l4d2bridge/d3d9vk_x86.dll",
-                              "optional/L4N/L4D2BridgePlugin.dll", "bin/studiorender.dll",
-                              "bin/left4neko.dll", "left4dead2/bin/game_shader_generic_neko.dll"})
-            for name in ("bin/dxvk_d3d9.dll", "d3d9.dll", "bin/.l4d2bridge/ReShade.dll",
-                         "bin/.l4d2bridge/resource-retention.db", "bin/other-engine.dll", "player.dmp", "private.log"):
-                self.assertNotIn(name, names)
+            self.assertIn("left4dead2/neko/server_name_filter_template.txt", names)
+            self.assertIn("left4dead2/bin/game_shader_generic_neko", names)
+            self.assertFalse(any(name.endswith((".json", ".md", ".py", ".ps1", ".bat", ".7z")) for name in names))
+            self.assertFalse(any(name.startswith(("scripts/", "docs/", "config/", "licenses/", "bin/neko/")) for name in names))
+            self.assertNotIn("readme_l4n.txt", names)
+            notices = archive.read("THIRD-PARTY-NOTICES.txt")
+            for name in runtime.NOTICE_INPUTS:
+                self.assertIn((self.source / name).read_bytes(), notices)
+            self.assertNotIn(b"must not ship", notices)
             guide = archive.read("README.txt").decode("utf-8")
-            self.assertLess(guide.index("先从临时目录移除"), guide.index("然后将临时目录内容合并"))
+            self.assertIn("v1.1.4", guide)
             self.assertIn("无需运行修复工具", guide)
             self.assertIn("原始备份", guide)
             self.assertIn("Starfelll", guide)
-            self.assertNotIn("update 包", guide)
+            self.assertIn(engine.ORIGINAL_SHA256, guide)
+            self.assertIn(engine.PATCHED_SHA256, guide)
+            self.assertNotIn("ENGINE-PATCH.json", guide)
+            self.assertNotIn("L4N-PAYLOAD.json", guide)
         before = self.output.read_bytes()
         with self.assertRaises(FileExistsError):
             runtime.runtime_archive(self.source, self.output)
@@ -121,7 +137,27 @@ class Packaging(unittest.TestCase):
             self.assertEqual(archive.read("left4dead2.exe"), expected)
             for name in ("logs.7z", "L4N_v2.51.0.7z", "crash_dumps/player.dmp"):
                 self.assertNotIn(name, archive.namelist())
-            self.assertEqual(archive.read("bin/neko/other_tools.7z"), self.l4n_files["bin/neko/other_tools.7z"])
+            self.assertNotIn("bin/neko/other_tools.7z", archive.namelist())
+
+    def test_excluded_source_developer_tools_still_require_valid_provenance(self):
+        path = self.source / "bin/neko/other_tools.7z"
+        path.write_bytes(b"unverified source archive")
+        with self.assertRaisesRegex(ValueError, "differs"):
+            runtime.runtime_archive(self.source, self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_binary_receipt_or_required_license_failure_never_creates_output(self):
+        binary = self.source / "bin/.l4d2bridge/L4D2Bridge64.exe"
+        original = binary.read_bytes()
+        binary.write_bytes(b"unverified replacement host")
+        with self.assertRaisesRegex(ValueError, "source package receipt"):
+            runtime.runtime_archive(self.source, self.output)
+        self.assertFalse(self.output.exists())
+        binary.write_bytes(original)
+        (self.source / "licenses/DXVK-GPLALL-LICENSE.txt").unlink()
+        with self.assertRaises(FileNotFoundError):
+            runtime.runtime_archive(self.source, self.output)
+        self.assertFalse(self.output.exists())
 
     def test_competing_output_is_preserved(self):
         original_archive = runtime.archive

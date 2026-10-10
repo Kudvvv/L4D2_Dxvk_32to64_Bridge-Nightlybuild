@@ -51,9 +51,9 @@ L4D2 与 Steam 属于 Valve，游戏及平台不包含在本项目的授权范�
 ## Valve 游戏引擎与 ThinFlex 修复
 
 - 完整包中的 `bin/studiorender.dll` 来自维护者本机的匹配 L4D2 游戏文件，按用户要求应用限定 ThinFlex 缓存修复；原引擎代码及版权归 Valve。
-- 原版 SHA-256：`3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85`；修复版：`03964dedcf8b7f4ebde24cd3d0738873d37c075a7a9b313dad001bb937f9d1b6`。包内 `ENGINE-PATCH.json` 记录具体改动，修改后原数字签名失效。
+- 原版 SHA-256：`3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85`；修复版：`03964dedcf8b7f4ebde24cd3d0738873d37c075a7a9b313dad001bb937f9d1b6`。仓库 `runtime/engine/studiorender.manifest.json` 记录具体改动，修改后原数字签名失效。
 - 根目录 MIT 许可只覆盖本项目相应独立实现，不为 Valve 引擎 DLL 改变许可。Valve 公开 SDK 在分析中仅用于常量参考，不构成对整个游戏 DLL 的 MIT 授权说明。
-- 归属文字随包保留于 [licenses/Valve-engine-NOTICE.txt](licenses/Valve-engine-NOTICE.txt)。玩家私有日志与转储不随包分发。
+- [引擎归属文字](licenses/Valve-engine-NOTICE.txt) 合并保留于包内 `THIRD-PARTY-NOTICES.txt`。玩家私有日志与转储不随包分发。
 
 ## DXVK-GPLALL 后端变体
 
@@ -73,10 +73,10 @@ L4D2 与 Steam 属于 Valve，游戏及平台不包含在本项目的授权范�
 ## L4N / Left4Neko 2.51.0
 
 - 原作者：**Starfelll（原文件署名 @Starfelll）**。感谢原作者提供的 L4N 启动器、模块、着色器与工具；它们不是本项目或 Codex 的原创代码。
-- 来源为维护者提供的原始 `L4N_v2.51.0.7z`，SHA-256 为 `5a530a24ee0e8a3014ab99df35e22279e410bed1a1f4cca1a08c2eb058eb0d4c`。保留原包 75 个文件，原字节与署名不变；仅按用户要求省略参考 `config_template.vdf`。
+- 来源为维护者提供的原始 `L4N_v2.51.0.7z`，SHA-256 为 `5a530a24ee0e8a3014ab99df35e22279e410bed1a1f4cca1a08c2eb058eb0d4c`。源码校验集合保留原包 75 个文件，原字节与署名不变；玩家包只取运行所需文件，仅按用户要求省略参考 `config_template.vdf`。
 - 另附维护者整合目录中的 `dxvk.conf`、`left4dead2/neko/config.vdf` 和 `neko_floattoscreen_ps20b.vcs`，明确区分为用户预设，不冒充 L4N 原版默认配置。
-- 原 `readme_l4n.txt`、原组件声明及 [L4N-NOTICE](licenses/L4N-NOTICE.txt) 随包保留。根 MIT 许可不覆盖 L4N；组合打包不转移作者归属，也不表示原作者认可本构建。
-- 来源与逐文件清单见 [整合包说明](docs/L4N-BUNDLE.md) 和 `runtime/l4n/manifest.json`（发布包内名为 `L4N-PAYLOAD.json`）。
+- 原 `readme_l4n.txt`、原组件声明及 [L4N-NOTICE](licenses/L4N-NOTICE.txt) 的原文合并保留于包内 `THIRD-PARTY-NOTICES.txt`。根 MIT 许可不覆盖 L4N；组合打包不转移作者归属，也不表示原作者认可本构建。
+- 来源与逐文件清单见 [整合包说明](docs/L4N-BUNDLE.md) 和 `runtime/l4n/manifest.json`（仅用于构建校验，不放入玩家 ZIP）。
 
 ## 可选 L4N v2 控制插件 SDK
 

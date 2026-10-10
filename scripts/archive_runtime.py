@@ -1,80 +1,113 @@
-"""Publish only runtime files, license notices and a short installation guide."""
+"""Publish only validated game runtime files and two concise text documents."""
 import argparse
+import hashlib
+import json
 from pathlib import Path
+import re
 import shutil
 import tempfile
 from archive_release import archive
-from engine_payload import staged_engine_files
+from engine_payload import (staged_engine_files, read_regular, ORIGINAL_SHA256,
+                            PATCHED_SHA256)
 from l4n_payload import staged_l4n_files
 
 REQUIRED = ("bin/d3d9.dll", "bin/.l4d2bridge/L4D2Bridge64.exe",
             "bin/.l4d2bridge/L4D2Bridge32.exe", "bin/.l4d2bridge/d3d9vk_x86.dll",
             "optional/L4N/L4D2BridgePlugin.dll",
-            "bin/.l4d2bridge/d3d9vk_x64.dll", "bin/.l4d2bridge/bridge.conf",
-            "LICENSE", "THIRD_PARTY.md")
-SUPPORT_FILES = (
-    "BACKEND.json", "BUILD-INFO.json", "SHA256.json",
-    "docs/L4N-BUNDLE.md", "docs/L4N-BRIDGE-CONTROLS.md", "docs/CONFIGURATION.md", "docs/API.md", "docs/ARCHITECTURE.md",
-    "docs/PAGEBLOCK-DROP-GC.md", "docs/LEARNED-RETENTION-EXPERIMENT.md", "docs/READBACK-RECOVERY-EXPERIMENT.md",
-    "docs/X86-HOST-COMPARISON.md", "docs/OVERLAY-INPUT-EXPERIMENT.md", "docs/STEAM-INPUT-INVESTIGATION.md",
-    "docs/API-WAIT-DIAGNOSTICS.md", "docs/NETWORK-COLOR-DIAGNOSTICS.md", "docs/DATA-TRACKING.md",
-    "docs/MEMORY-DIAGNOSTICS.md", "docs/HOST-MEMORY-DIAGNOSTICS.md", "docs/RUNTIME-DIAGNOSTICS-SEPARATION.md",
-    "config/X64-HOST.conf", "config/X86-HOST.conf", "config/OVERLAY-INPUT.conf",
-    "config/STEAM-INPUT-DIAGNOSTICS.conf", "config/API-WAIT-DIAGNOSTICS.conf",
-    "config/NETWORK-COLOR-DIAGNOSTICS.conf", "config/DATA-TRACKING.conf", "config/PAGEBLOCK-DROP.conf",
-    "scripts/analyze_api_wait.py", "scripts/analyze_color_diagnostics.py", "scripts/analyze_data_diagnostics.py",
-    "scripts/install_color_diagnostics.ps1")
+            "bin/.l4d2bridge/d3d9vk_x64.dll", "bin/.l4d2bridge/bridge.conf")
+NOTICE_INPUTS = ("LICENSE", "THIRD_PARTY.md", "licenses/Bridge-MIT.txt",
+                "licenses/Bridge-third-party.txt", "licenses/DXVK-LICENSE.txt",
+                "licenses/DXVK-GPLALL-LICENSE.txt", "licenses/L4N-NOTICE.txt",
+                "licenses/Valve-engine-NOTICE.txt", "readme_l4n.txt")
+L4N_RUNTIME_FIXED = frozenset((
+    "left4dead2.exe", "dxvk.conf", "bin/left4neko.dll", "crash_dumps/crashpad_handler.exe",
+    "left4dead2/bin/game_shader_generic_neko", "left4dead2/bin/game_shader_generic_neko.dll",
+    "left4dead2/neko/config.vdf", "left4dead2/neko/key_bind_acts.vdf",
+    "left4dead2/neko/l4ngui_english.vdf", "left4dead2/neko/l4ngui_schinese.vdf",
+    # L4N reads this fallback at runtime when server_name_filter.txt is absent.
+    "left4dead2/neko/server_name_filter_template.txt",
+    "reshade-shaders/Shaders/L4N/L4N_Util.fx"))
+L4N_RUNTIME_PREFIXES = ("left4dead2/materials/l4n/", "left4dead2/shaders/fxc/")
+L4N_RUNTIME_COUNT = 53
+L4N_RUNTIME_SIZE = 10015177
+
+
+def select_l4n_runtime(files):
+    selected = {name: data for name, data in files.items()
+                if name in L4N_RUNTIME_FIXED or name.startswith(L4N_RUNTIME_PREFIXES)}
+    if (not L4N_RUNTIME_FIXED.issubset(selected) or len(selected) != L4N_RUNTIME_COUNT
+            or sum(map(len, selected.values())) != L4N_RUNTIME_SIZE):
+        raise ValueError("L4N runtime selection differs from the audited distribution")
+    return selected
+
+
+def combined_notices(source, verified):
+    header = (
+        "L4D2 Bridge / DXVK-GPLALL / L4N / Valve engine notices\n"
+        "L4N original author: Starfelll (@Starfelll).\n\n"
+        "The documents below retain their original text. Referenced Markdown, JSON,\n"
+        "source and tool paths identify repository or original-distribution files;\n"
+        "those support files are not included in this runtime package.\n"
+        "Installation of this integration package follows README.txt. The original\n"
+        "L4N instructions below also describe standalone DXVK and developer tools.\n"
+        "Repository: https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild\n"
+    ).encode("utf-8")
+    sections = [header]
+    for name in NOTICE_INPUTS:
+        data = verified[name] if name in verified else read_regular(source / name)
+        if not data.strip():
+            raise ValueError(f"Missing required notice text: {name}")
+        # Keep each original license/readme byte sequence, including its line endings.
+        sections.extend((f"\n\n===== {name} =====\n\n".encode("utf-8"), data))
+    return b"".join(sections)
+
 
 def runtime_archive(source, output):
     source, output = Path(source), Path(output)
-    required = REQUIRED + SUPPORT_FILES + ("UPSTREAM.json",)
     if output.exists():
         raise FileExistsError(f"Archive already exists: {output}")
-    for name in required:
+    for name in REQUIRED:
         if not (source / name).is_file():
             raise ValueError(f"Missing runtime package file: {name}")
-    licenses = sorted((source / "licenses").glob("*.txt"))
-    if not licenses:
-        raise ValueError("Missing third-party licenses")
+    # Full source records remain mandatory, even for files excluded from the ZIP.
     engine_files = staged_engine_files(source)
     l4n_files = staged_l4n_files(source)
+    bridge_files = {name: read_regular(source / name) for name in REQUIRED}
+    verified = {**engine_files, **l4n_files, **bridge_files}
+    hashes = json.loads(read_regular(source / "SHA256.json"))
+    version = read_regular(source / "VERSION").decode("utf-8").strip()
+    if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", version):
+        raise ValueError("Invalid source package version")
+    # bridge.conf was historically outside the binary manifest. Every shipped
+    # Client/Host/backend/plugin must still match the full package's receipt.
+    for name in REQUIRED:
+        if name.endswith((".dll", ".exe")):
+            if hashes.get(name) != hashlib.sha256(verified[name]).hexdigest():
+                raise ValueError(f"Runtime binary differs from the source package receipt: {name}")
+    notices = combined_notices(source, verified)
+    files = {**bridge_files, "bin/studiorender.dll": engine_files["bin/studiorender.dll"],
+             **select_l4n_runtime(l4n_files)}
+    files["THIRD-PARTY-NOTICES.txt"] = notices
+    files["README.txt"] = (
+        f"L4D2 Bridge v{version} runtime package\n\n"
+        "已包含 DXVK（GPLALL）、L4N 和桥接工具；退出游戏后备份原文件，将本包解压覆盖到游戏根目录即可安装。请勿与其他类似整合项目混装。\n"
+        "移除 -vulkan 启动参数，备份移走游戏根目录的 d3d9.dll；保留本包 bin/d3d9.dll 和 bin/.l4d2bridge 目录。\n"
+        "升级时先解压到临时目录，保留原有 dxvk.conf、bin/.l4d2bridge/bridge.conf、left4dead2/neko/config.vdf、自定义后端、ReShade 和 retention DB，再合并覆盖。客户端与两个 Host 一并更新、回退。\n"
+        "L4N 原作者：Starfelll（@Starfelll）。可选控制插件 optional/L4N/L4D2BridgePlugin.dll 需要时复制到 bin/neko/plugins/。\n"
+        "已含 ThinFlex 修复，无需运行修复工具。覆盖前备份原始 bin/studiorender.dll；已修复玩家保留最初原始备份。只有下列原版或修复版身份匹配时才替换，未知游戏版本请从临时目录移除该 DLL。回退时恢复对应原版备份。\n"
+        f"ThinFlex 原版 SHA-256：{ORIGINAL_SHA256}\n"
+        f"ThinFlex 修复版 SHA-256：{PATCHED_SHA256}\n\n"
+        "完整文档、配置说明与来源校验：\n"
+        "https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild\n"
+        "第三方许可及原作者说明见 THIRD-PARTY-NOTICES.txt。\n"
+    ).encode("utf-8")
     with tempfile.TemporaryDirectory() as temporary:
-        stage=Path(temporary) / "runtime"
+        stage = Path(temporary) / "runtime"
         stage.mkdir()
-        for name in required + tuple(p.relative_to(source).as_posix() for p in licenses):
-            destination=stage / name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source / name, destination)
-        if (source / "VERSION").is_file():
-            shutil.copy2(source / "VERSION", stage / "VERSION")
-        for name, data in {**engine_files, **l4n_files}.items():
+        for name, data in files.items():
             destination = stage / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
-        instruction = (
-            "本包已包含 DXVK（GPLALL）、L4N 和完整桥接工具，无需另找同类包；退出游戏后解压覆盖到游戏根目录即可安装。请勿与其他类似整合项目混装。\n"
-            "安装前移除 -vulkan 启动参数，备份移走游戏根目录的 d3d9.dll；请保留本包的 bin/d3d9.dll，它是桥接客户端。\n"
-            "首次安装前备份原文件；升级已有安装时先解压到临时目录，按下述说明保留个人配置，再合并覆盖。\n"
-            "本包同时包含 Starfelll（@Starfelll）制作的 L4N 2.51.0、作者原始 readme_l4n.txt 及用户提供的 dxvk.conf / L4N 预设。包含实际 config.vdf，不附 config_template.vdf。来源和逐文件校验见 L4N-PAYLOAD.json 与 docs/L4N-BUNDLE.md。\n"
-            "L4N 原说明中的普通 DXVK 安装路径不适用于本整合包，请以此处的 Bridge 安装路径为准。\n"
-            "本包已含 ThinFlex 修复后的 bin/studiorender.dll，无需运行修复工具；适用版本及原文件 SHA-256 见 ENGINE-PATCH.json。\n"
-            "覆盖前单独备份原始 bin/studiorender.dll。已修复的用户保留原始备份，不要把它替换成修复版；游戏更新后文件版本不同则先跳过该 DLL。\n"
-            "升级已有安装时，先从临时目录移除 bin/.l4d2bridge/bridge.conf、dxvk.conf 和 left4dead2/neko/config.vdf，以保留自己的设置；使用自定义后端的用户同时移除临时目录中的 bin/.l4d2bridge/d3d9vk_x64.dll 和 d3d9vk_x86.dll。\n"
-            "然后将临时目录内容合并到游戏根目录，客户端位于 bin/d3d9.dll，保留 bin/.l4d2bridge 结构。\n"
-            "首次安装可保留包内配置和 GPLALL 后端；L4N config.vdf 是用户提供的整合预设。已有 dxvk.conf、bridge.conf、L4N config.vdf、ReShade 和 retention DB 应予保留。\n"
-            "客户端和 x86/x64 两个 Host 必须配对更新，故障回退时也同时恢复，不要混用。默认使用 x64 Host；切换说明见 docs/X86-HOST-COMPARISON.md。\n"
-            "可选 L4N 控制插件位于 optional/L4N/L4D2BridgePlugin.dll，需要时复制到游戏 bin/neko/plugins/；普通 Bridge 不依赖它。详见 docs/L4N-BRIDGE-CONTROLS.md。\n"
-            "附带 config/ 片段只用于手动启用相关功能，不会自动覆盖配置。诊断分析脚本位于 scripts/；普通安装不运行 install_color_diagnostics.ps1。\n"
-            "回退 ThinFlex 时恢复原始 studiorender.dll，相关来源说明见 licenses/Valve-engine-NOTICE.txt。\n")
-        (stage / "README.txt").write_text(
-            "L4D2 Bridge Nightly\n\n" + instruction +
-            "默认移除 -vulkan 启动项。需要 -vulkan 时，自行把客户端改名为 dxvk_d3d9.dll ，文件仍留在 bin。\n"
-            "从旧版迁移前备份 bin/dxvk_d3d9.dll；已有bin/d3d9.dll 也需先备份。\n"
-            "卸载：移除本包安装的文件，并恢复备份。\n\n"
-            "版本、上游提交及构建记录：\n"
-            "https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases\n"
-            "许可证与第三方来源见 LICENSE、THIRD_PARTY.md 和 licenses 文件夹。\n",
-            encoding="utf-8")
         temporary_zip = Path(temporary) / "runtime.zip"
         archive(stage, temporary_zip)
         created_output = False
@@ -88,9 +121,10 @@ def runtime_archive(source, output):
                 output.unlink(missing_ok=True)
             raise
 
+
 if __name__ == "__main__":
-    parser=argparse.ArgumentParser()
-    parser.add_argument("source",type=Path)
-    parser.add_argument("output",type=Path)
-    args=parser.parse_args()
-    runtime_archive(args.source.resolve(),args.output.resolve())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source", type=Path)
+    parser.add_argument("output", type=Path)
+    args = parser.parse_args()
+    runtime_archive(args.source.resolve(), args.output.resolve())

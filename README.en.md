@@ -8,7 +8,7 @@
 
 ## Download and installation — start here
 
-**[Download the full package from Releases](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**. Each release has one `l4d2-bridge-*.zip` and its `.sha256` checksum. It includes **L4N 2.51.0, DXVK-GPLALL, Bridge, `dxvk.conf`, L4N's `left4dead2/neko/config.vdf`**, and the repaired `bin/studiorender.dll`. No patch tool or Python installation is needed. The layout follows the maintainer's supplied bundle; `config_template.vdf` is omitted. See [bundle provenance](docs/L4N-BUNDLE.md).
+**[Download the full package from Releases](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**. Each release has one `l4d2-bridge-*.zip` and its `.sha256` checksum. It includes **L4N 2.51.0, DXVK-GPLALL, Bridge, `dxvk.conf`, L4N's `left4dead2/neko/config.vdf`**, and the repaired `bin/studiorender.dll`. No patch tool or Python installation is needed. The layout follows the maintainer's supplied bundle; `config_template.vdf` is omitted. See [bundle provenance](docs/L4N-BUNDLE.md). The player ZIP contains runtime components, active configuration, a short `README.txt`, and one combined `THIRD-PARTY-NOTICES.txt`. Developer documentation, JSON manifests, diagnostic scripts, the SDK and offline Mod authoring tools remain in the repository.
 
 1. **Exit the game and Bridge Host, then back up existing files.** Save the original `left4dead2.exe`, L4N files, client, Host, `dxvk.conf`, `left4dead2/neko/config.vdf`, Bridge configuration and `bin/studiorender.dll`. Extract the ZIP into a temporary directory. If ThinFlex is already installed, keep the initial original-DLL backup. If another similar project is installed, uninstall it or restore its original files before installing this package.
 2. **Preserve configuration before upgrading:** remove any configuration you want to retain (`dxvk.conf`, `left4dead2/neko/config.vdf`, `bin/.l4d2bridge/bridge.conf`) from the temporary extraction directory before copying. If you customized your backend, also remove the packaged `bin/.l4d2bridge/d3d9vk_x64.dll` and `d3d9vk_x86.dll` there. Skip this step on first installation. Back up personal changes to L4N shaders and other files with matching paths, as those will also be replaced.
@@ -20,13 +20,13 @@
 | Supported original | `3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85` |
 | Packaged repair | `03964dedcf8b7f4ebde24cd3d0738873d37c075a7a9b313dad001bb937f9d1b6` |
 
-The user has reported a successful ThinFlex retest, limited to this exact version. Recheck after game updates: copying files does not automatically check the installed version. `ENGINE-PATCH.json` records the changes, and `licenses/Valve-engine-NOTICE.txt` preserves attribution. The modified DLL's original digital signature is invalid. See the [installation and restoration guide](docs/THINFLEX-TEST-README.txt).
+The user has reported a successful ThinFlex retest, limited to this exact version. Recheck after game updates: copying files does not automatically check the installed version. The repository [engine manifest](runtime/engine/studiorender.manifest.json) records the changes; the packaged `THIRD-PARTY-NOTICES.txt` preserves attribution. The modified DLL's original digital signature is invalid. See the [installation and restoration guide](docs/THINFLEX-TEST-README.txt).
 
 To use `-vulkan`, rename the client to `dxvk_d3d9.dll` within the game `bin`. When switching to the default loading path, back up the old `bin/dxvk_d3d9.dll` and remove `-vulkan`. Both paths share `bin/.l4d2bridge`.
 
 The full package includes both x64/x86 Hosts and matching GPLALL backends. **x64 remains the default.** To switch, set `client.testX86Server=False` for x64 or `True` for x86, retain `forceX64Server=True`, and restart the entire game.
 
-L4N itself is installed with the package. For the optional Bridge settings menu, copy `optional/L4N/L4D2BridgePlugin.dll` from this same ZIP to the game's `bin/neko/plugins/` and restart. No separate plugin download is needed. See the [L4N guide](docs/L4N-BRIDGE-CONTROLS.md). Original documentation and author attribution remain in `readme_l4n.txt`; see also the [Starfelll notice](licenses/L4N-NOTICE.txt).
+L4N itself is installed with the package. For the optional Bridge settings menu, copy `optional/L4N/L4D2BridgePlugin.dll` from this same ZIP to the game's `bin/neko/plugins/` and restart. No separate plugin download is needed. See the [L4N guide](docs/L4N-BRIDGE-CONTROLS.md). Original L4N documentation and author attribution are included in the combined `THIRD-PARTY-NOTICES.txt`; see also the [Starfelll notice](licenses/L4N-NOTICE.txt).
 
 Fresh installs use upstream's learned-aggressive retention policy and disable routine memory/crash/data diagnostics by default. Preserve your installed configuration when upgrading. See [configuration settings and costs](docs/CONFIGURATION.md).
 
@@ -60,7 +60,7 @@ Under **Actions → Build latest upstream Bridge → Run workflow**:
 - Enable `validation_only` to build, test and run A/B benchmarks, saving artifacts and skipping publication.
 - Enable `thinflex_test` to label a full upstream integration + ThinFlex test release (Pre-release, not Latest). Every build includes the fixed ThinFlex engine DLL in one full package; check the installed game version before copying it.
 
-Deduplication checks both upstream SHA and a fingerprint of build/package/test inputs. Versions use `nightly-YYYYMMDD-upstreamSHA-rRecipeDigest-bRunID.Attempt`. Dates use upstream commit UTC time. Rebuilds and reruns have separate versions, preserving old assets. Release notes and packaged `UPSTREAM.json` record full identities. Patch, compile or test failures prevent publication.
+Deduplication checks both upstream SHA and a fingerprint of build/package/test inputs. Versions use `nightly-YYYYMMDD-upstreamSHA-rRecipeDigest-bRunID.Attempt`. Dates use upstream commit UTC time. Rebuilds and reruns have separate versions, preserving old assets. Release notes record full identities. JSON manifests remain build-validation inputs and are excluded from the player ZIP. Patch, compile or test failures prevent publication.
 
 When reusing a local source checkout, the build script verifies the complete patch and index, rejecting additional source changes while preserving the checkout. Rerunning a failed publish job searches paginated release listings for the unpublished draft, verifies existing assets and uploads only missing files. Conflicting assets stop publication; existing files are never overwritten.
 

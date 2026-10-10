@@ -113,9 +113,9 @@ def publish():
     introduction = (
         f"L4D2 Bridge {title}\n\n"
         "**只提供一个完整 ZIP：已包含 DXVK（GPLALL）、L4N 2.51.0、完整桥接工具和已修复的 `bin/studiorender.dll`。备份后解压覆盖到游戏根目录即可安装，请勿与其他类似整合项目混装。核对游戏 DLL 版本并备份后，复制文件即可应用 ThinFlex 修复，无需运行补丁工具或安装 Python。**\n\n"
-        "- L4N / Left4Neko 原作者：**Starfelll**。作者的启动器、模块、着色器、素材、转换工具和 `readme_l4n.txt` 原样保留；另含用户提供的 `dxvk.conf`、L4N `config.vdf` 及配套 shader 预设，不能将这些预设当作作者原始默认值。逐文件来源及 SHA-256 见 `L4N-PAYLOAD.json`，归属说明见 `licenses/L4N-NOTICE.txt`。\n"
+        "- L4N / Left4Neko 原作者：**Starfelll**。运行所需的启动器、模块、着色器和素材原样保留；开发 SDK 与离线转换工具不随安装包提供。作者原始说明原文合并到 `THIRD-PARTY-NOTICES.txt`；另含用户提供的 `dxvk.conf`、L4N `config.vdf` 及配套 shader 预设，不能将这些预设当作作者原始默认值。逐文件来源及 SHA-256 保留在仓库 `runtime/l4n/manifest.json`，包内归属见 `THIRD-PARTY-NOTICES.txt`。\n"
         f"- 完整合并 L4D2 原项目 **{original['version']}**（`{original['commit']}`），包括 PageBlock/retention/readback、ReShade Presenter、Steam 输入支持、诊断体系、x86 Host 和 L4N 控制插件。\n"
-        f"- 合并范围及本分支保留项见[更新记录](https://github.com/{repo}/blob/{recipe}/docs/ORIGINAL-PROJECT-UPDATES.md)。默认继续使用 GPLALL 后端和 x64 Host；可选功能按包内文档启用。\n"
+        f"- 合并范围及本分支保留项见[更新记录](https://github.com/{repo}/blob/{recipe}/docs/ORIGINAL-PROJECT-UPDATES.md)。默认继续使用 GPLALL 后端和 x64 Host；可选功能按仓库文档启用。\n"
         "- 同一完整包包含配套 x86 Client、x86/x64 Host、两种架构的 GPLALL 后端，以及 `optional/L4N/L4D2BridgePlugin.dll`。需要 L4N 控制菜单时将插件复制到 `bin/neko/plugins/`，普通安装不依赖该插件。\n"
         f"- 本次完整合并版本尚未进行游戏 FPS 对照，不宣称性能提升。此前[性能报告](https://github.com/{repo}/blob/{recipe}/docs/PERFORMANCE-2026-10-10.md)对应旧版与固定回放，性能测试未安装 ThinFlex，不能当作本次完整合并后的性能结果。\n"
         f"- 玩家包不包含补丁工具；先阅读包内 `README.txt`，详细安装与回退见[说明](https://github.com/{repo}/blob/{recipe}/docs/THINFLEX-TEST-README.txt)。升级前关闭游戏及 Host，备份原文件，保留已有配置及自定义后端。已打补丁的玩家须保留最初原版 DLL 备份，不能用修复文件覆盖它。\n"
@@ -126,7 +126,7 @@ def publish():
         "- ThinFlex 缓存从 10000 项扩为 65536 项，新增 2 MiB 缓存；保留原有表情计算。"
         "修改后的 DLL 原数字签名失效；回退前须核对原版备份及当前 DLL 身份，不能用旧备份覆盖游戏更新后的未知版本。\n"
         "- 2026-10-10 收到用户反馈：**v1.0.10 ThinFlex 修复有效**。本次保留相同补丁算法和 DLL 哈希；反馈未提供游玩时长及完整模型范围，不能据此确认所有场景的长期稳定性。\n"
-        "- 包内引擎 DLL 归属 Valve，不适用项目根目录 MIT 许可；公开 Source SDK 的常量参考不代表其许可覆盖整个游戏 DLL。见 `licenses/Valve-engine-NOTICE.txt` 与 `ENGINE-PATCH.json`。附件不包含玩家私有 dump。Bridge 偏色修复、GPLALL 后端和默认 x64 Host 保留。\n\n")
+        "- 包内引擎 DLL 归属 Valve，不适用项目根目录 MIT 许可；公开 Source SDK 的常量参考不代表其许可覆盖整个游戏 DLL。见包内 `THIRD-PARTY-NOTICES.txt` 与仓库 `runtime/engine/studiorender.manifest.json`。附件不包含玩家私有 dump。Bridge 偏色修复、GPLALL 后端和默认 x64 Host 保留。\n\n")
     channel = "thinflex-test" if experimental else "nightly"
     digest_label = "Experimental recipe digest" if experimental else "Recipe digest"
     notes = introduction + (
@@ -136,7 +136,7 @@ def publish():
         "包含 x86 客户端和配套 x86/x64 Host；编译与原生测试通过。游戏性能对照及 ThinFlex 用户反馈的范围见上述说明与报告。\n\n"
         "- 首次安装按包内说明合并到游戏目录。升级前备份，一并替换客户端和两种 Host，先从临时目录移除已有的 `dxvk.conf`、`bin/.l4d2bridge/bridge.conf` 和 `left4dead2/neko/config.vdf`，保留已调整的配置、后端、ReShade 和 DB。\n"
         "- 安装前移除 -vulkan，备份移走游戏根目录的 d3d9.dll；保留本包的 bin/d3d9.dll 桥接客户端。Host 位于 bin/.l4d2bridge。随包保留用户提供的 L4N config.vdf，不附 config_template.vdf。\n"
-        "- 完整 ZIP 包含 UPSTREAM.json、ENGINE-PATCH.json、L4N-PAYLOAD.json 及第三方归属说明；不收录私人日志、dump 或重复的 L4N 源包。附件另提供完整 ZIP 的 SHA-256；旧发布包不被覆盖。\n\n"
+        "- 完整 ZIP 仅含运行组件、实际配置、README.txt 和合并的 THIRD-PARTY-NOTICES.txt；不含 MD、JSON、开发 SDK、诊断脚本、离线 Mod 工具、私人日志或 dump。附件另提供完整 ZIP 的 SHA-256；旧发布包不被覆盖。\n\n"
         f"上游：[NVIDIA 提交](https://github.com/NVIDIAGameWorks/dxvk-remix/commit/{upstream})\n\n"
         f"本项目：[构建配置](https://github.com/{repo}/commit/{recipe}) · "
         f"[构建记录](https://github.com/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']})\n\n"

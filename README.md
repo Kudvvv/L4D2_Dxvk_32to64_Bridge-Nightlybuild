@@ -8,7 +8,7 @@
 
 ## 下载与安装（先看这里）
 
-**[前往 Releases 下载完整包](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**。每次发布只提供一个 `l4d2-bridge-*.zip`，另附 `.sha256` 校验文件。包内包含 **L4N 2.51.0、DXVK-GPLALL、Bridge、`dxvk.conf`、L4N 的 `left4dead2/neko/config.vdf`** 和修复后的 `bin/studiorender.dll`，无需运行补丁工具或安装 Python。按维护者提供的整合目录布局交付，未附 `config_template.vdf`；组件来源见 [整合包说明](docs/L4N-BUNDLE.md)。
+**[前往 Releases 下载完整包](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**。每次发布只提供一个 `l4d2-bridge-*.zip`，另附 `.sha256` 校验文件。包内包含 **L4N 2.51.0、DXVK-GPLALL、Bridge、`dxvk.conf`、L4N 的 `left4dead2/neko/config.vdf`** 和修复后的 `bin/studiorender.dll`，无需运行补丁工具或安装 Python。按维护者提供的整合目录布局交付，未附 `config_template.vdf`；组件来源见 [整合包说明](docs/L4N-BUNDLE.md)。安装包仅保留运行组件、实际配置、简短 `README.txt` 和合并后的 `THIRD-PARTY-NOTICES.txt`；开发文档、JSON 清单、诊断脚本、SDK 与离线 Mod 制作工具均留在仓库，不随安装包提供。
 
 1. **退出游戏和 Bridge Host，备份现有文件。** 备份原 `left4dead2.exe`、L4N 文件、客户端、Host、`dxvk.conf`、`left4dead2/neko/config.vdf`、Bridge 配置和 `bin/studiorender.dll`，将完整 ZIP 解压到临时目录。若已安装 ThinFlex 修复，继续保留最初的原始 DLL 备份，勿用修复版覆盖它。已装其他同类项目时，先按其说明卸载或恢复原文件，再安装本包。
 2. **已有用户先保留配置：** 从临时解压目录移除想保留的 `dxvk.conf`、`left4dead2/neko/config.vdf` 和 `bin/.l4d2bridge/bridge.conf`，再覆盖游戏目录。若自行修改过后端，同样从临时目录移除 `bin/.l4d2bridge/d3d9vk_x64.dll` 与 `d3d9vk_x86.dll`，避免覆盖。首次安装跳过此步；包内 L4N 附带的着色器等同路径文件也会覆盖，请备份个人修改。
@@ -20,15 +20,15 @@
 | 支持的原版 | `3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85` |
 | 包内修复版 | `03964dedcf8b7f4ebde24cd3d0738873d37c075a7a9b313dad001bb937f9d1b6` |
 
-ThinFlex 修复已收到用户复测有效反馈，仍限定于以上精确版本。游戏更新后重新核对；直接复制文件不会自动检查目标版本。包内 `ENGINE-PATCH.json` 记录改动，`licenses/Valve-engine-NOTICE.txt` 保留引擎归属；修改后的 DLL 原数字签名失效。详细安装和恢复步骤见 [ThinFlex 说明](docs/THINFLEX-TEST-README.txt)。
+ThinFlex 修复已收到用户复测有效反馈，仍限定于以上精确版本。游戏更新后重新核对；直接复制文件不会自动检查目标版本。仓库的 [引擎修复清单](runtime/engine/studiorender.manifest.json) 记录改动，包内 `THIRD-PARTY-NOTICES.txt` 保留引擎归属；修改后的 DLL 原数字签名失效。详细安装和恢复步骤见 [ThinFlex 说明](docs/THINFLEX-TEST-README.txt)。
 
 如需 `-vulkan`，把客户端 `d3d9.dll` 改名为 `dxvk_d3d9.dll`，文件仍留在游戏 `bin`。从旧版切换到默认加载方式时，先备份旧 `bin/dxvk_d3d9.dll` 并移除 `-vulkan`。两种方式共用 `bin/.l4d2bridge`。
 
 完整包同时包含 x64/x86 Host 与对应 GPLALL 后端，**默认仍为 x64**。切换 Host 可修改 `client.testX86Server`（`False` 为 x64，`True` 为 x86），保持 `forceX64Server=True`，退出整个游戏后重新启动。
 
-L4N 本体已随包安装。另需 Bridge 常用设置菜单时，把包内 `optional/L4N/L4D2BridgePlugin.dll` 复制到游戏 `bin/neko/plugins/` 并重启；该菜单插件保持可选。无需另下插件包，详见 [L4N 设置说明](docs/L4N-BRIDGE-CONTROLS.md)。L4N 原始说明与作者署名原样保留在 `readme_l4n.txt`，另见 [Starfelll 归属说明](licenses/L4N-NOTICE.txt)。
+L4N 本体已随包安装。另需 Bridge 常用设置菜单时，把包内 `optional/L4N/L4D2BridgePlugin.dll` 复制到游戏 `bin/neko/plugins/` 并重启；该菜单插件保持可选。无需另下插件包，详见 [L4N 设置说明](docs/L4N-BRIDGE-CONTROLS.md)。L4N 原始说明与作者署名原文收录于包内 `THIRD-PARTY-NOTICES.txt`，另见 [Starfelll 归属说明](licenses/L4N-NOTICE.txt)。
 
-新安装配置包含上游的 learned-aggressive 内存策略，并默认关闭日常 memory/crash/data 诊断；已有用户升级继续保留自己的配置，新功能的键与开销见 [配置说明](docs/CONFIGURATION.md)。
+新安装配置包含上游的 learned-aggressive 内存策略，并默认关闭日常 memory/crash/data 诊断；已有用户升级继续保留自己的配置，新功能的键与开销见仓库 [配置说明](docs/CONFIGURATION.md)。
 
 回退 Bridge 时同时恢复配对的客户端和 Host；回退 ThinFlex 时恢复本机保存的原始 `studiorender.dll`。卸载时移除本包安装的文件并恢复备份。
 
@@ -62,7 +62,7 @@ L4N 本体已随包安装。另需 Bridge 常用设置菜单时，把包内 `opt
 - 勾选 `validation_only` 仅构建、测试和运行 A/B 基准，保存结果供检查，跳过发布。
 - 手动勾选 `thinflex_test` 标记为完整上游同步与 ThinFlex 修复测试版（Pre-release，不设为 Latest）。所有构建均提供包含固定 ThinFlex 修复 DLL 的单一完整包；安装时先核对游戏版本。
 
-去重同时检查上游提交和构建输入指纹；补丁、后端配置、脚本或测试更新会触发新构建。版本名为 `nightly-YYYYMMDD-上游短SHA-r输入指纹-b运行ID.重试号`，日期采用上游提交日期（UTC）。强制重建和重新运行均产生独立版本；旧附件不覆盖。Release 说明及包内 `UPSTREAM.json` 记录完整提交、输入指纹和构建实例。补丁冲突、编译或测试失败时不发布。
+去重同时检查上游提交和构建输入指纹；补丁、后端配置、脚本或测试更新会触发新构建。版本名为 `nightly-YYYYMMDD-上游短SHA-r输入指纹-b运行ID.重试号`，日期采用上游提交日期（UTC）。强制重建和重新运行均产生独立版本；旧附件不覆盖。Release 说明记录完整提交、输入指纹和构建实例；JSON 清单只用于构建校验，不放入玩家安装包。补丁冲突、编译或测试失败时不发布。
 
 复用本地源码目录时，构建脚本核对完整补丁和暂存区，拒绝混入额外源码修改并保留现场。发布中断后重跑失败的发布作业，会分页查找尚未发布的草稿，校验已有附件的内容，只上传缺失附件；内容冲突时停止，已有附件不覆盖。
 
