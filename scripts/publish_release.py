@@ -112,7 +112,8 @@ def publish():
     original = json.loads((Path(__file__).resolve().parents[1] / "config/original-project.json").read_text(encoding="utf-8"))
     introduction = (
         f"L4D2 Bridge {title}\n\n"
-        "**只提供一个完整 ZIP：包含配套 Client/Host、固定 GPLALL 后端、默认配置和已修复的 `bin/studiorender.dll`。核对游戏 DLL 版本并备份后，复制文件即可应用 ThinFlex 修复，无需运行补丁工具或安装 Python。**\n\n"
+        "**只提供一个完整 ZIP：已包含 DXVK（GPLALL）、L4N 2.51.0、完整桥接工具和已修复的 `bin/studiorender.dll`。备份后解压覆盖到游戏根目录即可安装，请勿与其他类似整合项目混装。核对游戏 DLL 版本并备份后，复制文件即可应用 ThinFlex 修复，无需运行补丁工具或安装 Python。**\n\n"
+        "- L4N / Left4Neko 原作者：**Starfell**。作者的启动器、模块、着色器、素材、转换工具和 `readme_l4n.txt` 原样保留；另含用户提供的 `dxvk.conf`、L4N `config.vdf` 及配套 shader 预设，不能将这些预设当作作者原始默认值。逐文件来源及 SHA-256 见 `L4N-PAYLOAD.json`，归属说明见 `licenses/L4N-NOTICE.txt`。\n"
         f"- 完整合并 L4D2 原项目 **{original['version']}**（`{original['commit']}`），包括 PageBlock/retention/readback、ReShade Presenter、Steam 输入支持、诊断体系、x86 Host 和 L4N 控制插件。\n"
         f"- 合并范围及本分支保留项见[更新记录](https://github.com/{repo}/blob/{recipe}/docs/ORIGINAL-PROJECT-UPDATES.md)。默认继续使用 GPLALL 后端和 x64 Host；可选功能按包内文档启用。\n"
         "- 同一完整包包含配套 x86 Client、x86/x64 Host、两种架构的 GPLALL 后端，以及 `optional/L4N/L4D2BridgePlugin.dll`。需要 L4N 控制菜单时将插件复制到 `bin/neko/plugins/`，普通安装不依赖该插件。\n"
@@ -133,9 +134,9 @@ def publish():
         f"L4D2 original project: {original['repository']}\nL4D2 original commit: {original['commit']}\nL4D2 original version: {original['version']}\n"
         f"Build recipe: {recipe}\n{digest_label}: {os.environ['RECIPE_DIGEST']}\n\n"
         "包含 x86 客户端和配套 x86/x64 Host；编译与原生测试通过。游戏性能对照及 ThinFlex 用户反馈的范围见上述说明与报告。\n\n"
-        "- 首次安装按包内说明合并到游戏目录。升级前备份，一并替换客户端和两种 Host，保留已调整的配置、后端、ReShade 和 DB；不要直接覆盖自己的配置。\n"
-        "- 客户端位于 bin/d3d9.dll，默认移除 -vulkan；需要该启动项时自行改名为 dxvk_d3d9.dll ，仍位于 bin。Host 仍在 bin/.l4d2bridge。\n"
-        "- 完整 ZIP 包含 UPSTREAM.json、ENGINE-PATCH.json 及 Valve 引擎归属说明，附件另提供完整 ZIP 的 SHA-256；旧发布包不被覆盖。\n\n"
+        "- 首次安装按包内说明合并到游戏目录。升级前备份，一并替换客户端和两种 Host，先从临时目录移除已有的 `dxvk.conf`、`bin/.l4d2bridge/bridge.conf` 和 `left4dead2/neko/config.vdf`，保留已调整的配置、后端、ReShade 和 DB。\n"
+        "- 安装前移除 -vulkan，备份移走游戏根目录的 d3d9.dll；保留本包的 bin/d3d9.dll 桥接客户端。Host 位于 bin/.l4d2bridge。随包保留用户提供的 L4N config.vdf，不附 config_template.vdf。\n"
+        "- 完整 ZIP 包含 UPSTREAM.json、ENGINE-PATCH.json、L4N-PAYLOAD.json 及第三方归属说明；不收录私人日志、dump 或重复的 L4N 源包。附件另提供完整 ZIP 的 SHA-256；旧发布包不被覆盖。\n\n"
         f"上游：[NVIDIA 提交](https://github.com/NVIDIAGameWorks/dxvk-remix/commit/{upstream})\n\n"
         f"本项目：[构建配置](https://github.com/{repo}/commit/{recipe}) · "
         f"[构建记录](https://github.com/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']})\n\n"

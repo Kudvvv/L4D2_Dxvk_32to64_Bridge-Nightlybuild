@@ -188,6 +188,12 @@ jobs:
           $metadata.host_architectures = @('x86', 'x64')
           $metadata.default_host_architecture = 'x64'
           $metadata.optional_l4n_plugin = 'optional/L4N/L4D2BridgePlugin.dll'
+          $l4n = Get-Content runtime/l4n/manifest.json -Raw -Encoding utf8 | ConvertFrom-Json
+          $metadata.l4n_version = $l4n.version
+          $metadata.l4n_author = $l4n.author
+          $metadata.l4n_source_archive_sha256 = $l4n.source_archive_sha256
+          $metadata.l4n_manifest = 'L4N-PAYLOAD.json'
+          $metadata.l4n_user_preset_paths = $l4n.user_preset_paths
           $metadata | ConvertTo-Json | Set-Content dist/l4d2-bridge/UPSTREAM.json -Encoding utf8
           python scripts/archive_runtime.py dist/l4d2-bridge $env:ARCHIVE_NAME
           if ($LASTEXITCODE -ne 0) { throw 'Archive failed' }

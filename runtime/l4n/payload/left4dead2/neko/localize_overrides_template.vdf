@@ -1,0 +1,24 @@
+// 修改后需要将本文件保存为localize_overrides.vdf
+// 本地化文本翻译的覆盖
+"localize_overrides" {
+    // 示例键值
+    "L4D360UI_NamVet"               "Bill_test"
+    "L4D360UI_Loading_As_Bill"      "as Bill"
+    "L4D360UI_TeenGirl"             "Zoey_test"
+    "L4D360UI_Loading_As_Zoey"      "as Zoey"
+    "L4D360UI_Biker"                "Francis_test"
+    "L4D360UI_Loading_As_Francis"   "as Francis"
+    "L4D360UI_Manager"              "Louis_test"
+    "L4D360UI_Loading_As_Louis"     "as Louis"
+
+    "L4D360UI_Mechanic"             "Ellis_test"
+    "L4D360UI_Loading_As_Ellis"     "as Ellis"
+    "L4D360UI_Coach"                "Coach_test"
+    "L4D360UI_Loading_As_Coach"     "as Coach"
+    "L4D360UI_Producer"             "Rochelle_test"
+    "L4D360UI_Loading_As_Rochelle"  "as Rochelle"
+    "L4D360UI_Gambler"              "Nick_test"
+    "L4D360UI_Loading_As_Nick"      "as Nick"
+
+    // 更多键值自行解包游戏本地化翻译获取
+}

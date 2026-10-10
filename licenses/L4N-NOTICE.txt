@@ -1,0 +1,24 @@
+L4N / Left4Neko 2.51.0
+Original author: Starfell (original files identify the author as @Starfelll).
+
+L4N is an independent third-party project. Its launcher, modules, shaders,
+materials, conversion tools, SDK and original documentation were supplied by
+the maintainer in L4N_v2.51.0.7z and are preserved byte-for-byte. They are not
+authored by this Bridge project or Codex and are not covered by its MIT license.
+All original author and third-party notices remain applicable.
+
+Original archive SHA-256:
+5a530a24ee0e8a3014ab99df35e22279e410bed1a1f4cca1a08c2eb058eb0d4c
+
+The original readme_l4n.txt is included unchanged. The reference
+left4dead2/neko/config_template.vdf is omitted at the maintainer's request;
+the integration preset supplies the active config.vdf instead.
+The maintainer's integration preset additionally supplies dxvk.conf,
+left4dead2/neko/config.vdf, and
+left4dead2/shaders/fxc/neko_floattoscreen_ps20b.vcs.
+These additions are identified separately in L4N-PAYLOAD.json and must not be
+represented as the original L4N defaults.
+
+This repository builds the Bridge Client/Hosts and the separate optional
+L4D2BridgePlugin.dll. Packaging them with L4N does not transfer authorship of
+L4N to this repository or imply endorsement by its original author.

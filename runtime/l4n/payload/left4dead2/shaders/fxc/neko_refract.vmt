@@ -1,0 +1,43 @@
+// 基于Refract着色器修改而来
+// 这个着色器主要是用来实现开镜效果的，所以本文档里还附带了l4n开镜的适配教程
+// 如果不需要特殊效果，可以用UnlitGeneric着色器，做起来更简单
+// 需要准备scope_xx.vmt scope_pl_xx.vmt scope_pr_xx.vmt三个文件
+// 存放目录是materials/vgui/l4n
+// 第一个是最核心的，需要准备好开镜贴图，4:3比例，不需要拆分为上下左右
+// 剩下两个是左和右填充区域的材质，不是必须提供的，默认使用纯黑填充
+// xx代表武器v模的文件名，例如: scope_v_snip_awp.vmt
+// 示例mod：https://steamcommunity.com/sharedfiles/filedetails/?id=3731456186
+NekoRefract
+{
+    $model 1
+    $refractamount 0
+    $bluramount 0
+
+    // a通道为折射与最终颜色alpha的蒙版，这个例子里开镜观察口不要折射带来的模糊，rgb为平法线，a通道为开镜观察口的蒙版
+    // 对于画质要求很高，使用了1024x1024分辨率的rgba8888 vtf，因为开镜贴图要求是4:3，而贴图分辨率需要是2的n次方，所以使用高度拉伸(vtfedit参数里选择Biggest Power Of 2)，4:3不能使用压缩高度来匹配2的n次方，这样会损失画质
+    // 因为是用于hud的贴图，vtf生成参数里不需要mipmap以节省大小
+    $normalmap "vgui/l4n/scope_v_snip_awp_normal"
+    //$normalmap "dev/flat_normal"
+
+    $translucent 1
+    $ignorez 1
+    $nofog 1
+
+
+    // a通道为 $color_invert/$color_desaturation 的蒙版
+    // 此例子里这张贴图对细节要求很低，使用256分辨率的dxt5 vtf
+    $refracttinttexture "vgui/l4n/scope_v_snip_awp_tint"    // rgb为纯白表示折射无色调调整，这个例子里我们不对开镜观察口区域进行调整，所以rgb是纯白，a通道只有开镜观察区域是纯黑的
+
+
+    // l4n
+    $color_invert 1                 // 折射反色滤镜
+    $color_desaturation 1           // 折射黑白滤镜
+    // 叠加贴图，对于画质要求很高，用了$normalmap一样的贴图生成参数
+    $overlay_texture "vgui/l4n/scope_v_snip_awp_overlay"    // a通道为透明(不会影响颜色输出的alhpa)，这个例子里我们不想要开镜区域有模糊，所以贴图里开镜区域是不透明的，靠$normalmap的a通道来实现开镜区域透明；而透明区域是为了显示被上了黑白和反色滤镜的折射效果
+    $overlay_texture_frame 0
+
+    // 制作贴图时可能因为整数对齐导致中心不准确，在贴图编辑软件里可以忽略该问题，使用以下参数来进行修正
+    // 准星中心对齐修正，大小缩放
+    $bumptransform "center 0.5 0.5 scale 0.83 0.83 rotate 0 translate -0.0005 0.0005"
+    // $bumptransform "center 0.5 0.5 scale 1 1 rotate 0 translate -0.0005 0.0005"
+}

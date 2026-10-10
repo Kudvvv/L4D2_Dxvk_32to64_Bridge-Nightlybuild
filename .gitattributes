@@ -5,3 +5,5 @@
 *.yml text eol=lf
 # Preserve the supplied L4N SDK header byte-for-byte, including CRLF.
 plugins/l4n/sdk/l4n_plugin.h -text whitespace=-blank-at-eol,cr-at-eol
+# Preserve original L4N files and the supplied presets byte-for-byte.
+runtime/l4n/payload/** -text -diff

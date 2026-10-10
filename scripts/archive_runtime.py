@@ -5,6 +5,7 @@ import shutil
 import tempfile
 from archive_release import archive
 from engine_payload import staged_engine_files
+from l4n_payload import staged_l4n_files
 
 REQUIRED = ("bin/d3d9.dll", "bin/.l4d2bridge/L4D2Bridge64.exe",
             "bin/.l4d2bridge/L4D2Bridge32.exe", "bin/.l4d2bridge/d3d9vk_x86.dll",
@@ -13,7 +14,7 @@ REQUIRED = ("bin/d3d9.dll", "bin/.l4d2bridge/L4D2Bridge64.exe",
             "LICENSE", "THIRD_PARTY.md")
 SUPPORT_FILES = (
     "BACKEND.json", "BUILD-INFO.json", "SHA256.json",
-    "docs/L4N-BRIDGE-CONTROLS.md", "docs/CONFIGURATION.md", "docs/API.md", "docs/ARCHITECTURE.md",
+    "docs/L4N-BUNDLE.md", "docs/L4N-BRIDGE-CONTROLS.md", "docs/CONFIGURATION.md", "docs/API.md", "docs/ARCHITECTURE.md",
     "docs/PAGEBLOCK-DROP-GC.md", "docs/LEARNED-RETENTION-EXPERIMENT.md", "docs/READBACK-RECOVERY-EXPERIMENT.md",
     "docs/X86-HOST-COMPARISON.md", "docs/OVERLAY-INPUT-EXPERIMENT.md", "docs/STEAM-INPUT-INVESTIGATION.md",
     "docs/API-WAIT-DIAGNOSTICS.md", "docs/NETWORK-COLOR-DIAGNOSTICS.md", "docs/DATA-TRACKING.md",
@@ -36,6 +37,7 @@ def runtime_archive(source, output):
     if not licenses:
         raise ValueError("Missing third-party licenses")
     engine_files = staged_engine_files(source)
+    l4n_files = staged_l4n_files(source)
     with tempfile.TemporaryDirectory() as temporary:
         stage=Path(temporary) / "runtime"
         stage.mkdir()
@@ -45,17 +47,21 @@ def runtime_archive(source, output):
             shutil.copy2(source / name, destination)
         if (source / "VERSION").is_file():
             shutil.copy2(source / "VERSION", stage / "VERSION")
-        for name, data in engine_files.items():
+        for name, data in {**engine_files, **l4n_files}.items():
             destination = stage / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
         instruction = (
-            "完整包：先退出游戏及 Host，备份现有安装，再将本包解压到临时目录。\n"
+            "本包已包含 DXVK（GPLALL）、L4N 和完整桥接工具，无需另找同类包；退出游戏后解压覆盖到游戏根目录即可安装。请勿与其他类似整合项目混装。\n"
+            "安装前移除 -vulkan 启动参数，备份移走游戏根目录的 d3d9.dll；请保留本包的 bin/d3d9.dll，它是桥接客户端。\n"
+            "首次安装前备份原文件；升级已有安装时先解压到临时目录，按下述说明保留个人配置，再合并覆盖。\n"
+            "本包同时包含 Starfell（@Starfelll）制作的 L4N 2.51.0、作者原始 readme_l4n.txt 及用户提供的 dxvk.conf / L4N 预设。包含实际 config.vdf，不附 config_template.vdf。来源和逐文件校验见 L4N-PAYLOAD.json 与 docs/L4N-BUNDLE.md。\n"
+            "L4N 原说明中的普通 DXVK 安装路径不适用于本整合包，请以此处的 Bridge 安装路径为准。\n"
             "本包已含 ThinFlex 修复后的 bin/studiorender.dll，无需运行修复工具；适用版本及原文件 SHA-256 见 ENGINE-PATCH.json。\n"
             "覆盖前单独备份原始 bin/studiorender.dll。已修复的用户保留原始备份，不要把它替换成修复版；游戏更新后文件版本不同则先跳过该 DLL。\n"
-            "升级已有安装时，先从临时目录移除 bin/.l4d2bridge/bridge.conf；使用自定义后端的用户同时移除临时目录中的 bin/.l4d2bridge/d3d9vk_x64.dll 和 d3d9vk_x86.dll。\n"
+            "升级已有安装时，先从临时目录移除 bin/.l4d2bridge/bridge.conf、dxvk.conf 和 left4dead2/neko/config.vdf，以保留自己的设置；使用自定义后端的用户同时移除临时目录中的 bin/.l4d2bridge/d3d9vk_x64.dll 和 d3d9vk_x86.dll。\n"
             "然后将临时目录内容合并到游戏根目录，客户端位于 bin/d3d9.dll，保留 bin/.l4d2bridge 结构。\n"
-            "首次安装可保留包内默认配置和 GPLALL 后端。已有 dxvk.conf、bridge.conf、ReShade 和 retention DB 应予保留。\n"
+            "首次安装可保留包内配置和 GPLALL 后端；L4N config.vdf 是用户提供的整合预设。已有 dxvk.conf、bridge.conf、L4N config.vdf、ReShade 和 retention DB 应予保留。\n"
             "客户端和 x86/x64 两个 Host 必须配对更新，故障回退时也同时恢复，不要混用。默认使用 x64 Host；切换说明见 docs/X86-HOST-COMPARISON.md。\n"
             "可选 L4N 控制插件位于 optional/L4N/L4D2BridgePlugin.dll，需要时复制到游戏 bin/neko/plugins/；普通 Bridge 不依赖它。详见 docs/L4N-BRIDGE-CONTROLS.md。\n"
             "附带 config/ 片段只用于手动启用相关功能，不会自动覆盖配置。诊断分析脚本位于 scripts/；普通安装不运行 install_color_diagnostics.ps1。\n"

@@ -11,6 +11,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 import archive_runtime as runtime
 import engine_payload as engine
+import l4n_payload as l4n
 
 
 class Packaging(unittest.TestCase):
@@ -25,7 +26,8 @@ class Packaging(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"fixture")
         self.engine_files = engine.source_engine_files()
-        for relative, data in self.engine_files.items():
+        self.l4n_files = l4n.source_l4n_files()
+        for relative, data in {**self.engine_files, **self.l4n_files}.items():
             destination = self.source / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(data)
@@ -43,9 +45,12 @@ class Packaging(unittest.TestCase):
             self.assertFalse(any(name.startswith("tools/") for name in names))
             for name, data in self.engine_files.items():
                 self.assertEqual(archive.read(name), data)
+            for name, data in self.l4n_files.items():
+                self.assertEqual(archive.read(name), data)
             self.assertEqual({name for name in names if name.endswith(".dll")},
                              {"bin/d3d9.dll", "bin/.l4d2bridge/d3d9vk_x64.dll", "bin/.l4d2bridge/d3d9vk_x86.dll",
-                              "optional/L4N/L4D2BridgePlugin.dll", "bin/studiorender.dll"})
+                              "optional/L4N/L4D2BridgePlugin.dll", "bin/studiorender.dll",
+                              "bin/left4neko.dll", "left4dead2/bin/game_shader_generic_neko.dll"})
             for name in ("bin/dxvk_d3d9.dll", "d3d9.dll", "bin/.l4d2bridge/ReShade.dll",
                          "bin/.l4d2bridge/resource-retention.db", "bin/other-engine.dll", "player.dmp", "private.log"):
                 self.assertNotIn(name, names)
@@ -53,6 +58,7 @@ class Packaging(unittest.TestCase):
             self.assertLess(guide.index("先从临时目录移除"), guide.index("然后将临时目录内容合并"))
             self.assertIn("无需运行修复工具", guide)
             self.assertIn("原始备份", guide)
+            self.assertIn("Starfell", guide)
             self.assertNotIn("update 包", guide)
         before = self.output.read_bytes()
         with self.assertRaises(FileExistsError):
@@ -97,6 +103,25 @@ class Packaging(unittest.TestCase):
             runtime.runtime_archive(self.source, self.output)
         with zipfile.ZipFile(self.output) as archive:
             self.assertEqual(archive.read("bin/studiorender.dll"), original_bytes)
+
+    def test_archive_uses_verified_l4n_snapshot_and_excludes_private_archives(self):
+        original_read = runtime.staged_l4n_files
+        expected = self.l4n_files["left4dead2.exe"]
+        for name in ("logs.7z", "L4N_v2.51.0.7z", "crash_dumps/player.dmp"):
+            (self.source / name).write_bytes(b"private or duplicate archive")
+
+        def change_after_read(source):
+            files = original_read(source)
+            (source / "left4dead2.exe").write_bytes(b"unverified later contents")
+            return files
+
+        with patch.object(runtime, "staged_l4n_files", change_after_read):
+            runtime.runtime_archive(self.source, self.output)
+        with zipfile.ZipFile(self.output) as archive:
+            self.assertEqual(archive.read("left4dead2.exe"), expected)
+            for name in ("logs.7z", "L4N_v2.51.0.7z", "crash_dumps/player.dmp"):
+                self.assertNotIn(name, archive.namelist())
+            self.assertEqual(archive.read("bin/neko/other_tools.7z"), self.l4n_files["bin/neko/other_tools.7z"])
 
     def test_competing_output_is_preserved(self):
         original_archive = runtime.archive

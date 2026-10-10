@@ -12,6 +12,8 @@
 
 ## L4N 常用设置
 
+完整包同时附有维护者提供的根目录 `dxvk.conf` 和 `left4dead2/neko/config.vdf`，不附参考 `config_template.vdf`。它们分别配置后端与 L4N，不能代替 `bridge.conf`；升级时保留个人配置的步骤见 [README](../README.md)，来源见 [L4N 整合说明](L4N-BUNDLE.md)。
+
 可选 x86 L4N SDK v2 插件可通过 [常用设置菜单](L4N-BRIDGE-CONTROLS.md) 减少手工编辑。Bridge 本体不依赖插件；插件只查询状态和发送控制请求，由游戏内 Bridge Client（默认 `d3d9.dll`，`-vulkan` 模式为 `dxvk_d3d9.dll`） 复用实际 Config 路径安全保存。
 
 Memory Policy 的 keep / lg / drop 仅调用运行时 SetPolicy，点击 `save to configure` 才保存当前 runtime 策略到 `client.pageBlockRetentionPolicy`。运行与配置相同时首行标记 configure，否则显示 runtime。Host 只显示配置值，选择 x86/x64 后点击 Save 才写入；Host 与 ReShade Presenter 下次完整启动生效，不能运行时切换 Host，Presenter 菜单不负责安装 ReShade。Status 仅显示 PageBlock。当前验证的 ReShade 组合仍是 x64 Host + Vulkan ReShade 6.0.1，启用 Presenter 不自动修改 Host。菜单没有测试/诊断选项；旧 Bridge 下保存不可用，原 Stats/GC/会话策略仍可用。

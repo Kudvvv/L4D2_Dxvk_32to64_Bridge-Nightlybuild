@@ -73,7 +73,7 @@ def pending():
         raise ValueError("Invalid project version")
     identifier = "v" + version + ("-thinflex-test-" if thinflex else "-") + names["release_tag"]
     original = json.loads((Path(__file__).resolve().parents[1] / "config/original-project.json").read_text(encoding="utf-8"))
-    title = "v" + version + " 完整同步上游 " + original["version"] + (" + ThinFlex 测试版" if thinflex else "")
+    title = "v" + version + " L4N 整合包 · 完整同步上游 " + original["version"] + (" + ThinFlex 测试版" if thinflex else "")
     names.update(release_tag=identifier, title=title,
                  archive="l4d2-bridge-" + identifier + ".zip")
     return [{"tag": names["group"], "commit": commit, "branch": branch,

@@ -1,0 +1,23 @@
+// 模版文件，防止更新时覆盖自定义配置，第一次使用需要将本文件另存为scheme_overrides.vdf
+
+// 修改后在控制台运行l4n_reload_vgui_schemes热重载VGUI
+
+// vgui主题参数覆盖
+"scheme_overrides"
+{
+    // 目标文件的路径
+    "resource/ClientScheme.res" 
+    {
+        "Fonts" {
+            "TargetID" // 队友头上ID的字体样式
+            {
+                "1"
+                {
+                    "tall"			"33"    // 字体大小
+                    "weight"		"100"   // 字体粗细
+                }
+            }
+        }
+    }
+
+}

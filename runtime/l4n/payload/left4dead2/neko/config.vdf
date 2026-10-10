@@ -1,0 +1,196 @@
+// 修改后需要将本文件保存为config.vdf
+// 版本更新增加了配置项的情况下，你可能需要检查config_template.vdf，获取新配置项的示例
+// Valve KeyValue Format
+"config" {
+    // version 2
+    // 1代表是，0代表否
+    // "//"表示注释，从"//"开始到行末的内容会被忽略
+
+    // !!!  语法错误会导致配置文件失效  !!!!
+    // 不要剪切或删减部分片段，除非你知道你在干什么
+    // config.vdf的格式和autoexec.cfg是不一样的，请按照config_template.vdf的格式来修改
+
+    // VPK Overlay 能够在每次加载地图时，自动从备选库中为你随机、顺序挑选或指定挂载不同的VPK模组，无需重启游戏
+    // 例如：每次换地图自动换一把不同皮肤的枪，或切换不同的幸存者模型
+    // 需要准备一个文件夹，并将该文件夹的路径填写到下面的参数里
+    "vpk_overlay" "E:\aaa\bbb\vpk_overlay_root"
+    // vpk_overlay_root/                   <-- 根目录
+    // ├── Weapons_AK47/                   <-- Overlay 单元（名称和数量无要求，这里准备作为AK47mod的替换库）
+    // │   ├── Red_Skin.vpk                <-- 备选 1：单个 VPK 文件
+    // │   ├── Blue_Skin.vpk               <-- 备选 2：单个 VPK 文件
+    // │   ├── Multi_Parts_Pack/           <-- 备选 3：多文件组合包（文件夹）
+    // │   │   ├── model.vpk
+    // │   │   └── sound.vpk
+    // │   └── _disabled/                  <-- 【下划线忽略】：以 _ 开头的文件夹会被自动忽略
+    // │       ├── Old_Skin.vpk            <-- 里面的文件不会被挂载
+    // │       └── Test.vpk
+    // └── Survivors_Rochelle/
+    //     ├── Outfit_A.vpk
+    //     └── _temp.vpk                   <-- 【下划线忽略】：以 _ 开头的文件也会被忽略
+    //
+    // overlay_root下的每一个子文件夹对应一个替换项目。
+    // 如果选中了包含多个.vpk的文件夹，会同时加载该文件夹里的所有VPK。
+    // 任何以下划线"_"开头的文件或文件夹，系统在扫描时都会直接跳过，不会纳入候选库。
+    //
+    // 注意：本功能目前没有文件冲突检测，需要具备基本的mod文件排查的能力，以应对可能会遇到的冲突问题
+    //      请确保入库的VPK文件有着明确的单一功能性，以减少和其它mod冲突的可能性
+    //      如果你不知道上面在说什么，建议只使用武器mod
+    //
+    // 库文件准备好之后，进入地图，打开l4n的hud菜单来访问本功能
+    // 每一个 Overlay 单元都可以独立配置以下切换规则：
+    //      随机不重复（RandomNoRepeat）：随机挑选，且确保本次选中的内容不和上一次重复。
+    //      完全随机（Random）：每次纯随机挑选一个 VPK 或组合包。
+    //      顺序模式（Sequential）：按照名称的字母顺序依次轮流循环加载。
+    //      锁定模式（Lock）：固定当前选中的模组，换图或重载时不再发生任何切换。
+    // 指定下一次使用（Designate Next）：
+    //      可以提前指定某个特定的VPK文件或文件夹在下一次换图时必定生效。当该次挂载完成后，系统会自动恢复原有的切换规则。
+
+    // 环境变量设置
+    "environment_variables" {
+        // vulkan loader的环境变量
+        // 使用DXVK和ReShade Bridge的情况下，使用以下两条参数能解决内存占用异常；删除以下两行开头的"//"让参数生效
+        // "VK_LOADER_LAYERS_DISABLE" "*"               // 黑名单，参数"*"会禁用所有依赖vulkan layer机制的功能，例如rtss微星小飞机、obs游戏捕获、ReShade
+        // "VK_LOADER_LAYERS_ENABLE" "*reshade*,*obs*"  // 白名单，优先级比黑名单高
+        // 尚不清楚具体的原因，但确实能解决问题...
+
+        // "DISABLE_VK_LAYER_reshade_1" "1" // 完全禁用vulkan模式下的ReShade
+    }
+
+    // 自定义指令，通过l4n_custom_command_menu打开
+    "custom_commands" {
+        "渲染第一人称实体" { "cvar" "r_drawviewmodel" }
+        "停止导演系统" { "cmd" "sv_cheats 1;director_stop" }
+        "HUD网络状态" {
+            "cvar" "net_graph"
+            "delta" "1"
+            "min" "0"
+            "max" "3"
+        }
+        "启用作弊(无视大厅建图限制)" { "cmd" "l4n_allow_lobby_cheats 1;sv_cheats 1" }
+        "禁用枪口抖动" { "cmd" "l4n_cvar z_gun_vertical_punch 0" }
+        "哥哥我摔倒了" { "cmd" "l4n_allow_lobby_cheats 1;sv_cheats 1;ent_fire !self sethealth 0" }
+        "实体外描边" { "cvar" "sv_glowenable" }
+        "渲染实体" { "cvar" "r_drawentities" }
+        "渲染静态道具" { "cvar" "r_drawstaticprops" }
+        "渲染贴花" { "cvar" "r_drawdecals" }
+        // 一些比较有意思的convar和concmd
+        // r_cleardecals
+        // r_decals 2
+        // vm_debug 1
+        // vm_draw_addon 0
+        }
+
+    // 是否禁用引擎内置的浏览器内核，可以省下100mb左右的内存占用
+    // 会导致一些服务器的欢迎页面不显示
+    "disable_chromehtml" "0" 
+
+    // 用于避免Too many indices for index buffer弹窗
+    // 可调成2进图测试效果，非默认值(32768)可能会有副作用(画面炸面花屏撕裂)
+    // 如果打了类似的补丁就保留默认值即可
+    "index_buffer_size" "131072" // 炸面貌似和数值大小有关，可以尝试用32768的倍数: 65535 131072
+
+    // 很罕见的有关vertex buffer弹窗，除非万不得已，大于默认值(32768)会导致炸面花屏
+    "vertex_buffer_size" "32768" // 推荐值65535
+
+    "font" // 字体配置
+    { 
+        "anti_aliasing" "1"
+        //"min_tall" "20" // 字体的最小尺寸，防止游戏内的一些文字过小
+        "replace" // 字体替换列表
+        {
+            // 写法："要被替代的字体" "替代字体"
+            // 将Tahoma替换为微软雅黑的例子, 简体中文的默认字体是Tahoma
+            // "Tahoma" "微软雅黑"
+
+            // 有的hud mod会将默认字体修改成别的，解包hud mod获取它所用的字体名以实现替换
+            // "HUD使用的字体名" "微软雅黑"
+
+            // english的默认字体是契合L4D系列破损风格的Stubble bold 
+            // "Stubble bold" "微软雅黑"
+        }
+    }
+
+    // 启动项是程序启动时传递给程序的信息，这意味着需要启动着在启动程序时进行传递
+    // 如果你的游戏不是通过steam启动的，steam里设置的启动项是不会生效的
+    // bat或者快捷方式有提供添加启动项的功能，局限性也和steam启动一样
+    "launch_options"
+    {
+        // 附加启动项，需要l4n生效的情况下才有效
+        // 语法：
+        // "-novid"要写成: "-novid" ""
+        // "+mat_phong 1"要写成: "+mat_phong" "1"
+
+        // "-novid" "" // 关掉游戏启动的阀门动画和美味的巧克力直升机
+
+        // "-lv" "" // 低血腥模式，用于避免某些血腥特效导致的闪退，例如特感挠人染在身上的血迹贴花
+
+        // 以下是l4n生效时才能使用的启动项
+        // "-hide_addons" ""            // 禁止引擎读取addons目录下的文件
+        // "-l4n_use_neko_engine_post" "" // 添加后l4n将接管引擎的后处理渲染
+        // "-no_l4n_gui" ""
+        // "-no_l4n_vgui" ""
+        // "-mat_utf8" ""
+
+        // ！！！！以下启动项不能在本文件添加，请在steam游戏属性里设置或者其它方式如bat、快捷方式！！！！
+            // -hide_neko                       禁用l4n，禁用平台后本配置文件会无效，你可能需要迁移启动项
+            // -hide_nekoshaders                禁用l4n的着色器
+            // -l4n_no_compatibility_check      禁止l4n检查游戏版本
+            // -l4n_no_crash_handler            禁用L4N的崩溃处理(config.vdf里无效)
+
+	"-novid"	""
+	//"+cl_interp"	"0.05"
+	-l4n_use_neko_engine_post ""
+    }
+
+
+
+
+    // 是否强制绑定l4n_menu到"\"键
+    "force_bind_l4n_menu" "1"
+
+    // 强制设置datacache的上限为2048MB
+    "lock_datacache_size" "1"
+
+    "logging_system_log" "1"    //将游戏所有通道的日志都写入到logging_system.log中
+
+// ==================== 除非你知道你在干什么，否则不要修改自本行起到文件末尾的内容 ========================
+
+    // 是否使用咪内存分配器(mimalloc)替换引擎tier0内置的内存分配器
+    // 此功能是实验性的，mimalloc会预先承包一大块内存给游戏的内存需求做分配
+    // 由于mimalloc喜欢从高位开始分配内存，游戏对象所处的内存布局会发生巨大的变化，能够将一些平时不容易触发的bug暴露出来
+    // 如果你平时的dc占用比较高，不建议使用该功能。因为该功能目前不会替换dxvk的内存分配器，容易内存不足崩溃
+    "mimalloc" "0"
+
+    "wave_cache_max_kilobytes" "524288" // 512mb
+
+    "generate_addoninfo" "1"
+
+    "survivors" {
+        "nick" {
+            // l4n_survivor_sequence_strip会对序号大于max_sequences的动画进行截断，避免扩充的动画被调用
+            "max_sequences" "923"
+        }
+        "ellis" {
+            "max_sequences" "927"
+        }
+        "rochelle" {
+            "max_sequences" "930"
+        }
+        "coach" {
+            "max_sequences" "912"
+        }
+        "bill" {
+            "max_sequences" "1013"
+        }
+        "louis" {
+            "max_sequences" "1013"
+        }
+        "francis" {
+            "max_sequences" "1016"
+        }
+        "zoey" {
+            "max_sequences" "947"
+        }
+    }
+
+}

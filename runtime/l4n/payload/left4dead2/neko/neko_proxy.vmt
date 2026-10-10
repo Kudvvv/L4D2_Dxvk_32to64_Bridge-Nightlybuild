@@ -1,0 +1,60 @@
+"新增的材质代理们"
+{
+    "PlayerBottom" // 获取视线方向与角色模型实体的根骨骼轴向差异
+    {
+        "resultVar"         "$alpha2"
+    }
+    "Sequence"  // 获取动画实体的正在播放的动画索引
+    {
+        "layer"         "-1"         // 指定要获取的动画播放层，-1使用默认值
+        // (如果是v模实体，设置为0可以获取reload或fire等，通过设置控制台运行"vm_debug 1"来查看),
+        "resultVar" 	"$number"
+    }
+    "PlayerAttachment" // 获取视线方向与实体Attachment的轴向差异
+    { // 此示例参数可用于让眉透侧面消失(2/1)
+        "name" "eyes"
+        "axis" "1"      // 1~3，设置要使用Attachment的哪条轴向作参考
+        "resultVar"         "$eyebrowalpha"
+    }
+
+    // https://developer.valvesoftware.com/wiki/List_of_material_proxies
+    // 以下能在wiki里找到参考的代理
+    "RemapValClamp"	// 数值范围映射
+    { // 此示例参数可用于让眉透侧面消失(2/2)
+        "range_in_min" 	"-0.15"
+        "range_in_max" 	"-0.5"
+        "range_out_min" "0"
+        "range_out_max" "0.2"
+        "srcVar1" 		"$eyebrowalpha"
+        "resultVar" 	"$eyebrowalpha"
+    }
+    "ClipAmmo"	// 获取弹匣子弹剩余
+    {
+        "resultVar"         "$number"
+    }
+    "RemainingAmmo"	// 获取剩余备弹
+    {
+        "resultVar"         "$number"
+    }
+    "Cycle"	// 获取实体的动画进度
+    {
+        "layer"             "-1" // 指定动画播放层(如果是第一人称武器，应该填0)
+        "start"             "0.0"
+        "end"               "1.0"
+        "easein"            "1"
+        "easeout"           "1"
+        "resultVar"         "$number"
+    }
+    "Modulo" // 求余
+    {
+        "srcVar1"           "1145"
+        "srcVar2"           "14"
+        "resultVar"         "$number"
+    }
+    "SelectFirstIfNonZero" 
+    {
+        "srcVar1" ""
+        "srcVar2" ""
+        "resultVar" ""
+    }
+}

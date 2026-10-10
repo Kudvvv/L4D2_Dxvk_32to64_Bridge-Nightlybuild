@@ -1,0 +1,174 @@
+{
+	"connections": [
+		{
+			"from": "image",
+			"from_port": 0,
+			"to": "combine",
+			"to_port": 0
+		},
+		{
+			"from": "combine",
+			"from_port": 0,
+			"to": "export",
+			"to_port": 0
+		},
+		{
+			"from": "image_3",
+			"from_port": 0,
+			"to": "combine",
+			"to_port": 1
+		},
+		{
+			"from": "image_2",
+			"from_port": 0,
+			"to": "combine",
+			"to_port": 2
+		},
+		{
+			"from": "image_4",
+			"from_port": 0,
+			"to": "Material",
+			"to_port": 0
+		},
+		{
+			"from": "image",
+			"from_port": 0,
+			"to": "Material",
+			"to_port": 1
+		},
+		{
+			"from": "image_3",
+			"from_port": 0,
+			"to": "Material",
+			"to_port": 2
+		},
+		{
+			"from": "image_2",
+			"from_port": 0,
+			"to": "Material",
+			"to_port": 5
+		}
+	],
+	"label": "Graph",
+	"longdesc": "",
+	"name": "@Node@4715",
+	"node_position": {
+		"x": 0.0,
+		"y": 0.0
+	},
+	"nodes": [
+		{
+			"export_paths": {},
+			"name": "Material",
+			"node_position": {
+				"x": 222.640014648438,
+				"y": -21.7800006866455
+			},
+			"parameters": {
+				"albedo_color": {
+					"a": 1.0,
+					"b": 1.0,
+					"g": 1.0,
+					"r": 1.0,
+					"type": "Color"
+				},
+				"ao": 1.0,
+				"depth_scale": 0.5,
+				"emission_energy": 1.0,
+				"flags_transparent": true,
+				"metallic": 0.0,
+				"normal": 1.0,
+				"roughness": 1.0,
+				"size": 11,
+				"sss": 1.0
+			},
+			"seed_int": 0,
+			"type": "material"
+		},
+		{
+			"name": "image",
+			"node_position": {
+				"x": -279.64306640625,
+				"y": 261.019653320313
+			},
+			"parameters": {
+				"clamp": false,
+				"fix_ar": false,
+				"image": "matcap1_mask.png"
+			},
+			"seed_int": 0,
+			"type": "image"
+		},
+		{
+			"name": "image_3",
+			"node_position": {
+				"x": -277.063079833984,
+				"y": 432.82958984375
+			},
+			"parameters": {
+				"clamp": false,
+				"fix_ar": false,
+				"image": "matcap2_mask.png"
+			},
+			"seed_int": 0,
+			"type": "image"
+		},
+		{
+			"name": "combine",
+			"node_position": {
+				"x": 105.356887817383,
+				"y": 481.019653320313
+			},
+			"parameters": {},
+			"seed_int": 0,
+			"type": "combine"
+		},
+		{
+			"name": "export",
+			"node_position": {
+				"x": 287.90234375,
+				"y": 479.201507568359
+			},
+			"parameters": {
+				"format": 0.0,
+				"size": 10.0,
+				"suffix": "$project_mrao"
+			},
+			"seed_int": 0,
+			"type": "export"
+		},
+		{
+			"name": "image_2",
+			"node_position": {
+				"x": -279.575958251953,
+				"y": 609.330139160156
+			},
+			"parameters": {
+				"clamp": false,
+				"fix_ar": false,
+				"image": "matcap2_mask.png"
+			},
+			"seed_int": 0,
+			"type": "image"
+		},
+		{
+			"name": "image_4",
+			"node_position": {
+				"x": -281.995971679688,
+				"y": -71.8999938964844
+			},
+			"parameters": {
+				"clamp": false,
+				"fix_ar": false,
+				"image": "matcap1_mask.png"
+			},
+			"seed_int": 0,
+			"type": "image"
+		}
+	],
+	"parameters": {},
+	"project_thumbnail": "",
+	"seed_int": 0,
+	"shortdesc": "",
+	"type": "graph"
+}

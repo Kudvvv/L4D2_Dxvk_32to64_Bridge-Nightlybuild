@@ -1,0 +1,26 @@
+"DigitalDisplay" //面向mod作者的数显着色器文档
+{
+    // 用来渲染数字字符
+
+    $basetexture "Digital_Number" // 0123456789字符表，不建议开启mipmap
+
+
+    $color "[0.92 0.51 0.54]"
+
+    "$alphatest"                    "1"
+    "$alphatestreference"           "0.5"
+    "$allowalphatocoverage"         "1"
+
+    $number "1145" // 要显示的数字，可以将这个参数对接到代理里，将代理计算的结果显示出来
+    $numbits "4" // 数显最大的位数，当$number超过该大小会显示9999
+
+    // "Proxies"
+    // {
+    //     "LinearRamp"
+    //     {
+    //         "rate"                  "1"
+    //         "initialValue"          "0"
+    //         "resultVar"             "$number"
+    //     }
+    // }
+}

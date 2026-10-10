@@ -1,0 +1,140 @@
+{
+	"connections": [
+		{
+			"from": "uniform_greyscale",
+			"from_port": 0,
+			"to": "combine",
+			"to_port": 3
+		},
+		{
+			"from": "image_3",
+			"from_port": 0,
+			"to": "combine",
+			"to_port": 2
+		},
+		{
+			"from": "image",
+			"from_port": 0,
+			"to": "combine",
+			"to_port": 0
+		},
+		{
+			"from": "combine",
+			"from_port": 0,
+			"to": "export",
+			"to_port": 0
+		},
+		{
+			"from": "uniform_greyscale",
+			"from_port": 0,
+			"to": "combine",
+			"to_port": 1
+		}
+	],
+	"label": "Graph",
+	"longdesc": "",
+	"name": "@Node@922",
+	"node_position": {
+		"x": 0.0,
+		"y": 0.0
+	},
+	"nodes": [
+		{
+			"export_paths": {},
+			"name": "Material",
+			"node_position": {
+				"x": 3.63000011444092,
+				"y": -185.130004882813
+			},
+			"parameters": {
+				"albedo_color": {
+					"a": 1.0,
+					"b": 1.0,
+					"g": 1.0,
+					"r": 1.0,
+					"type": "Color"
+				},
+				"ao": 1.0,
+				"depth_scale": 0.5,
+				"emission_energy": 1.0,
+				"flags_transparent": true,
+				"metallic": 0.0,
+				"normal": 1.0,
+				"roughness": 1.0,
+				"size": 11,
+				"sss": 1.0
+			},
+			"seed_int": 0,
+			"type": "material"
+		},
+		{
+			"name": "image",
+			"node_position": {
+				"x": -196.623031616211,
+				"y": 254.270141601563
+			},
+			"parameters": {
+				"clamp": false,
+				"fix_ar": false,
+				"image": "matcap1_mask.png"
+			},
+			"seed_int": 0,
+			"type": "image"
+		},
+		{
+			"name": "image_3",
+			"node_position": {
+				"x": -206.143035888672,
+				"y": 490.210083007813
+			},
+			"parameters": {
+				"clamp": false,
+				"fix_ar": false,
+				"image": "matcap2_mask.png"
+			},
+			"seed_int": 0,
+			"type": "image"
+		},
+		{
+			"name": "uniform_greyscale",
+			"node_position": {
+				"x": -264.433044433594,
+				"y": 734.550109863281
+			},
+			"parameters": {
+				"color": 1.0
+			},
+			"seed_int": 0,
+			"type": "uniform_greyscale"
+		},
+		{
+			"name": "combine",
+			"node_position": {
+				"x": 188.376937866211,
+				"y": 474.270141601563
+			},
+			"parameters": {},
+			"seed_int": 0,
+			"type": "combine"
+		},
+		{
+			"name": "export",
+			"node_position": {
+				"x": 370.922393798828,
+				"y": 472.451965332031
+			},
+			"parameters": {
+				"format": 0.0,
+				"size": 10.0,
+				"suffix": "$project_mask1"
+			},
+			"seed_int": 0,
+			"type": "export"
+		}
+	],
+	"parameters": {},
+	"project_thumbnail": "",
+	"seed_int": 0,
+	"shortdesc": "",
+	"type": "graph"
+}

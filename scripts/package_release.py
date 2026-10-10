@@ -11,6 +11,7 @@ import shutil
 import struct
 import subprocess
 from engine_payload import source_engine_files
+from l4n_payload import source_l4n_files, VERSION as L4N_VERSION, AUTHOR as L4N_AUTHOR
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,6 +31,7 @@ def machine(path):
 
 def package(source, dxvk, output, dxvk_x86, plugin):
     engine_files = source_engine_files()
+    l4n_files = source_l4n_files()
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
     patch_hash = hashlib.sha256((ROOT / "patches/l4d2-bridge.patch").read_bytes()).hexdigest()
     build_id = f"l4d2-{version}+{patch_hash[:16]}"
@@ -42,7 +44,9 @@ def package(source, dxvk, output, dxvk_x86, plugin):
         "optional/L4N/L4D2BridgePlugin.dll": (plugin, 0x14c),
     }
     # Validate and snapshot all binaries before creating output; never deploy into a game directory.
-    files = dict(engine_files)
+    if (set(l4n_files) & (set(engine_files) | set(inputs))):
+        raise ValueError("L4N payload conflicts with the Bridge or engine repair")
+    files = {**engine_files, **l4n_files}
     for relative, (path, expected) in inputs.items():
         data = path.read_bytes()
         if machine_bytes(data, relative) != expected:
@@ -77,7 +81,8 @@ def package(source, dxvk, output, dxvk_x86, plugin):
         backend_info["source"] = metadata["release"]
     (output / "BACKEND.json").write_text(json.dumps(backend_info, indent=2) + "\n", encoding="utf-8")
     receipt = {"version": version, "build_id": build_id, "patch_sha256": patch_hash, "source_commit": source_commit,
-               "kind": "full", "optional_plugin": True, "plugin_location": "optional/L4N/L4D2BridgePlugin.dll", "files": hashes}
+               "kind": "full", "optional_plugin": True, "plugin_location": "optional/L4N/L4D2BridgePlugin.dll",
+               "l4n_version": L4N_VERSION, "l4n_author": L4N_AUTHOR, "l4n_manifest": "L4N-PAYLOAD.json", "files": hashes}
     (output / "BUILD-INFO.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     shutil.copy2(ROOT / "docs/TESTING.md", output / "TESTING.md")
     shutil.copy2(ROOT / "docs/MEMORY-DIAGNOSTICS.md", output / "MEMORY-DIAGNOSTICS.md")

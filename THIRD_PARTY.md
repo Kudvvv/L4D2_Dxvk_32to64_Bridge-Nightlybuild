@@ -70,6 +70,14 @@ L4D2 与 Steam 属于 Valve，游戏及平台不包含在本项目的授权范�
 - 使用范围：核对输入窗口所有权检查及 API 10 的公开插件 ABI、overlay 事件编号与签名。只新增独立的动态接口绑定，不复制或分发 SDK 实现、头文件或 ReShade DLL；不把 ReShade 代码归为本项目原创。
 - 窗口/输入方案还参考 TXVK 固定提交 `7d466d794926ce26c113d810172c2abc37058319` 的公开说明与二进制静态分析，参考范围与上文归属一致。
 
+## L4N / Left4Neko 2.51.0
+
+- 原作者：**Starfell（原文件署名 @Starfelll）**。感谢原作者提供的 L4N 启动器、模块、着色器与工具；它们不是本项目或 Codex 的原创代码。
+- 来源为维护者提供的原始 `L4N_v2.51.0.7z`，SHA-256 为 `5a530a24ee0e8a3014ab99df35e22279e410bed1a1f4cca1a08c2eb058eb0d4c`。保留原包 75 个文件，原字节与署名不变；仅按用户要求省略参考 `config_template.vdf`。
+- 另附维护者整合目录中的 `dxvk.conf`、`left4dead2/neko/config.vdf` 和 `neko_floattoscreen_ps20b.vcs`，明确区分为用户预设，不冒充 L4N 原版默认配置。
+- 原 `readme_l4n.txt`、原组件声明及 [L4N-NOTICE](licenses/L4N-NOTICE.txt) 随包保留。根 MIT 许可不覆盖 L4N；组合打包不转移作者归属，也不表示原作者认可本构建。
+- 来源与逐文件清单见 [整合包说明](docs/L4N-BUNDLE.md) 和 `runtime/l4n/manifest.json`（发布包内名为 `L4N-PAYLOAD.json`）。
+
 ## 可选 L4N v2 控制插件 SDK
 
 `plugins/l4n/sdk/l4n_plugin.h` 是用户提供的 L4N / Left4Neko plugin SDK v2 header，原样保留；所提供文件没有作者版权或许可证声明，本项目不推定其为 MIT，也不声称它由本项目生成。它定义 `IL4NPlugin`、`GetL4NPluginInstance` 与 `RequestHudMenu`。新增 UI/control 实现位于 `plugins/l4n/L4D2BridgePlugin.cpp`，按本项目新增代码署名与 MIT 发布；SDK 本身的权利仍归其原权利人。

@@ -1,15 +1,19 @@
 # L4D2 Bridge Nightly
 
+> **This build includes DXVK (GPLALL), L4N and the Bridge tools in one package. Extract and copy to install; no separate component downloads are needed. Do not mix it with other similar projects or bundles.**
+>
+> **Remove the `-vulkan` launch option and back up/move away `d3d9.dll` from the game root; keep this package's `bin/d3d9.dll`.** L4N / Left4Neko is the work of **Starfell (@Starfelll)**, with thanks to its original author.
+
 [简体中文](README.md) | **English**
 
 ## Download and installation — start here
 
-**[Download the full package from Releases](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**. Each release has one `l4d2-bridge-*.zip` and its `.sha256` checksum. It includes the repaired `bin/studiorender.dll`; no patch tool or Python installation is needed.
+**[Download the full package from Releases](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**. Each release has one `l4d2-bridge-*.zip` and its `.sha256` checksum. It includes **L4N 2.51.0, DXVK-GPLALL, Bridge, `dxvk.conf`, L4N's `left4dead2/neko/config.vdf`**, and the repaired `bin/studiorender.dll`. No patch tool or Python installation is needed. The layout follows the maintainer's supplied bundle; `config_template.vdf` is omitted. See [bundle provenance](docs/L4N-BUNDLE.md).
 
-1. **Exit the game and Bridge Host, then back up existing files.** Save the original client, Host, configuration and `bin/studiorender.dll`. Extract the ZIP into a temporary directory. If ThinFlex is already installed, keep the initial original-DLL backup; do not replace it with the repaired file.
-2. **Preserve configuration before upgrading:** remove the packaged `bin/.l4d2bridge/bridge.conf` from the temporary extraction directory, keeping your installed configuration. If you customized your backend, also remove `bin/.l4d2bridge/d3d9vk_x64.dll` and `d3d9vk_x86.dll` from that temporary directory. Skip this step on first installation. Existing `dxvk.conf`, ReShade and the DB are not included and will not be overwritten.
+1. **Exit the game and Bridge Host, then back up existing files.** Save the original `left4dead2.exe`, L4N files, client, Host, `dxvk.conf`, `left4dead2/neko/config.vdf`, Bridge configuration and `bin/studiorender.dll`. Extract the ZIP into a temporary directory. If ThinFlex is already installed, keep the initial original-DLL backup. If another similar project is installed, uninstall it or restore its original files before installing this package.
+2. **Preserve configuration before upgrading:** remove any configuration you want to retain (`dxvk.conf`, `left4dead2/neko/config.vdf`, `bin/.l4d2bridge/bridge.conf`) from the temporary extraction directory before copying. If you customized your backend, also remove the packaged `bin/.l4d2bridge/d3d9vk_x64.dll` and `d3d9vk_x86.dll` there. Skip this step on first installation. Back up personal changes to L4N shaders and other files with matching paths, as those will also be replaced.
 3. **Check the installed engine DLL:** run `Get-FileHash 'your-game-directory\bin\studiorender.dll' -Algorithm SHA256` in PowerShell and compare with the table below. The supported original can be replaced. If the repair is already installed, retain it and the original backup. **For any other hash, remove `bin/studiorender.dll` from the temporary extraction directory and update Bridge only.**
-4. **Copy the prepared files:** merge them into the game root beside `left4dead2.exe`, updating the client and Host together. Replacing the matching `studiorender.dll` applies the ThinFlex repair directly. The client goes in `bin/d3d9.dll`; the matching x86/x64 Hosts, backends and configuration stay in `bin/.l4d2bridge`. Remove `-vulkan` for the default loading path.
+4. **Copy the prepared files:** remove `-vulkan` and back up/move away any game-root `d3d9.dll`. Merge the prepared files into the game root beside `left4dead2.exe`, installing L4N, DXVK and the matching Client/Hosts together. Replacing the matching `studiorender.dll` applies ThinFlex directly. **Keep `bin/d3d9.dll`**, the Bridge client; the matching x86/x64 Hosts, backends and configuration stay in `bin/.l4d2bridge`. Follow this layout instead of the ordinary DXVK instructions in the original L4N readme.
 
 | Installed `bin/studiorender.dll` | SHA-256 |
 |---|---|
@@ -22,7 +26,7 @@ To use `-vulkan`, rename the client to `dxvk_d3d9.dll` within the game `bin`. Wh
 
 The full package includes both x64/x86 Hosts and matching GPLALL backends. **x64 remains the default.** To switch, set `client.testX86Server=False` for x64 or `True` for x86, retain `forceX64Server=True`, and restart the entire game.
 
-For the optional L4N settings menu, copy `optional/L4N/L4D2BridgePlugin.dll` from this same ZIP to the game's `bin/neko/plugins/` and restart. No separate plugin download is needed. See the [L4N guide](docs/L4N-BRIDGE-CONTROLS.md).
+L4N itself is installed with the package. For the optional Bridge settings menu, copy `optional/L4N/L4D2BridgePlugin.dll` from this same ZIP to the game's `bin/neko/plugins/` and restart. No separate plugin download is needed. See the [L4N guide](docs/L4N-BRIDGE-CONTROLS.md). Original documentation and author attribution remain in `readme_l4n.txt`; see also the [Starfell notice](licenses/L4N-NOTICE.txt).
 
 Fresh installs use upstream's learned-aggressive retention policy and disable routine memory/crash/data diagnostics by default. Preserve your installed configuration when upgrading. See [configuration settings and costs](docs/CONFIGURATION.md).
 
@@ -64,6 +68,7 @@ When reusing a local source checkout, the build script verifies the complete pat
 
 - Project-specific additions and modifications: **MIT**, see [LICENSE](LICENSE). The original copyright notice for `yeyunyyds` is retained.
 - NVIDIA Bridge: **MIT**, see [licenses/Bridge-MIT.txt](licenses/Bridge-MIT.txt).
+- L4N / Left4Neko 2.51.0: original author **Starfell (@Starfelll)**. Original files and documentation retain their attribution and are outside this project's root MIT license; see [L4N-NOTICE](licenses/L4N-NOTICE.txt).
 - DXVK / DXVK-GPLALL: distributed with the **zlib/libpng** license; see [licenses/DXVK-LICENSE.txt](licenses/DXVK-LICENSE.txt) and [licenses/DXVK-GPLALL-LICENSE.txt](licenses/DXVK-GPLALL-LICENSE.txt).
 - Dependencies included in Bridge, such as Detours and Tracy, retain their respective licenses. See [licenses/Bridge-third-party.txt](licenses/Bridge-third-party.txt).
 - The modified `studiorender.dll` comes from the maintainer's matching local game file, with the limited ThinFlex repair applied at the user's request. The original engine belongs to Valve and is outside the root MIT license; see [engine attribution](licenses/Valve-engine-NOTICE.txt).

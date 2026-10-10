@@ -13,16 +13,18 @@
 - 默认仍为 x64 Host，x86 Host 与匹配后端随完整包提供。GPLALL 2.6.8-2 两种架构按固定归档与文件哈希校验，实验 DXVK 后端仍通过独立手动实验入口构建。
 - 继续使用 `bin/d3d9.dll` 的默认客户端路径，支持用户为 `-vulkan` 改名；Host 与后端位于 `bin/.l4d2bridge`。新诊断工具与 L4N 接口兼容两种客户端名称。
 - 保留纹理字节布局/偏色修复、额外资源创建失败清理、buffer lock 边界、连续上传复制、Logger 名称所有权与队列优化。内存监控开启时沿用异步普通采样，关闭时遵循上游新开关，不调度采样。
-- 新安装采用上游的新增配置与策略，唯 Host 默认保持 x64。升级时保留用户配置，不覆盖已有 `dxvk.conf`、ReShade 或 retention DB。
-- 只发布一个完整 ZIP 及 SHA256，包含配套 Client、两种 Host/GPLALL、固定 ThinFlex `studiorender.dll` 和 `optional/L4N/L4D2BridgePlugin.dll`；不恢复 update 包或独立插件/ThinFlex 工具包。
+- 新安装采用上游的新增 Bridge 配置与策略，唯 Host 默认保持 x64。L4N 与 DXVK 配置按用户提供的整合目录随包；升级先从临时目录移除想保留的配置，再覆盖，操作见 README。retention DB 不随包。
+- 只发布一个完整 ZIP 及 SHA256，包含配套 Client、两种 Host/GPLALL、固定 ThinFlex `studiorender.dll`、Starfell 的 L4N 2.51.0、用户提供的 `dxvk.conf`/`config.vdf` 及 `optional/L4N/L4D2BridgePlugin.dll`；不附 `config_template.vdf`，不恢复 update 包或独立插件/ThinFlex 工具包。L4N 来源与归属见 [整合说明](L4N-BUNDLE.md)。
 - 保留精确源码/暂存区校验、构建指纹、发布草稿重试及附件不可覆盖保护；增加三程序共同 build ID、PE 架构和 x86 Host LARGEADDRESSAWARE 验证。
 
 ## 验证边界
 
 补丁必须分别对 NVIDIA 原始基准 `9aa74f8dfad2188efbd0f717c64d9f8fa909787e` 和固定构建源 `5fd30eae2d397f369bdf5660f3ddd0bc0bd1fa58` 通过应用校验。完整 Python 回归、上游原生测试和 Nightly 的资源/边界/日志/异步/ThinFlex 回归是发布门槛；CI 构建 x86 Client、x64/x86 Host 和可选 L4N 插件，再下载核验最终全量包。
 
-本地验证：158 项 Python 回归全部通过（包含实际 ThinFlex 原生工具和准备后的 runtime separation，无跳过）；上游 Volume、Reset、PageBlock、配置与跨进程 readback/adapter 测试在 GCC x86/x64 通过。Nightly 上传、资源清理、日志、输入、异步 DLL 及原缺陷负对照通过。正式 MSVC 完整编译和测试仍由对应 Actions 判定，未用 GCC 的兼容参数降低 CI `/W4 /WX` 门槛。
+本地验证：164 项 Python 回归全部通过（包含实际 ThinFlex 原生工具和准备后的 runtime separation，无跳过）；上游 Volume、Reset、PageBlock、配置与跨进程 readback/adapter 测试在 GCC x86/x64 通过。Nightly 上传、资源清理、日志、输入、异步 DLL 及原缺陷负对照通过。正式 MSVC 完整编译和测试仍由对应 Actions 判定，未用 GCC 的兼容参数降低 CI `/W4 /WX` 门槛。
 
 本次不自动启动游戏。此前 v1.0.11 的三对 L4N 回放不是当前完整合并版本的性能证明，不承诺帧率上涨；上游实测也不能替代本 Nightly/GPLALL 组合的运行验证。具体结果以本提交对应 Actions 和 Release 为准。
+
+完整合并的首轮 MSVC 构建 `38020218495` 完成各主程序编译，但本地 Reset 生命周期回归的链接命令缺少 `user32.lib`，未发布。已为正向与负对照补齐该依赖，并严格要求负对照返回预期的断言失败码。本次整合包与修正共同重新构建，结果以新提交的 Actions 为准。
 
 之前的选择性移植与延期决策保留为 [历史记录](ORIGINAL-PROJECT-UPDATES-HISTORY.md)，已不再限制后续完整同步。

@@ -1,0 +1,155 @@
+// version 3.1
+// 面向mod作者的NekoToon着色器文档
+// vmt基础：https://developer.valvesoftware.com/wiki/Creating_a_Material
+
+// 大部分模型的材质，使用的是VertexLitGeneric着色器(简称VLG)
+// 材质代理可以动态调整材质参数，属于材质系统的功能，不需要着色器主动支持，所以Proxies的使用与VLG没有区别
+"NekoToon" // <- 这里指定要使用NekoToon 
+{
+    // 注意：不支持起源风格的$phong，如果要实现反光效果，请考虑使用$matcap
+
+    // 主要用于风格化模型的渲染
+    // HDR渲染时光照不会过曝，除了自发光的部分
+    // 更适合风格化模型的暗处(环境光)阴影和手电筒自阴影
+    // 强制禁用贴花生成
+    // 使用VLG着色器的风格化模型，可以轻易转为NekoToon
+
+    // neko光照标准：将你的模型置于tumtara的白色地板附近，亮处需要比白色地板亮一些(如皮肤，偏白的布料)
+
+    // 1号打包贴图，r通道matcap蒙版，g通道用于lightwarp贴图UV的V映射, b通道是matcap2蒙版，a通道AO
+    // $mask1 "mask1_texture"
+
+    // Tips：
+    //      如果只使用了R通道，将灰度图直接转换为ATI1N即可，不需要手动打包蒙版，GBA通道将会使用默认值1(纯白)
+    //      建议使用MaterialMaker来打包各种蒙版
+    //          复制nekotoon.ptex并重命名(贴图文件名会使用该名称)
+    //          使用MaterialMaker打开，将所需的贴图拖进对应的槽位
+    //          调整完成后按Ctrl+Shift+E快速导出，如果后面修改了导入进工程的贴图文件，MaterialMaker会自动重载，只需重复快速导出即可
+
+    // 2号打包贴图，r通道为RimLight/RimShade蒙版，g通道是材质染色蒙版，b通道是$BaseTexture2的蒙版
+    // $mask2 "mask2_texture"
+
+    // 需要注意valve在设计时候是以srgb线性空间的方式来采样lightwarptexture的
+    // 这会导致在制作lightwarp贴图时，如果没有以正确的方式把贴图转换vtf，渲染后的颜色会有很大的非线性亮度差异
+    // 正确创建$lightwarptexture用的参数，--gamma-correct用于将srgb转换到线性srgb空间。
+    //      maretf create lightwarp.png --format RGB888 --no-mips --clamps --gamma-correct
+    // $LightWarpTexture        "linearsrgb_tex"
+    // $LightWarpMapOffset      0.0         // lightwarp贴图UV映射的y轴偏移
+    // $LightWarpScale          2.0         // 亮度调整
+    // $LightWarpExponent       1.0         // 可用于调整lightwarp贴图阴影的强度
+    // $LightWarpHalf           1           // 启用后lightwarp贴图只映射光照强度范围的0~0.5，超过0.5强度的光照将使用纯白。适合赛璐璐风格的lightwarp贴图，这种风格的贴图右边大部分都是纯白的，使用此参数可以省下纯白部分的空间。
+    // $LightWarpSrgbTexture    "srgb_tex"  // 用于替代$lightwarptexture, 使用srgb而不是线性srgb颜色空间
+
+    // $RimLight                    1       // 边缘光，不建议用在脸部; L4D2的VLG上该参数没有作用
+    // $RimLightBoost               1.0     // 边缘光强度
+    // $RimLightViewModelFactor     0.7     // 第一人称的$RimLightBoost倍率
+    // $RimLightExponent            4.0     // 边缘光指数
+    // $RimLightAlbedoTint          0.8     // 边缘光受基础色影响
+
+    // $RimShade            1   // 边缘阴影
+    // $RimShadeColor       "[0.5 0.5 0.5 1]"
+    // $RimShadeBorder      0.5
+    // $RimShadeBlur        1.0
+    // $RimShadeExponent    1.0
+
+    // $AllowDiffuseModulation  1
+    // $Color                   "[1 1 1]" 
+    // $Color2                  "[1 1 1]"   
+    // $SrgbTint                "[1 1 1]"
+    // $HSV                     "[1 1 1]"   // 修改材质颜色的第四种方式(色相饱和度明度)
+    // $BackFaceShade           "[1 1 1]"   // 背面着色，主要用于模拟衣物背面的ao效果
+
+    // $BaseTexture             ""
+    // $Frame                   0
+    // $BaseTextureTransform    "center 0.5 0.5 scale 1 1 rotate 0 translate 0 0"
+
+    // $BaseTexture2                "my_texture"
+    // $BaseTexture2Frame           0
+    // $BaseTexture2Tint            "[1 1 1 0.5]"     // rgba通道强度
+    // $BaseTexture2BackFace        0                 // 背面显示BaseTexture2
+    // $BaseTexture2BlendMode       1                 // 1正片叠底Multiply，2相加Add, 3Normal, 4Screen
+    // $BaseTexture2Lighting        1.0               // 光照比例
+    // $BaseTexture2Panosphere      0                 // 使用全景球UV，可用于实现星空效果
+    // $BaseTexture2Transform       "center 0.5 0.5 scale 1 1 rotate 0 translate 0 0"
+    // $BaseTexture2EmissionStrength 1.0              // $Emission效果的强度
+
+    // $BumpMap             "dev/flat_normal"   // DirectX格式的法线贴图，着色器支持用于法线贴图的压缩技术，详见：pbr.vmt
+    // $BumpFrame           0
+    // $BumpStrength        1.0               // 法线凹凸效果的强度
+    // $BumpTransform       "center .5 .5 scale 1 1 rotate 0 translate 0 0"
+    // $BumpMap2            "dev/flat_normal"   // 会与$bumpmap混合。如果$bumpmap使用了法线压缩，$bumpmap2也必须同步使用！
+    // $BumpFrame2          0
+    // $BumpStrength2       1.0
+    // $BumpTransform2      "center .5 .5 scale 1 1 rotate 0 translate 0 0"
+
+    // $MatCap              1  // 0禁用matcap，1正片叠底Multiply，2相加Add, 3Normal, 4Screen
+    // $MatCapTexture       "my_matcap_tex"     // matcap贴图，支持alpha混合
+    // $MatCapFrame         0
+    // $MatCapTint          "[1 1 1 1]"         // matcap贴图的rgba通道强度
+    // $MatCapLighting      1.0                 // 光照比例
+    // matcap2，需要启用$matcap才能使用
+    // $MatCap2, $MatCap2Texture, $MatCap2Tint, $MatCap2Lighting, $MatCap2Frame
+
+    // $Outline                     1           // 启用描边
+    // $OutlineColor                "[0 0 0]"   // 描边颜色
+    // $OutlineHSV                  "[1 1 1]"   // 描边色相饱和度亮度
+    // $OutlineThickness            0.02        // 描边粗细
+    // $OutlineFixedThickness       1           // 使用屏幕空间描边，无透视效果; 此特性对于法线和骨骼权重要求较高，如有问题请考虑关闭改功能
+    // $OutlineViewModelFactor      1.0         // 第一人称的$OutlineThickness倍率
+    // $OutlineZOffset              0.0         // 前后z偏移，可以用来抑制穿模
+    // $OutlineLighting             1.0         // 描边光照和自发光之间的混合比例，0完全自发光
+    // $OutlineBaseTextureBlend     1           // 是否和$basetexture混合
+    // $OutlineTexture              "tex"       // 描边蒙版
+    //      推荐格式：512分辨率，无mipmap，ATI1N压缩格式(使用VTFEdit++来快速创建)
+    //      当格式为ATI1N时，使用R通道作为描边蒙版，其它格式使用A通道
+    //      maretf create    Head_Outline.psd --format ATI1N --no-mips
+    //      maretf edit      Head_Outline.vtf --set-width 512 --set-height 512
+    // 注意：描边蒙版需要使用引擎的CommitVertexTextures功能，该功能存在缺陷有概率导致蒙版失效，l4n在2.47.1起能够修复该问题
+
+    // $AlphaTest               0       // 高性价比的透明渲染
+    // $AllowAlphaToCoverage    0       // 高质量alphatest，需配合dxvk使用
+	// $AlphaTestReference      0.5
+    // $Translucent             1       // 古尔丹说：这是特定情况下，效果最好的透明渲染
+    // $Alpha                   1.0     // 调整透明度，写入此参数时会强制启用$translucent
+    // $Alpha2                  1.0     // 调整透明度，当$translucent未启用时候，写入此参数会强制启用$alphatest和$allowalphatocoverage
+    // $Additive                0       // 与后面的物体产生叠加效果
+    // $Multiply                0       // 与后面的物体产生正片叠底效果
+    // $NoCull                  1
+    // $Decal                   1       // 不建议使用，手电筒下会出现问题，只适合平面网格体
+    // $ZOffset                 0.0     // 前后z偏移，适合用在一些贴身衣物的材质来防止穿模
+    // $FlipBackFaceNormal      1       // 是否修正背面的法向，以实现双面光照(可以让背面被手电筒照亮)
+    // $NoFlexNormal            0       // 是否禁用flex(形态键/Morph)的法线插值，对于一些有自定义法线的脸模很有帮助
+    // $DualQuatSkinning        0       // 是否使用对偶四元数蒙皮，启用后性能会变差
+
+    // $EyeUV           0      // 是否使用眼追UV，用于替代EyeRefract着色器
+    // $MatcapUV        0      // 是否使用matcapuv，生效于$BaseTexture
+    
+    // $eyebrow          0       // 是否启用眉透效果
+    // $eyebrowAlpha     0.5     // 眉透透明度，搭配l4n的PlayerAttachment代理可以实现侧面渐隐
+    // $eyebrowZOffset   -0.6    // 眉透能穿透的距离
+
+    // $fakeShadow          1                  // 假阴影效果，有一些bug还未修复，不推荐使用
+    // $fakeShadowOffset    "[1 3 -1 0.1]"     // 假阴影投射方向以及强度
+    // $fakeShadowColor     "[0.1 0.1 0.1]"    // 假阴影颜色
+
+    // nekotoon会让模型在暗处能够看清，如果你的需求如此，则不建议使用$emission
+    // $Emission 1              // 启用自发光，默认使用$basetexture的颜色，除非指定了$emissionTexture; 设置为2则使用蒙版模式
+    // $EmissionTint "[0.005 0.005 0.005]"      // 自发光的rgb颜色强度
+    // $EmissionTexture ""                      // 指定一张贴图作为自发光的颜色或者蒙版
+    // $EmissionFrame 0                         // $EmissionTexture使用的帧
+    // $EmissionFlashlightTint "[0 0 0]"        // 手电筒下的自发光强度，可用于模拟反光条
+    // $EmissionStrength 1.0                    // 自发光强度
+    // $EmissionTonemapScaleAmount 1.0          // 受曝光的影响程度，除非显式声明具体数值，当$EmissionTint小于0.05的时候会被设置为0
+
+    // $CameraAO            1        // 摄像机靠近的ao效果
+    // $LambertFactor       0.25     // 手电筒或环境光的阴影强度
+    // $DarknessLimit       1        // 是否在微弱灯光环境下也能看见
+    // $LightingSaturation  0.75     // 光照的最大饱和度
+    // $LightingScale       0.6      // 光照强度
+    // 游戏内强制启用HDR效果，会根据画面的亮度调整曝光
+    // 如果画面里某处很亮，会自动降低曝光，导致地图的暗处变得更暗
+    // 对于一些有设计光照的地图，可能会导致自动曝光一会暗一会亮晃来晃去导致体验更差
+    // 大部分的二次元模型很亮会导致阴暗地图的游戏体验不好，0.6是一个比较适中的值
+    // 制作自发光的时候尤其要考虑好HDR的自动曝光，避免光污染
+    // HLMV是不启用HDR效果的，所以会让模型在HLMV里看起来很暗，可以在HLMV++里将灯光的亮度设置超过255来弥补
+}

@@ -1,0 +1,35 @@
+PBR {
+    //$basetexture "error"
+    $basetexture "vgui/white"
+    $color2 "[ 0.88 0.00 0.00 ]"
+
+    $mraotexture "nononon"
+    $mraoscale "[1 0.7 1]"
+
+    $basetexturetransform "center 0.5 0.5 scale 0.001 0.001 rotate 0 translate 0 0"
+
+    $hsv "[0.1 1 1]"
+    
+    "Proxies" {
+        "Sine" {
+            "sineperiod" "2048"
+            "sinemin" "0"
+            "sinemax" "1"
+            "resultVar" "$hsv[0]"
+        }
+
+        "Sine" {
+            "sineperiod" "10"
+            "sinemin" "0"
+            "sinemax" "1"
+            "resultVar" "$mraoscale[0]"
+        }
+
+        // "Sine" {
+        //     "sineperiod" "8"
+        //     "sinemin" "0.5"
+        //     "sinemax" "0.8"
+        //     "resultVar" "$mraoscale[1]"
+        // }
+    }
+}

@@ -1,0 +1,14 @@
+// 游戏设置-按键绑定的自定义项目
+"key_bind_acts" {
+    "🐱custom_command_menu" "l4n_custom_command_menu"
+    "🐱l4n_menu"            "l4n_menu"
+    "🐱lookat"              "+l4n_lookat"
+    "🐱lookat_item"         "+l4n_lookat itempickup"
+    "🐱lookat_help"         "+l4n_lookat helpinghand"
+    "🐱lookat_fidget"       "+l4n_lookat fidget"
+    "🐱player_list_modedef" "+l4n_player_list"
+    "🐱player_list_mode1"   "+l4n_player_list 1"
+    "🐱toggle_hud"          "toggle l4n_game_hud_visible"
+    "🐱vm_inspect"          "toggle l4n_vm_inspect_mode"
+    //"切换第三人称"              "thirdpersonshoulder"
+}

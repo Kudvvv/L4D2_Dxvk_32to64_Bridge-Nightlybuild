@@ -1,15 +1,19 @@
 # L4D2 Bridge Nightly
 
+> **本构建已包含 DXVK（GPLALL）、L4N 和 Bridge 桥接工具，一体整合，解压覆盖即可一键安装，无需另下这三项组件。请勿与其他同类项目或整合包混合安装。**
+>
+> **安装前移除 `-vulkan` 启动参数，并备份移走游戏根目录的 `d3d9.dll`；保留本包的 `bin/d3d9.dll`。** L4N / Left4Neko 原作者为 **Starfell（@Starfelll）**，感谢原作者的工作。
+
 **简体中文** | [English](README.en.md)
 
 ## 下载与安装（先看这里）
 
-**[前往 Releases 下载完整包](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**。每次发布只提供一个 `l4d2-bridge-*.zip`，另附 `.sha256` 校验文件。包内已包含修复后的 `bin/studiorender.dll`，无需运行补丁工具或安装 Python。
+**[前往 Releases 下载完整包](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**。每次发布只提供一个 `l4d2-bridge-*.zip`，另附 `.sha256` 校验文件。包内包含 **L4N 2.51.0、DXVK-GPLALL、Bridge、`dxvk.conf`、L4N 的 `left4dead2/neko/config.vdf`** 和修复后的 `bin/studiorender.dll`，无需运行补丁工具或安装 Python。按维护者提供的整合目录布局交付，未附 `config_template.vdf`；组件来源见 [整合包说明](docs/L4N-BUNDLE.md)。
 
-1. **退出游戏和 Bridge Host，备份现有文件。** 备份原客户端、Host、配置和 `bin/studiorender.dll`，将完整 ZIP 解压到临时目录。若已安装 ThinFlex 修复，继续保留最初的原始 DLL 备份，勿用修复版覆盖它。
-2. **已有用户先保留配置：** 从临时解压目录移除包内 `bin/.l4d2bridge/bridge.conf`，保留游戏里正在使用的配置。若自行修改过后端，同样从临时目录移除 `bin/.l4d2bridge/d3d9vk_x64.dll` 与 `d3d9vk_x86.dll`，避免覆盖。首次安装跳过此步；已有 `dxvk.conf`、ReShade 和 DB 不在包内，不受覆盖。
+1. **退出游戏和 Bridge Host，备份现有文件。** 备份原 `left4dead2.exe`、L4N 文件、客户端、Host、`dxvk.conf`、`left4dead2/neko/config.vdf`、Bridge 配置和 `bin/studiorender.dll`，将完整 ZIP 解压到临时目录。若已安装 ThinFlex 修复，继续保留最初的原始 DLL 备份，勿用修复版覆盖它。已装其他同类项目时，先按其说明卸载或恢复原文件，再安装本包。
+2. **已有用户先保留配置：** 从临时解压目录移除想保留的 `dxvk.conf`、`left4dead2/neko/config.vdf` 和 `bin/.l4d2bridge/bridge.conf`，再覆盖游戏目录。若自行修改过后端，同样从临时目录移除 `bin/.l4d2bridge/d3d9vk_x64.dll` 与 `d3d9vk_x86.dll`，避免覆盖。首次安装跳过此步；包内 L4N 附带的着色器等同路径文件也会覆盖，请备份个人修改。
 3. **核对游戏引擎 DLL 版本：** 用 PowerShell 的 `Get-FileHash '你的游戏目录\bin\studiorender.dll' -Algorithm SHA256` 与下表比较。匹配原版时可覆盖；已是修复版时保留现有文件和原始备份。**若是其他哈希，先从临时目录移除 `bin/studiorender.dll`，只更新 Bridge，不覆盖未知游戏版本。**
-4. **覆盖安装：** 将准备好的内容合并到游戏根目录（`left4dead2.exe` 所在目录），同时更新客户端和 Host；匹配版本的 `studiorender.dll` 随文件覆盖即应用 ThinFlex 修复。客户端位于 `bin/d3d9.dll`；配套 x86/x64 Host、后端和配置位于 `bin/.l4d2bridge`。默认移除 `-vulkan` 启动项。
+4. **覆盖安装：** 移除 `-vulkan` 启动参数，备份移走游戏根目录的 `d3d9.dll`。将准备好的内容合并到游戏根目录（`left4dead2.exe` 所在目录），一起安装 L4N、DXVK 和配套 Client/Host；匹配版本的 `studiorender.dll` 随文件覆盖即应用 ThinFlex 修复。**不要删除 `bin/d3d9.dll`**，它是 Bridge 客户端；配套 x86/x64 Host、后端和配置位于 `bin/.l4d2bridge`。L4N 原说明中的普通 DXVK 安装路径不适用于此整合包，以本节为准。
 
 | 游戏 `bin/studiorender.dll` | SHA-256 |
 |---|---|
@@ -22,7 +26,7 @@ ThinFlex 修复已收到用户复测有效反馈，仍限定于以上精确版�
 
 完整包同时包含 x64/x86 Host 与对应 GPLALL 后端，**默认仍为 x64**。切换 Host 可修改 `client.testX86Server`（`False` 为 x64，`True` 为 x86），保持 `forceX64Server=True`，退出整个游戏后重新启动。
 
-使用 L4N 常用设置菜单时，把包内 `optional/L4N/L4D2BridgePlugin.dll` 复制到游戏 `bin/neko/plugins/` 并重启；不使用 L4N 可忽略它。无需另下插件包，详见 [L4N 设置说明](docs/L4N-BRIDGE-CONTROLS.md)。
+L4N 本体已随包安装。另需 Bridge 常用设置菜单时，把包内 `optional/L4N/L4D2BridgePlugin.dll` 复制到游戏 `bin/neko/plugins/` 并重启；该菜单插件保持可选。无需另下插件包，详见 [L4N 设置说明](docs/L4N-BRIDGE-CONTROLS.md)。L4N 原始说明与作者署名原样保留在 `readme_l4n.txt`，另见 [Starfell 归属说明](licenses/L4N-NOTICE.txt)。
 
 新安装配置包含上游的 learned-aggressive 内存策略，并默认关闭日常 memory/crash/data 诊断；已有用户升级继续保留自己的配置，新功能的键与开销见 [配置说明](docs/CONFIGURATION.md)。
 
@@ -66,6 +70,7 @@ ThinFlex 修复已收到用户复测有效反馈，仍限定于以上精确版�
 
 - 项目特有的新增与修改：**MIT**，见 [LICENSE](LICENSE)，保留 `yeyunyyds` 的原版权声明。
 - NVIDIA Bridge：**MIT**，见 [licenses/Bridge-MIT.txt](licenses/Bridge-MIT.txt)。
+- L4N / Left4Neko 2.51.0：原作者 **Starfell（@Starfelll）**，原文件与说明保留作者归属，不属于本项目原创或根目录 MIT 授权，见 [L4N-NOTICE](licenses/L4N-NOTICE.txt)。
 - DXVK／DXVK-GPLALL：随附 **zlib/libpng** 许可，见 [licenses/DXVK-LICENSE.txt](licenses/DXVK-LICENSE.txt) 和 [licenses/DXVK-GPLALL-LICENSE.txt](licenses/DXVK-GPLALL-LICENSE.txt)。
 - Bridge 所含 Detours、Tracy 等依赖继续遵循各自许可，见 [licenses/Bridge-third-party.txt](licenses/Bridge-third-party.txt)。
 - 包内修改版 `studiorender.dll` 来自维护者本机的匹配游戏文件，按用户要求应用限定 ThinFlex 修复。原引擎归 Valve，不属于根目录 MIT 授权；见 [引擎归属说明](licenses/Valve-engine-NOTICE.txt)。

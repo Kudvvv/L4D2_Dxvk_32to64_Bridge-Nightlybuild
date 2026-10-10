@@ -21,17 +21,18 @@ try {
   python "$PSScriptRoot/prepare_device_reset_lifetime_test.py" $source $testDir
   if ($LASTEXITCODE -ne 0) { throw 'Device reset lifetime extraction failed' }
   $compilerOptions = @('/nologo','/std:c++17','/EHsc','/W4','/WX',"/I$testDir","$repoRoot/tests/device_reset_lifetime.cpp")
-  & cl.exe @compilerOptions /Fe:device-reset-lifetime.exe
+  & cl.exe @compilerOptions /Fe:device-reset-lifetime.exe /link user32.lib
   if ($LASTEXITCODE -ne 0) { throw 'Device reset lifetime compilation failed' }
   & ./device-reset-lifetime.exe
   if ($LASTEXITCODE -ne 0) { throw 'Device reset lifetime test failed' }
   foreach ($control in @('GetSwapChain','Reset','ResetEx')) {
     python "$PSScriptRoot/prepare_device_reset_lifetime_test.py" $source $testDir --negative-control $control
     if ($LASTEXITCODE -ne 0) { throw "Device reset negative extraction failed: $control" }
-    & cl.exe @compilerOptions /Fe:device-reset-lifetime-negative.exe
+    & cl.exe @compilerOptions /Fe:device-reset-lifetime-negative.exe /link user32.lib
     if ($LASTEXITCODE -ne 0) { throw "Device reset negative compilation failed: $control" }
     & ./device-reset-lifetime-negative.exe
     if ($LASTEXITCODE -eq 0) { throw "Device reset test missed the old lifetime defect: $control" }
+    if ($LASTEXITCODE -ne 1) { throw "Device reset negative control did not report a caught test failure: $control ($LASTEXITCODE)" }
   }
 } finally {
   python "$PSScriptRoot/prepare_device_reset_lifetime_test.py" $source $testDir

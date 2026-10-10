@@ -1,0 +1,90 @@
+// 面向mod作者的PBR着色器文档
+
+// vmt基础：https://developer.valvesoftware.com/wiki/Creating_a_Material
+
+// 大部分模型的材质，使用的是VertexLitGeneric着色器(简称VLG)
+// 材质代理可以动态调整材质参数，属于材质系统的功能，不需要着色器主动支持，所以Proxies的使用与VLG没有区别
+"PBR" // <- 这里指定使用PBR着色器
+{
+    // 为了保证环境反射的效果，建议配合l4n与dxvk使用
+    // https://docs.momentum-mod.org/shaders/physically_based_rendering/
+    // https://developer.valvesoftware.com/wiki/Creating_PBR_materials
+
+    $Model 1 // mdl模型需使用此参数
+    // $NoDecal 1 // 面数高的模型需要禁用贴花，防止闪退
+
+    // M etalness, R oughness, Ambiemt Occlusion
+    // mrao贴图，R通道是金属度metalness，G通道是粗糙度roughness，B通道是ao
+    // https://developer.valvesoftware.com/wiki/$mraotexture
+    // $MRAOTexture "vgui/white"
+
+    // mrao贴图rgb通道的强度
+    // $mraoscale "[1 0.5 1]"
+    // $mraoframe 0
+    
+    // Specular F0 贴图，启用时mrao贴图的金属度失效 !与$basetexture2不兼容！
+    // $SpecularTexture ""
+
+    // rgb通道是albedo，a通道是透明度
+    // $basetexture "vgui/white"
+    // $frame 0
+
+    // DirectX格式的法线贴图
+    // $bumpFrame 0
+    // $bumpmap "dev/flat_normal"
+    // 着色器的$bumpmap还支持一种法线压缩方式
+    // 即ATI2N格式的vtf，这种法线的质量和大小最综合。原理是丢弃法线的B通道(俗称的黄法线，ATI2N只有RG通道，R和G单独压缩不会互相影响)
+    // 转换工具：https://github.com/craftablescience/MareTF
+    // bat脚本代码：c://xxx/maretf.exe create %1 --version 7.4 --format ATI2N --filter BOX
+    // 将法线贴图拖动到bat上即可自动转换。
+    // 加--invert-green参数可以反转g通道，用于将OpenGL格式的法线贴图转换到起源1用的DirectX格式
+
+    // $emissiontexture "" // 指定一张贴图作为自发光的颜色
+    // $emissiontint "[ 0.005 0.005 0.005 ]" //自发光的rgb颜色强度
+    // $emissionflashlighttint "[1 1 1]" //手电筒下的自发光强度，可用于模拟反光条
+    // $emissionFrame 0
+    // $emissionFresnel "[1 1 1 2]"
+    
+    // $alphatest 1
+	// $alphatestreference 0.5
+	// $allowalphatocoverage 1
+    // $additive 1
+    // $translucent 1
+    
+    // $envmap "env_cubemap"
+    // $envmapFrame 0
+
+    // $parallax 0 // 是否使用$bumpmap的a通道作为视差贴图
+    // $parallaxDepth 0.0030
+    // $parallaxCenter 0.5
+    // $parallaxScale 1 // 采样次数
+    // $parallaxDither 1 // 使用高质量
+
+    // %keywords
+    // $surfaceprop ""
+
+    // $basetextureTransform "center 0.5 0.5 scale 1 1 rotate 0 translate 0 0"
+    // $allowDiffuseModulation 1
+    // $blendTintByMRAOAlpha 0 // 是否使用mrao贴图的alpha通道来染色，和$blendtintbybasealpha原理一样
+
+    // $outline 1 启用描边，更多详情在nekotoon.vmt里
+
+    // $texture2BlendShift 0.0 // 与以下参数的混合度调整
+    // $BASETEXTURE2 $FRAME2
+    // $MRAOTEXTURE2 $MRAOFRAME2 $MRAOSCALE2
+    // $EMISSIONTEXTURE2 $EMISSIONFRAME2 $EMISSIONTINT2
+    // $BUMPMAP2 $BUMPFRAME2
+    // $BaseTexture2Tint "[1 1 1 1]"
+
+    // 与VLG着色器的用法相同
+    // $emissiveblendenabled
+    // $emissiveblendtexture
+    // $emissiveblendbasetexture
+    // $emissiveblendflowtexture
+    // $emissiveblendtint
+    // $emissiveblendstrength
+    // $emissiveblendscrollvector
+    // $time
+
+    // $F0 "0.04"
+}
