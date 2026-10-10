@@ -16,6 +16,7 @@ if($CompileRole){
   Push-Location $testDir
   try{
     $roleFlags=if($CompileRole -eq 'host32'){@('/DREMIX_BRIDGE_X86_SERVER','/DREMIX_BRIDGE_SERVER')}else{@()}
+    if($SeparateCaller){$roleFlags+=@('/DIPC_SEPARATE_CALLER')}
     $transportSources=if($SeparateCaller){@('ipc_command.cpp','ipc_caller.cpp')}else{@('ipc_transport.cpp')}
     & cl.exe /nologo /std:c++17 /EHsc /O2 /W3 /FAs "/Fa$assemblyDir\" /DNOMINMAX /DWIN32 @roleFlags "/I$testDir" "/I$repoRoot/tests" @transportSources util_sharedmemory.cpp util_semaphore.cpp data_diagnostics.cpp exception_diagnostics.cpp "/Fe:perf-$CompileRole$suffix.exe" /link ole32.lib psapi.lib
     if($LASTEXITCODE -ne 0){throw "Performance compilation failed $Variant $CompileRole"}

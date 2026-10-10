@@ -64,8 +64,16 @@ int wmain(int argc,wchar_t** argv){
     require(Device::waitForCommand()==Result::Success,"Host packet wait");const auto header=Device::pop_front();
 #ifdef IPC_KNOWN_PACKET
     if(known){
+#ifdef IPC_SEPARATE_CALLER
+      // Production Device dispatch reads the common UID before switching to
+      // the handler, whose known remainder excludes that UID.
+      require(Device::get_data()==sequence,"Host common UID order");
+      const auto packet=Device::get_packet<2>();
+      require(packet.fields[0]==sequence && packet.fields[1]==size,"Host known metadata order");
+#else
       const auto packet=Device::get_packet<3>();
       require(packet.fields[0]==sequence && packet.fields[1]==sequence && packet.fields[2]==size,"Host known metadata order");
+#endif
       require(packet.bytes==size,"Host known blob size");
       if(size){require(packet.data && static_cast<uint8_t*>(packet.data)[0]==0x6b && static_cast<uint8_t*>(packet.data)[size-1]==0x6b,"Host known payload integrity");}
     } else
