@@ -190,7 +190,7 @@ jobs:
           COMMITS_AFTER_TAG: ${{ matrix.distance }}
           THINFLEX_TEST: ${{ inputs.thinflex_test }}
         run: |
-          $metadata = @{ release_tag = $env:RELEASE_TAG; upstream_branch = $env:UPSTREAM_BRANCH; upstream_commit = $env:UPSTREAM_COMMIT; recipe_commit = $env:RECIPE_COMMIT; recipe_digest = $env:RECIPE_DIGEST; build_run = $env:GITHUB_RUN_ID; build_attempt = $env:GITHUB_RUN_ATTEMPT; game_validation = 'Binding ownership candidate: docs/BINDING-PERFORMANCE-2026-10-10.md; no FPS uplift established; this rebuilt package has not been game-tested'; thinflex_tool_included = $false; thinflex_engine_patch_applied = $true; release_channel = 'nightly' }
+          $metadata = @{ release_tag = $env:RELEASE_TAG; upstream_branch = $env:UPSTREAM_BRANCH; upstream_commit = $env:UPSTREAM_COMMIT; recipe_commit = $env:RECIPE_COMMIT; recipe_digest = $env:RECIPE_DIGEST; build_run = $env:GITHUB_RUN_ID; build_attempt = $env:GITHUB_RUN_ATTEMPT; game_validation = 'Binding ownership tests: docs/BINDING-PERFORMANCE-2026-10-10.md; tested candidate af678d1 on NVIDIA 5fd30eae; average FPS slightly higher and 1% low slightly lower, no stable uplift established; this rebuilt package has not been game-tested'; thinflex_tool_included = $false; thinflex_engine_patch_applied = $true; release_channel = 'nightly' }
           if ($env:THINFLEX_TEST -eq 'true') { $metadata.release_channel = 'thinflex-test' }
           $original = Get-Content config/original-project.json -Raw | ConvertFrom-Json
           $metadata.original_project = $original.repository
