@@ -61,8 +61,9 @@ inline std::string bufferNameToOption(const std::string&) { return {}; }
 #include <cstdint>
 struct GlobalOptions {
  inline static uint32_t timeout = 2000;
+ inline static uint32_t retries = 2;
  static uint32_t getCommandTimeout() { return timeout; }
- static uint32_t getCommandRetries() { return 2; }
+ static uint32_t getCommandRetries() { return retries; }
  static uint32_t getSemaphoreTimeout() { return timeout; }
  static uint32_t getAckTimeout() { return timeout; }
  static bool getLogAllCommands() { return false; }

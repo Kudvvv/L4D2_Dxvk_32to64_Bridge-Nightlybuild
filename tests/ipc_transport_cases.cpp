@@ -214,6 +214,10 @@ int wmain(int argc,wchar_t** argv) {
   require(gUniqueIdentifier.setGuid(&argv[1]),"session GUID");
   const auto count=static_cast<uint32_t>(std::wcstoul(argv[2],nullptr,10));
   threadedTest=argc>3;rpcTest=threadedTest && std::wstring(argv[3])==L"rpc";
+  // The production wrong-UID branch sleeps for the configured peek interval.
+  // Keep the full four-thread workload and all assertions, but avoid making
+  // each reply hand-off a two-second test delay. Fault modes retain defaults.
+  if(rpcTest) { GlobalOptions::timeout=1;GlobalOptions::retries=2000; }
   const size_t memory=32*sizeof(Header)+256+128*sizeof(uint32_t);
 #ifdef REMIX_BRIDGE_CLIENT
   const char* forward="Forward";const char* reverse="Reverse";
