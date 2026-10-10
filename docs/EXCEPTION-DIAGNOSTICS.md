@@ -15,11 +15,13 @@
 随包配置已经启用原有 `client.setExceptionHandler=True`。Client 只有开启这个原有选项才安装处理器；Host 仍按原行为安装。基本异常报告不需要新开关，且绕过普通 `logLevel` 过滤。可选：
 
 ```ini
+client.crashDiagnostics = False
+server.crashDiagnostics = False
 client.exceptionDiagnosticsDetailed = False
 server.exceptionDiagnosticsDetailed = False
 ```
 
-默认报告已有寄存器、故障现场堆栈和各方向最多 16 条命令历史。Detailed=True 将历史/故障堆栈上限扩为 32，另附最多 16 帧**处理器自身**的调用栈；不会打开逐帧 API 日志。只对发生异常的进程使用其对应选项。
+当前源码默认报告保留寄存器与故障现场堆栈；crashDiagnostics=False 时 API/command context 为 unavailable、历史为空，健康运行不维护 TLS/ring，也不创建完整 history state。TLS 仅保留 nullable 指针和失败标记；首次启用的 API scope/command 才按需分配，正常线程退出时先清空指针并停用后续记录，再释放，避免 TLS 析构阶段的悬空引用。分配失败仅跳过诊断，故障报告不补建 history。显式 True 才跟踪上下文与命令历史。新键缺失时兼容旧配置：Detailed=True 会启用历史；显式 crashDiagnostics=False 优先。Detailed=True 将历史/故障堆栈上限扩为 32，另附最多 16 帧**处理器自身**的调用栈；不会打开逐帧 API 日志。只对发生异常的进程使用其对应选项。
 
 ## 修改前的行为
 
@@ -58,7 +60,7 @@ termination=TerminateProcess termination_exit_code=0xe04c3441
 - `EXCEPTION_ACCESS_VIOLATION` 和 `EXCEPTION_IN_PAGE_ERROR` 在参数数量有效时解码 0=read、1=write、8=execute；其他值保留 raw 值并标 unknown。缺少参数标 unavailable；in-page error 还记录底层 status。异常记录本身无法读取时，snapshot 标 unavailable，尽力保留进程身份并标 report_incomplete，不推测异常码。
 - x64 构建记录 RIP/RSP/RBP、RAX/RBX/RCX/RDX/RSI/RDI、R8–R15；x86 构建记录实际 x86 CONTEXT，不能把两端位数混用。
 - `object_id` 来自 RPC header 的 `pHandle`，不同命令也可能用它携带关联值，不能统一称为 texture/resource ID。`client_call_this` 是当前方法的游戏侧对象指针，也不等于 RPC ID。未可靠识别的 `resource_id` 明确 unavailable。
-- Client 在已有 D3D9 `LogFunctionCall` 入口记录实际方法；序列化期间另记录 opcode/队列。Host 在 Device/Module 分派期间记录正在处理的命令，读取 UID 后更新；嵌套回复结束后恢复外层 handler。
+- crashDiagnostics=True 时，Client 在已有 D3D9 `LogFunctionCall` 入口记录实际方法；序列化期间另记录 opcode/队列。Host 在 Device/Module 分派期间记录正在处理的命令，读取 UID 后更新；嵌套回复结束后恢复外层 handler。
 - 没有 active scope 时输出 unavailable，历史不冒充当前命令。命令发送成功/接收成功时写入固定的**线程内** ring；报告只描述故障线程见过的流量，不冒充所有线程或对端的完整历史。history 的 `count` 是 ring 中保留的记录数，默认最多展开其中最新 16 条。
 - 模型名、地图名、bone/mesh/material 数量、DrawModel/SetupBones 状态无法从现有通用 D3D9 转发层可靠获得；本补丁不虚构这些字段，也不 hook Source 内部来获得它们。
 

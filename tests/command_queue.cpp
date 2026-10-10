@@ -225,6 +225,7 @@ void testPeer(const std::wstring& executable) {
   CloseHandle(process.hProcess);
 }
 int wmain(int argc, wchar_t** argv) {
+  l4d2_observation::memoryMonitoring = true;
   try {
     if (argc == 3 && std::wstring(argv[1]) == L"--reader") {
       const std::wstring wideName = argv[2];

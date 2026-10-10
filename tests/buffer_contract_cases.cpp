@@ -50,11 +50,11 @@ template<typename T> void run(const char* name, D3DFORMAT format, D3DPOOL pool =
 template<typename T> void runDynamic(D3DFORMAT format) {
   using Desc = std::conditional_t<std::is_same_v<T, IDirect3DVertexBuffer9>, D3DVERTEXBUFFER_DESC, D3DINDEXBUFFER_DESC>;
   Desc desc {}; desc.Size = 64; desc.Usage = D3DUSAGE_WRITEONLY | D3DUSAGE_DYNAMIC; desc.Pool = D3DPOOL_DEFAULT; desc.Format = format;
-  const auto before = l4d2_memory::liveBytes;
+  const auto before = buffer_contract::liveBytes;
   updates.clear();
   {
     Buffer<T> buffer(desc);
-    check(l4d2_memory::liveBytes == before + 64, "dynamic buffer stopped allocating its existing full shadow");
+    check(buffer_contract::liveBytes == before + 64, "dynamic buffer stopped allocating its existing full shadow");
     void* data = nullptr;
     check(buffer.lock(0, 64, &data, D3DLOCK_DISCARD) == S_OK, "dynamic DISCARD Lock changed");
     std::memset(data, 0x66, 64); buffer.unlock();
@@ -64,7 +64,7 @@ template<typename T> void runDynamic(D3DFORMAT format) {
     check(updates.back().offset == 16 && updates.back().size == 8 && updates.back().flags == D3DLOCK_NOOVERWRITE, "dynamic partial protocol changed");
     check(buffer.lock(32, 8, &data, 0) == S_OK, "Lock before destruction failed");
   }
-  check(l4d2_memory::liveBytes == before, "destroy while locked retained shadow storage");
+  check(buffer_contract::liveBytes == before, "destroy while locked retained shadow storage");
 }
 static void runReadable() {
   D3DVERTEXBUFFER_DESC desc {}; desc.Size = 64; desc.Format = D3DFMT_VERTEXDATA; desc.Pool = D3DPOOL_MANAGED;
@@ -86,6 +86,14 @@ int main() {
   runDynamic<IDirect3DVertexBuffer9>(D3DFMT_VERTEXDATA);
   runDynamic<IDirect3DIndexBuffer9>(D3DFMT_INDEX16);
   runReadable();
-  check(l4d2_memory::liveBytes == 0, "fixture shadow allocations did not balance");
+  check(buffer_contract::liveBytes == 0, "fixture shadow allocations did not balance");
+  check(!l4d2_observation::memoryMonitoring && !l4d2_memory::nextSample
+    && !l4d2_memory::bytes[1] && !l4d2_memory::bytes[2], "OFF observer initialized or updated statistics");
+  buffer_contract::failAllocation = true;
+  bool allocationFailed = false;
+  try { delete[] l4d2_buffer::allocate(64, l4d2_memory::Kind::Vertex, true); }
+  catch (const std::bad_alloc&) { allocationFailed = true; }
+  buffer_contract::failAllocation = false;
+  check(allocationFailed && !buffer_contract::liveBytes, "Core allocation failure contract changed");
   return failures;
 }

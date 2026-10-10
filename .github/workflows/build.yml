@@ -57,6 +57,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'DXVK extraction failed' }
       - name: Prepare pinned Bridge sources
         run: python scripts/prepare_bridge.py
+      - name: Test Client input hooks, legacy DirectInput results and Query logging
+        shell: powershell
+        run: ./scripts/test_input_hooks.ps1
+      - name: Test disabled diagnostic work and on-demand input on x86 and x64
+        shell: powershell
+        run: |
+          ./scripts/test_runtime_observation.ps1
+          python -m unittest discover -s tests -p test_runtime_separation.py
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime separation contract tests failed' }
       - name: Build optional L4N v2 HUD control plugin
         if: github.event_name != 'workflow_dispatch' || inputs.build_l4n
         shell: powershell

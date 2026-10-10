@@ -330,6 +330,7 @@ static int policyTests(const wchar_t* executable) {
 }
 
 int wmain(int argc, wchar_t** argv) {
+  l4d2_observation::memoryMonitoring = true;
   if (argc == 12 && std::wstring(argv[1]) == L"--server") {
     Request request;
     request.resourceId = 7; request.parentId = 6;

@@ -73,7 +73,7 @@ force 的 drain 统计分别计数安全完成的 Bridge-only pin 和等待确�
 
 ## 诊断
 
-输出在客户端 DLL 同目录的 `l4d2-pageblock-gc.log`。显式 GC 总会输出一行 `PB_GC`，至少包含：
+当前源码中，显式 GC 总在普通 Bridge 日志输出一行 `PB_GC`；只有 client.pageBlockDiagnostics=True 才另写 Client DLL 同目录的 `l4d2-pageblock-gc.log`。memoryMonitoring=False 时 GC 不做前后全进程 VA/内存快照，回收、安全门、计数与 ACK/drain 结果不变。PB_GC 至少包含：
 
 `mode`、`pageBlocksScanned`、`pageBlocksEvicted`、`pageBlocksSkippedLocked`、`pageBlocksSkippedTransferring`、`pageBlocksSkippedPolicy`、`bytesUnmapped`、`mappedBytesBefore`、`mappedBytesAfter`；额外输出 `pageBlocksSkippedUnsynchronized`、`failures`、`backingBytesReleased`。force 还有 `transfersDrained`、`drainWaitCount`、`drainWaitTimeMs`。所有模式另有 `hostAckWaitCount/TimeMs`，旧 force drain 可能计入相同 ACK，不要将两者相加。新增独立 skip：unsupported-capability、recovery-unavailable、unclassified、reference-test、no-backing；只有真实 learned KEEP 计 skippedPolicy。Stats/GC 另写 `PB_COVERAGE` 和八类 `PB_COVERAGE_CATEGORY`，见统一实验说明。
 

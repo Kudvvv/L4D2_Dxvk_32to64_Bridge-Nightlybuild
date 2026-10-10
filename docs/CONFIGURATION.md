@@ -72,23 +72,33 @@ v1.2.0 正式版包含通用设置 API，L4N 插件单独提供 ZIP。旧 `v1.2.
 
 使用 [OVERLAY-INPUT.conf](../config/OVERLAY-INPUT.conf) 时需合并其中的配套设置；不要只改一个钩子便假设完整输入路径已开启。1.1.1 的点击重新激活修复继承在实现中，没有新增独立配置键。
 
+## 运行职责与诊断停用
+
+本节描述当前源码的诊断分离清理；已发布 v1.2.0 二进制仍按发布时行为运行，不能通过新配置键假定旧二进制已停止采样。实现前分类见 [完整审计](RUNTIME-DIAGNOSTICS-AUDIT.md)，验证方法和边界见 [分离报告](RUNTIME-DIAGNOSTICS-SEPARATION.md)。
+
+PR #4 第二轮进一步分离存储与失败：关闭 API wait 不分配线程统计表；关闭 crash history 不创建 API/command history；关闭 data diagnostics 不创建每资源 metadata。memory monitoring 只观察 Core 的分配/释放，不执行分配本身。诊断日志、统计存储或诊断线程失败不能改变 LG、GC、恢复或资源行为；retention 日志失败不再触发 KEEP fallback。KEEP DB 等核心状态的真实错误仍按原规则处理。
+
+始终运行的核心是转发、资源/shadow 生命周期、统一 PageBlock residency/reclaim、所选 keep/learned-aggressive/drop 策略、恢复、Reset 和 IPC 同步。GC 是同一系统的用户触发 sweep，不是独立内存子系统。learned-aggressive 继续是推荐随包策略。
+
+可选运行功能是 Presenter/Input、显式输入转发和 Steam 实验；诊断功能是 memory、crash history、API wait、color、data、PageBlock 详细观察及 profiling。它们分别按启动配置启用，没有插件轮询或菜单配置定时读取。
+
 ## 主配置中的诊断与日志
 
 | 配置 | 当前随包值 | 作用、关闭含义及性能 | 相比 1.1 |
 |---|---|---|---|
-| `client.setExceptionHandler` | `True` | 安装 Client 异常处理器，源码缺省 False。正常运行仍记录 API 上下文/命令历史；异常发生时才生成报告。关闭处理器不等于去掉编译进去的上下文记录。Host 有自身处理器。 | 开关已有；归因报告实现扩展 |
-| `client.exceptionDiagnosticsDetailed` | `False` | 只控制 Client **异常发生后的报告详细程度**：历史/故障栈上限从 16 扩至 32，并加报告器调用栈；不做逐帧完整栈扫描。False 仍保留基础异常报告。 | **新增** |
+| `client.setExceptionHandler` | `True` | 安装 Client 基础异常处理器，源码缺省 False；Host 保留自身处理器。crashDiagnostics=False 不取消故障处理和故障时报告。 | 已有 |
+| `client.exceptionDiagnosticsDetailed` | `False` | 控制故障时报告详细程度；显式 crashDiagnostics=False 优先，Detailed=True 也不维护健康运行中的历史。省略新 crashDiagnostics 键时，兼容旧配置的 Detailed=True 历史请求。 | 已有，补充兼容规则 |
 | `server.exceptionDiagnosticsDetailed` | `False` | 同上，作用于 Host；不控制 Client 处理器，也不是关闭 Host 基础报告。 | **新增** |
-| `client.pageBlockDiagnostics` | `False` | 可选 PageBlock 生存/锁历史、分类、模拟 LRU、约 10 秒摘要；True 会分配资源记录并在相关锁/创建/销毁路径做统计和同步日志。False 跳过这套详细观察，不关闭正常 residency 管理、真实 GC 日志或内存采样。 | 已有；本轮扩展相关统计 |
+| `client.pageBlockDiagnostics` | `False` | 可选 PageBlock 生存/锁历史、分类、模拟 LRU、约 10 秒摘要；True 会分配资源记录并在相关锁/创建/销毁路径做统计和同步日志。False 不分配逐资源记录、不维护锁历史/模拟 LRU、不输出周期摘要，也不创建 pageblock/retention/GC 详细日志；正常 residency/恢复和用户 GC 结果继续执行。内存采样由独立 memoryMonitoring 控制。 | 已有；本轮扩展相关统计 |
 | `client.pageBlockDiagnosticsDetailed` | `False` | 上一项开启时扩展逐资源销毁记录；单独 True 不会启动整套诊断。记录量和文件写入会增加。 | 已有 |
 | `client.testReadbackRecovery` | `False` | 开发参考验证：保留原副本比较恢复结果。开启会增加读回/比较开销，并阻止真实回收；不是普通恢复功能的开关。此前 `reference test` 导致 AGC/FGC 不回收即与此有关。 | 已有 |
-| `logApiCalls` | `False` | 在支持的 Debug/DebugOptimized 构建中逐 Client D3D9 API 打印；大量格式化、文件写入，可能明显影响加载/帧时间。 | 已有 |
-| `logServerCommands` | `False` | 在支持的构建中逐 Host command 打印，成本类似逐 API 日志；日常关闭。 | 已有 |
+| `logApiCalls` | `False` | False 且 logAllCalls=False 时不构造 API 名字符串、不分配日志缩进计数表、不格式化、不更新日志计数；crash history 有独立开关。True 保持逐调用日志。 | 已有，关闭路径分离 |
+| `logServerCommands` | `False` | False 且 logAllCommands=False 时不构造 command 名/UID 日志字符串、不进入其格式化或写入。 | 已有 |
 | `logLevel` | `Info` | 普通 Bridge 日志门槛：Trace、Debug、Info、Warn、Error、None。DebugOptimized 源码缺省 Debug，因此保留显式 Info。独立 memory/retention/GC/诊断日志及异常原始输出各有路径，设 None 不能关闭它们全部。 | 已有 |
 
-## 不在普通主配置中显式列出的新诊断/实验键
+## 诊断和实验开关
 
-以下均有实现缺省值；省略启用键表示关闭。两端开关独立，配套测试通常同时开启。“默认关闭”指普通安装和省略键时，**不指已经运行过专用启用脚本的配置**。
+以下诊断启用键随包显式设为 False；省略时也默认关闭。两端开关独立，配套测试通常同时开启。“默认关闭”指普通安装和省略键时，**不指已经运行过专用启用脚本的配置**。
 
 | 配置 | 缺省值 | 作用与开启成本 | 相比 1.1 |
 |---|---|---|---|
@@ -96,8 +106,8 @@ v1.2.0 正式版包含通用设置 API，L4N 插件单独提供 ZIP。旧 `v1.2.
 | `server.apiWaitDiagnostics` | `False` | Host command/backend 计时；同上。 | **新增** |
 | `client.apiWaitSnapshotMs` | `5000` | Client 等待统计的输出周期，1000–60000 ms，越界夹到边界；启用诊断时才有效，既不是 API 采样率也不是 IPC 超时。 | **新增** |
 | `server.apiWaitSnapshotMs` | `5000` | Host 同上；缩短输出周期增加汇总和 I/O。 | **新增** |
-| `client.colorDiagnostics` | `False` | 纹理请求、上传摘要及状态观察；开启增加调用点统计、有限哈希、锁及异步日志。关闭跳过主要记录/哈希工作，保留启用检查和少量布局局部量。 | **新增** |
-| `server.colorDiagnostics` | `False` | Host 解码/后端 HRESULT、上传摘要、关键状态/绑定快照；有 D3D Getter 与 COM 临时引用、哈希、统计、异步日志成本。不是偏色修复开关。 | **新增** |
+| `client.colorDiagnostics` | `False` | 纹理请求、上传摘要及状态观察；开启增加调用点统计、有限哈希、锁及异步日志。关闭时不进行诊断哈希/状态记录、不分配诊断 detail、不创建日志或线程；保留廉价启用检查和必要的 wire/layout 局部量。 | **新增** |
+| `server.colorDiagnostics` | `False` | Host 解码/后端 HRESULT、上传摘要、关键状态/绑定快照；有 D3D Getter 与 COM 临时引用、哈希、统计、异步日志成本。False 时不做诊断 Getter/临时 COM 引用/哈希/统计、不创建日志或线程。不是偏色修复开关。 | **新增** |
 | `client.colorSnapshotMs` | `5000` | Client 偏色摘要间隔，最小 1000 ms；不限制全部创建/上传事件，也不消除逐状态观察成本。 | **新增** |
 | `server.colorSnapshotMs` | `5000` | Host 状态快照共享限频间隔，最小 1000 ms；缩短间隔会增加后端查询和汇总工作。 | **新增** |
 | `client.steamInputDiagnostics` | `False` | 观察 Client 输入消息、窗口/模块/激活状态；开启增加事件计数、限频查询及日志，可注册被动 Overlay 激活通知。不是完整 Steam Overlay 输入修复。 | **新增实验项** |
@@ -112,29 +122,34 @@ v1.2.0 正式版包含通用设置 API，L4N 插件单独提供 ZIP。旧 `v1.2.
 
 可选 [dxvk-memory-1.0.1.conf](../config/dxvk-memory-1.0.1.conf) 属于 **mem1 x64 后端的 `dxvk.conf`**：`dxvk.bridgeMappedChunkSize=16` 限制普通可映射分配块大小；`dxvk.bridgeMemoryDiagnostics=False` 关闭该后端专用诊断。这两项在 1.1 已有，官方 DXVK 不实现这些自定义键。`dxvk.hud=memory,allocations` 是可选 HUD，不是桥的诊断总开关。
 
-## 详细诊断全关后，哪些工作仍在运行
+## 精确停用含义
 
-当前开发实现**没有一个关闭所有观察工作的总开关**。以下事实适用于正常配置，不能把“可选诊断默认关闭”写成“开发版诊断零开销”。
-
-| 始终存在的工作 | 开销发生在哪里 | 哪部分是本轮新增 |
+| 开关（启动时读取） | False 后不执行的工作 | 保留的工作 / 输出 |
 |---|---|---|
-| Client 内存采样 | Present/分配等路径检查时间；至少间隔约 5 秒执行 VirtualQuery 地址空间扫描、进程统计及同步写 `l4d2-memory.log`，不是后台线程。无触发调用则无定期采样。 | 1.1 已有采样/扫描；本轮在同次扫描加 VA 类型分类、CPU 时间等字段，未额外每帧全扫描。 |
-| VB/IB 分配释放统计 | 分配/释放路径上的原子计数与峰值更新；不在每个 draw 上扫描 buffer。 | 新增累计字节、次数及峰值；**只有统计，没有新增生命周期管理或回收**。 |
-| Host 内存/队列观察 | 定期系统/地址空间/GPU 预算查询、对象计数、日志；队列等待/通知有原子计数。这套日志不受 PageBlock/API wait/colour 开关控制。 | 大部分 1.1 已有；不能把整套成本算成本轮新引入。 |
-| 基础异常上下文 | API scope 与线程本地命令环形历史持续更新；格式化模块/栈报告和刷新文件主要发生在异常时。 | 本轮扩展；详细开关 False 不跳过基本历史记录。 |
-| 固定诊断存储及禁用分支 | API 等待诊断的固定计数表编译在二进制中，即使关闭也存在；关闭后不更新其计数，不创建可选线程/文件。偏色等调用点仍有禁用标志检查。 | 本轮新增；关闭不是从二进制移除全部诊断代码/静态存储。 |
-| residency 管理与自动 learned | 子资源创建/销毁登记、锁/上传安全检查、策略处理；learned 的创建来源/指纹/DB、回收及需要时恢复仍有工作。 | 基础 learned 在 1.1 已有；新增统一登记、安全门及恢复覆盖，与诊断开关独立。 |
-| GC 现场信息 | **只在执行 GC 时**有前后强制内存扫描/采样、结果日志，以及回收/Host 确认等待；关闭 PageBlock 详细诊断仍保留。 | 新增。实际动作可能造成短暂停顿，不是后台每帧持续 GC。 |
-| Reset 引用修正与基础日志 | 在 Reset/重建等路径执行额外引用核对、正确清理及记录。 | 新增修复，主要发生在切屏等动作，不是每帧全量资源扫描。 |
+| `client.memoryMonitoring=False`（新增） | 无全进程 VirtualQuery/VA 分类、进程内存/CPU 周期采样、采样时间维护、内存/峰值原子更新或采样锁；不创建/写 l4d2-memory.log；Present、分配、GC 前后调用均直接返回，无 async 任务。 | 真实分配、section/view、预算和 pin、安全失败传播；单个实际 mapped view 的测量仍用于 GC 字节结果。 |
+| `server.memoryMonitoring=False`（新增） | 不构造运行时 Recorder，不采样 VA/进程/系统内存/GPU budget；不创建/写 l4d2-host-memory.log；不维护诊断资源 inventory/队列原子统计/processed command 总数，无周期任务。 | 真正的 Host COM/resource map、队列索引/唤醒/timeout；backend 自身所需内存查询不属于此开关。 |
+| `client.crashDiagnostics=False` / `server.crashDiagnostics=False`（新增） | 不创建完整每线程 history state，不维护 API/command context、TLS 历史 ring，不复制/格式化可选退出队列历史；无逐调用诊断时间或历史写入。 | 基础 fatal handler 的一次性准备和故障时有界寄存器/栈/模块报告、退出码和 peer handling；故障现场可有 VirtualQuery，健康路径没有历史记录。 |
+| 两侧 `apiWaitDiagnostics=False` | 不分配 64 线程统计表；无诊断 QPC、统计原子更新、TLS stats 注册、histogram/percentile、周期线程、api-wait 日志。 | 核心等待/超时仍执行；GC ACK/drain 结果计时按既有 ABI 保留。 |
+| 两侧 `colorDiagnostics=False` | 无诊断 payload 哈希、状态 Getter、临时 COM 引用、ring/状态统计、color 线程/日志。 | 真实 setter、wire/layout、上传字节正确性。 |
+| 两侧 `dataDiagnostics=False` | 不创建每资源 metadata；无 resource detail 分配、lock histogram、状态/载荷同值比较、dispatch/backend 计时、data counters、线程/日志/摘要。 | FULL_SHADOW、LockInfo、shader/declaration/StateBlock 正确性存储；空 token/启用检查仍编译在二进制内。 |
+| `client.pageBlockDiagnostics=False` | 无诊断资源记录、锁时间/历史、模拟 LRU、learned 摘要计数、日志格式化、pageblock/retention/gc 详细文件；恢复纯 profiling 计时关闭。 | 统一 residency gate、capability/safety、真实策略、DB/身份哈希/恢复校验、drop/remap/failure 的控制 ABI 计数、用户 GC/策略变更的普通日志。 |
+| `client.pageBlockDiagnosticsDetailed=False` | 不扩展逐资源销毁输出；只有基础 pageBlockDiagnostics=True 才存在观察工作。 | 不是 PageBlock 关闭模式。 |
+| 两侧 `steamInputDiagnostics=False` | 不维护输入诊断事件、suppression TLS 观察、模块/窗口诊断轮询或状态日志。 | 若显式 steamOverlayInput=True，仍按用户请求执行实验输入状态转发，诊断日志独立关闭。 |
+| `client.testReadbackRecovery=False` | 不保留参考副本、不执行实验回读/比较；不启用参考测试计时。 | 正常真实恢复与正确性校验；不能关闭 recovery。 |
+| `logLevel=Info` | Trace/Debug producer 不求值，不先分配格式化字符串；Tracy 在默认构建中编译为 no-op。 | 生命周期、用户 GC/配置动作、真实警告/错误；初始化前的一次性日志缓存保持兼容。 |
 
-此前 x86 实机单次 GC 的累计 Host ACK 等待约 **50–67 ms**；三次实际内容恢复约 **6.6–14.8 ms**。这些是动作耗时例子，不能据此计算持续 FPS 损失或诊断开销。新增格式能回收更多内容，也可能在以后再次读取时产生相应恢复成本。
+内存和 crash-history 开关只在启动配置一次，不能运行中切换；开启诊断不会追补本次进程先前的采样。False 不删除以前运行留下的日志，测试文件是否新建要先清理旧文件。诊断文件打开失败仍采用原诊断的失败行为；普通警告/错误不依赖详细文件。PageBlock diagnostics 可单独启用；memory_monitoring=0 时 learned summary 的 global current/peak backing 字段未采集，零值不代表没有 backing，Stats 仍从真实 entries 查询。
 
-当前没有开发版新增成本的受控 FPS / 帧时间 / 加载时间 A/B 数据。比较时保持相同 Host、DXVK、地图、MOD、策略及缓存条件，先关闭逐调用日志和各可选诊断，再单独启用需要的诊断；偏色专用安装完成后的配置应当视为诊断已开。配置说明不能替代实际性能测量。
+Presenter 全关闭组合为 presenterWindow=False、hookMessagePump=False、overrideCustomWinHooks=False、disableExclusiveInput=False、两种 DirectInput.forward policy=0、Steam 实验 False，且为随包 vanilla DXVK、exposeRemixApi=False。此时无 Presenter HWND/thread/keyboard hook、ReShade addon binding/module polling、可选消息泵/input detour、DirectInput dummy-device/forwarder 初始化；输入消息只保留核心窗口/session 通知。仅 presenterWindow=False 并不会否定用户单独启用的其他输入功能；旧配置省略 DirectInput policy 时仍保持源码缺省 2，不静默更改。Presenter=True / Input=False 仍创建用户请求的呈现窗口，但没有 addon/input/capture 处理。游戏 WndProc 与必要 Set/GetWindowLong 协作保留以维持窗口与 Reset 正确性。
 
-相关实现与验证：[累计更新](CHANGES-SINCE-V1.1.md)、[内存统计](MEMORY-DIAGNOSTICS.md)、[PageBlock 诊断](PAGEBLOCK-DIAGNOSTICS.md)、[GC/drop](PAGEBLOCK-DROP-GC.md)、[异常归因](EXCEPTION-DIAGNOSTICS.md)、[API 等待](API-WAIT-DIAGNOSTICS.md)、[偏色诊断](NETWORK-COLOR-DIAGNOSTICS.md)。
+默认关闭不会让 Bridge“停止管理自身资源”：视图 LRU/预算、资源 ID/command UID、pin/transfer、恢复请求名称、learned 创建来源/内容指纹/DB、安全检查和核心状态计数仍运行。手动 GC 仍有扫表、Host ACK、FGC drain、结果计时和普通 PB_GC 日志；memoryMonitoring=False 时不强制全进程扫描。详细开关仅移除 D 类观察工作，不修改 A/B 核心语义。
+
+没有 FPS 提升结论；验收指标是实际扫描/线程/文件/计时/分配等调用停止，见分离报告的测试记录。
 
 ## 数据/资源追踪（新增，默认关闭）
 
 `client.dataDiagnostics=False`、`server.dataDiagnostics=False` 控制两侧独立追踪。`client.dataSnapshotMs=5000`、`server.dataSnapshotMs=5000` 是摘要间隔（最低 1000 ms）。开启后采集 VB/IB/Volume、shader/declaration/StateBlock 存储和访问，以及通用 IPC 命令量/Host 分派时间；有诊断计数锁、后台线程和日志开销。完整重启生效，不在 L4N 菜单中。日志不会保留资源正文，也不触发回收。使用方法、限制和离线分析见 [DATA-TRACKING.md](DATA-TRACKING.md)。
+
+关闭时不分配 resource detail、不更新统计/histogram、不比较状态/载荷、不创建 data 线程或日志。固定空 token 与启用检查保留。
 
 同一开关也控制新增的静态/动态 VB/IB 存储分类、动态锁大小直方图，以及绑定/常量同值比较。开启会增加载荷比较和 Device 有效性标记开销；关闭时不比较载荷、不分配该标记。没有 RANGE_STAGING 开关或新增静态回收行为，详见 [BUFFER-SHADOW-CONTRACT.md](BUFFER-SHADOW-CONTRACT.md)。

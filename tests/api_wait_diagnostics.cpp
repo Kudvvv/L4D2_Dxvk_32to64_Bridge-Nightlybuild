@@ -22,9 +22,11 @@ static void earlyReturn() {
 }
 int main() {
   require(!initialize(false, "client"), "disabled initialization remains inert");
+  require(!state, "disabled API wait has no statistics table");
   { ApiScope api(Api::CreateTexture); Span wait(Metric::ResponseWait); queued(); }
   require(localStats == nullptr && queuedCommands.load() == 0 && top == nullptr, "disabled scopes do not claim storage or count commands");
   frequency = 1000000;
+  state = new DiagnosticState();
   enabled.store(true);
   {
     ApiScope api(Api::CreateTexture);
@@ -141,6 +143,7 @@ int main() {
   // Synthetic scopes above enabled counters directly, without creating a
   // worker. Restore the startup state before testing real initialization.
   enabled.store(false);
+  localStats = nullptr; delete state; state = nullptr;
   require(initialize(true, "client", 1000), "native diagnostic worker initialization");
   wchar_t realLog[100] {};
   swprintf_s(realLog, 100, L"l4d2-api-wait-client-%lu.log", GetCurrentProcessId());

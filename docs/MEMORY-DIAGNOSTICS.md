@@ -2,6 +2,10 @@
 
 **文档范围：**下文 v1.0 数值与单客户端升级方式为历史记录。当前开发版请使用 [配套 residency 实验升级](PAGEBLOCK-RESIDENCY-EXPERIMENT.md)，不能与旧 Host 混装。schema=3 扩展见本页末尾。
 
+**当前源码变更：**内存观察现为显式可选：`client.memoryMonitoring=False`、`server.memoryMonitoring=False`，随包和源码缺省均关闭。关闭时不扫描 VA、不采样进程内存/GPU budget、不维护诊断计数、不创建内存日志或周期任务；GC 前后采样也直接返回。开启相应端后才使用下述采样/字段。监控不参与 PageBlock 回收/恢复决策；视图预算和 pin 仍是核心工作。下文旧版本“没有新配置键”的描述仅适用于其历史版本。见 [配置与停用规则](CONFIGURATION.md#精确停用含义)。
+
+当前 VB/IB shadow 的 `new[]`、零初始化和 `bad_alloc` 契约由 Core `buffer_shadow.h` 持有；memory diagnostics 只接收分配/释放通知。关闭监控不初始化 observer，诊断采样失败不改变实际分配结果。
+
 旧版进图采样中，纹理表面 shadow 达到 2,231,984,860 字节（约 2.08 GiB），加上顶点和索引 shadow 约 2.25 GiB。x86 进程空闲地址空间只剩约 147 MiB，最大连续空闲块约 55 MiB。这证明 bridge 的 CPU 副本造成严重地址空间压力；日志未记录最终异常，不能据此确定具体崩溃指令。
 
 新版将非共享堆路径的纹理表面 shadow 改为 Windows 分页文件支持的 section。Lock 时映射并保持指针有效，Unlock 将写入数据复制到现有 IPC 后解除锁定。缓存超出预算时，优先取消最久未使用且未锁定的映射；section 保留全部内容，下次 Lock 重新映射，不依赖 GPU 回读。资源销毁时关闭 section。预算按 Windows 分配粒度计入对齐开销，避免大量小 mip 映射消耗过多地址空间。

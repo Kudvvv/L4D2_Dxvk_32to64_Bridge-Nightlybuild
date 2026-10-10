@@ -380,7 +380,7 @@ L4D2 Bridge
 | exception | 故障模块/地址与可选详细 stack/context |
 | Presenter / Steam input | 窗口激活、capture、公开 overlay 事件与实验输入 |
 
-这些日志是定位桥的问题的证据，不是修复行为。各类详细 API、PageBlock、偏色、输入、readback reference 等诊断默认关闭；基础 memory/异常记录仍可能有开销，关闭详细项不表示所有日志与统计都被编译掉。启用逐调用日志、hash 或参考 readback 会增加 CPU、I/O、等待与额外内存，不能用诊断开启时性能代表日常默认配置。
+这些日志是定位桥的问题的证据。当前源码的 [诊断分离](RUNTIME-DIAGNOSTICS-SEPARATION.md) 将 memory 与 crash history 改为默认关闭的独立子系统；关闭不扫描、不更新历史/诊断统计、不创建可选线程或文件。PageBlock residency/reclaim、实际策略、恢复、Reset 和 IPC 同步始终保留；API wait 大表、crash TLS history 和 Data 资源 metadata 按需分配；小型静态计数存储、空 token 和启用/null 检查保留。Core 持有 VB/IB allocator，诊断只观察；日志初始化/写入失败不改变策略、GC 或恢复。已发布 v1.2.0 基线的行为见实现前审计。启用逐调用日志、hash 或参考 readback 会增加 CPU、I/O、等待与额外内存，不能用诊断开启时性能代表日常默认配置。
 
 当前已确认的场景包括作者 x86 Reset 往返、反馈用户 x86 联机偏色消失、实际 AGC/FGC backing 释放和部分 2D 恢复。自动测试覆盖 ABI、菜单、配置、布局、回收门及 mock 恢复；它们不能替代真实 L4D2、GPU、L4N、ReShade 和 Mod 组合。
 

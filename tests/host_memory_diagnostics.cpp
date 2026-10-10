@@ -16,6 +16,7 @@ uint64_t value(const std::string& line, const std::string& key) {
 }
 
 int main(int argc, char** argv) {
+  l4d2_observation::memoryMonitoring = true;
   if (argc != 2) { return 1; }
   l4d2_host_memory::ResourceInventory inventory;
   using Kind = l4d2_host_memory::ResourceKind;
