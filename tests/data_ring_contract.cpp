@@ -31,6 +31,20 @@ int main() {
       }
     }
   }
+  for (uint32_t capacity = 2; capacity <= 129; ++capacity) {
+    for (uint32_t pos = 0; pos < capacity; ++pos) {
+      for (uint64_t words = 0; words <= capacity + 1; ++words) {
+        const auto r = contiguousAt(capacity * 3 + pos, pos, capacity, words);
+        require(r.valid == (words <= capacity - pos), "declared layout tail fit");
+        if (!r.valid && words <= capacity) {
+          const auto padding = plan(capacity * 3 + pos, capacity, capacity - pos, false);
+          const auto restarted = contiguousAt(padding.end, 0, capacity, words);
+          require(padding.valid && restarted.valid && restarted.words == words, "padding then complete layout");
+        }
+      }
+    }
+  }
+  require(!contiguousAt(UINT64_MAX, 0, 8, 1).valid, "declared layout cursor overflow");
   require(!plan(UINT64_MAX,8,1,false).valid,"cursor overflow");
   uint64_t packetCases = 0;
   for (uint32_t capacity=2; capacity<=35; ++capacity) {

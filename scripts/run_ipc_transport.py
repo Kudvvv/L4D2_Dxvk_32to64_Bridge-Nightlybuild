@@ -9,8 +9,8 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 TEST = ROOT / '.deps/ipc-transport'
 
-def pair(host_role, count, threaded=False, rpc=False, known=False):
-    args=[str(uuid.uuid4()),str(count)]+(['known'] if known else ['rpc' if rpc else 'threaded'] if threaded else [])
+def pair(host_role, count, threaded=False, rpc=False, known=False, mode=None):
+    args=[str(uuid.uuid4()),str(count)]+([mode] if mode else ['known'] if known else ['rpc' if rpc else 'threaded'] if threaded else [])
     host=subprocess.Popen([str(TEST/f'transport-{host_role}.exe'),*args],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     client=subprocess.Popen([str(TEST/'transport-client32.exe'),*args],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     try:
@@ -44,3 +44,7 @@ for role in ('host32','host64'):
     print(result.stdout,result.stderr,sep='',flush=True)
     if result.returncode: raise RuntimeError(f'Native pin failed: {role} code={result.returncode}')
 print('IPC_NATIVE_ALL_PASS',flush=True)
+
+for host_role in ('host32','host64'):
+    for mode in ('wrap','layout'):
+        pair(host_role, 4000, mode=mode)
