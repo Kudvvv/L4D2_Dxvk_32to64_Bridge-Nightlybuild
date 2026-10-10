@@ -111,8 +111,9 @@ int main(int argc, char** argv) {
     failIpcSubmission=true;
     l4d2_residency::Runtime residency;
     l4d2_residency::Context& c=residency.context;
-    const D3DSURFACE_DESC desc {D3DFMT_DXT1,D3DRTYPE_SURFACE,0,D3DPOOL_MANAGED,D3DMULTISAMPLE_NONE,0,64,64};
-    Layout layout;assert(l4d2_readback::layout(64,64,D3DFMT_DXT1,layout));
+    // Retained-reference production selection includes 256, not tiny mip 64.
+    const D3DSURFACE_DESC desc {D3DFMT_DXT1,D3DRTYPE_SURFACE,0,D3DPOOL_MANAGED,D3DMULTISAMPLE_NONE,0,256,256};
+    Layout layout;assert(l4d2_readback::layout(256,256,D3DFMT_DXT1,layout));
     PagefileShadow backing;auto* original=backing.acquire(layout.bytes,0);assert(original);std::memset(original,0x71,layout.bytes);backing.release(0);
     l4d2_residency::Entry entry(c,backing,19,desc);entry.type=l4d2_shadow::Type::Texture2DLevel;entry.uploaded(layout.bytes);
     LARGE_INTEGER begin{},end{},frequency{};QueryPerformanceFrequency(&frequency);QueryPerformanceCounter(&begin);
@@ -124,7 +125,7 @@ int main(int argc, char** argv) {
     assert(backing.backingBytes()==layout.bytes && !backing.recoveryMissing());
     configuredPolicy="learned-aggressive";configuredDb="ipc-submit-failure.db";std::filesystem::remove(configuredDb);
     l4d2_retention::Runtime retention;assert(retention.context.enabled && !retention.context.fallback);
-    Request request;request.resourceId=19;request.parentId=18;request.width=request.height=64;request.format=D3DFMT_DXT1;request.bytes=layout.bytes;request.operation=3;
+    Request request;request.resourceId=19;request.parentId=18;request.width=request.height=256;request.format=D3DFMT_DXT1;request.bytes=layout.bytes;request.operation=3;
     swprintf_s(request.name,L"Local\\L4D2Recovery-%lu-submit-failure",GetCurrentProcessId());
     DWORD beforeHandles=0,afterHandles=0;GetProcessHandleCount(GetCurrentProcess(),&beforeHandles);
     for(unsigned i=0;i<100;++i){
