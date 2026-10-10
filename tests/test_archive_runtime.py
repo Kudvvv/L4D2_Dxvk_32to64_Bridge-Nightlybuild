@@ -51,17 +51,33 @@ class Packaging(unittest.TestCase):
             l4n_runtime = runtime.select_l4n_runtime(self.l4n_files)
             expected = set(runtime.REQUIRED) | set(l4n_runtime) | {
                 "bin/studiorender.dll", "README.txt", "THIRD-PARTY-NOTICES.txt"}
+            expected.remove("optional/L4N/L4D2BridgePlugin.dll")
+            expected.add("bin/neko/plugins/L4D2BridgePlugin.dll")
             self.assertEqual(names, expected)
-            self.assertEqual(len(names), 63)
+            self.assertEqual(len(names), 68)
             for name in runtime.REQUIRED:
-                self.assertEqual(archive.read(name), (self.source / name).read_bytes())
+                destination = ("bin/neko/plugins/L4D2BridgePlugin.dll"
+                               if name == "optional/L4N/L4D2BridgePlugin.dll" else name)
+                self.assertEqual(archive.read(destination), (self.source / name).read_bytes())
+            self.assertFalse(any(name.startswith("optional/") for name in names))
             self.assertEqual(archive.read("bin/studiorender.dll"), self.engine_files["bin/studiorender.dll"])
             for name, data in l4n_runtime.items():
                 self.assertEqual(archive.read(name), data)
             self.assertIn("left4dead2/neko/server_name_filter_template.txt", names)
             self.assertIn("left4dead2/bin/game_shader_generic_neko", names)
+            # These original L4N companion files were lost during ZIP slimming.
+            # Check delivery independently of the packager's runtime selection.
+            for basename in ("localize_overrides_template.vdf", "mdl_extension.qc",
+                             "neko_proxy.vmt", "scheme_overrides_template.vdf",
+                             "sequence_event_template.vdf"):
+                name = "left4dead2/neko/" + basename
+                self.assertIn(name, names)
+                self.assertEqual(archive.read(name), self.l4n_files[name])
+            self.assertNotIn("left4dead2/neko/config_template.vdf", names)
             self.assertFalse(any(name.endswith((".json", ".md", ".py", ".ps1", ".bat", ".7z")) for name in names))
-            self.assertFalse(any(name.startswith(("scripts/", "docs/", "config/", "licenses/", "bin/neko/")) for name in names))
+            self.assertFalse(any(name.startswith(("scripts/", "docs/", "config/", "licenses/")) for name in names))
+            self.assertEqual({name for name in names if name.startswith("bin/neko/")},
+                             {"bin/neko/plugins/L4D2BridgePlugin.dll"})
             self.assertNotIn("readme_l4n.txt", names)
             notices = archive.read("THIRD-PARTY-NOTICES.txt")
             for name in runtime.NOTICE_INPUTS:
@@ -72,6 +88,8 @@ class Packaging(unittest.TestCase):
             self.assertIn("无需运行修复工具", guide)
             self.assertIn("原始备份", guide)
             self.assertIn("Starfelll", guide)
+            self.assertIn("bin/neko/plugins/L4D2BridgePlugin.dll", guide)
+            self.assertNotIn("optional/", guide)
             self.assertIn(engine.ORIGINAL_SHA256, guide)
             self.assertIn(engine.PATCHED_SHA256, guide)
             self.assertNotIn("ENGINE-PATCH.json", guide)

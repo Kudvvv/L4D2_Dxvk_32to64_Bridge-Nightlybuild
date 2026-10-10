@@ -6,7 +6,7 @@
 
 配置所有权与 Client 安全持久化实现见 [技术架构](ARCHITECTURE.md#configuration-persistence)，接口的分别失败和重启判定见 [API 参考](API.md#general-control)。
 
-本文包含完整上游 **1.2.1** 功能，由 Nightly **1.1** 同步；“相比 1.1”列仍以原项目 v1.1.0 为参照。Nightly 与上游的发行区别是默认 x64 Host、GPLALL 后端，以及包含 ThinFlex 和可选 L4N 插件的单一全量包。表中的“随包值”是当前 [config/bridge.conf](../config/bridge.conf) 写明的值；“缺省值”指不写该键时实现采用的值，两者不一定相同。旧实验 ZIP 保持原样；升级保留已有配置，不能用本文的推荐值代替实际安装配置。下载与安装以 [Nightly README](../README.md) 为准。
+本文包含完整上游 **1.2.1** 功能，由 Nightly **1.1** 同步；“相比 1.1”列仍以原项目 v1.1.0 为参照。Nightly 与上游的发行区别是默认 x64 Host、GPLALL 后端，以及包含 ThinFlex 并直接安装 L4N 设置插件的单一全量包。表中的“随包值”是当前 [config/bridge.conf](../config/bridge.conf) 写明的值；“缺省值”指不写该键时实现采用的值，两者不一定相同。旧实验 ZIP 保持原样；升级保留已有配置，不能用本文的推荐值代替实际安装配置。下载与安装以 [Nightly README](../README.md) 为准。
 
 运行配置位于游戏的 **`bin/.l4d2bridge/bridge.conf`**。`client.*` 作用于游戏内的 Bridge Client；`server.*` 作用于渲染 Host，不指联机游戏服务器。更改后退出游戏及 Host，再重启；同一个键只保留一份。可选片段需要合并到该文件，不会因为放在旁边就自动生效。`dxvk.conf` 是后端配置，不能与 `bridge.conf` 混用。
 
@@ -14,11 +14,11 @@
 
 完整包同时附有维护者提供的根目录 `dxvk.conf` 和 `left4dead2/neko/config.vdf`，不附参考 `config_template.vdf`。它们分别配置后端与 L4N，不能代替 `bridge.conf`；升级时保留个人配置的步骤见 [README](../README.md)，来源见 [L4N 整合说明](L4N-BUNDLE.md)。
 
-可选 x86 L4N SDK v2 插件可通过 [常用设置菜单](L4N-BRIDGE-CONTROLS.md) 减少手工编辑。Bridge 本体不依赖插件；插件只查询状态和发送控制请求，由游戏内 Bridge Client（默认 `d3d9.dll`，`-vulkan` 模式为 `dxvk_d3d9.dll`） 复用实际 Config 路径安全保存。
+随包安装的 x86 L4N SDK v2 插件可通过 [常用设置菜单](L4N-BRIDGE-CONTROLS.md) 减少手工编辑。Bridge 本体不依赖插件；插件只查询状态和发送控制请求，由游戏内 Bridge Client（默认 `d3d9.dll`，`-vulkan` 模式为 `dxvk_d3d9.dll`） 复用实际 Config 路径安全保存。安装和加载插件不修改配置或执行 GC，设置变更由玩家在菜单中主动操作。
 
 Memory Policy 的 keep / lg / drop 仅调用运行时 SetPolicy，点击 `save to configure` 才保存当前 runtime 策略到 `client.pageBlockRetentionPolicy`。运行与配置相同时首行标记 configure，否则显示 runtime。Host 只显示配置值，选择 x86/x64 后点击 Save 才写入；Host 与 ReShade Presenter 下次完整启动生效，不能运行时切换 Host，Presenter 菜单不负责安装 ReShade。Status 仅显示 PageBlock。当前验证的 ReShade 组合仍是 x64 Host + Vulkan ReShade 6.0.1，启用 Presenter 不自动修改 Host。菜单没有测试/诊断选项；旧 Bridge 下保存不可用，原 Stats/GC/会话策略仍可用。
 
-v1.2.0 正式版包含通用设置 API，Nightly 将 L4N 插件放在完整 ZIP 的 `optional/L4N/` 目录。旧 `v1.2.0-dev.1` 附件不包含该 API。普通手工修改配置仍按上文完整重启；插件策略选项即时生效，保存为独立动作。
+v1.2.0 正式版包含通用设置 API，Nightly 完整 ZIP 将 L4N 插件直接安装到 `bin/neko/plugins/L4D2BridgePlugin.dll`，下次启动游戏时加载。不需要菜单时，退出游戏后移走或删除该 DLL 即可。旧 `v1.2.0-dev.1` 附件不包含该 API。普通手工修改配置仍按上文完整重启；插件策略选项即时生效，保存为独立动作。
 
 ## 后端、进程与呈现
 

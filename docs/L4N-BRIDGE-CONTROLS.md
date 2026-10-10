@@ -2,11 +2,11 @@
 
 开发接入见 [完整 API 参考](API.md)，进程/资源/配置的技术边界见 [当前架构](ARCHITECTURE.md)。本文描述最终 HUD 行为；控制 ABI 仍提供 runtime Host 等字段，插件按当前菜单要求不显示这些字段。
 
-本页描述完整上游 1.2.1 的常用设置功能。Nightly 从同一源码编译 x86 `L4D2BridgePlugin.dll`，随唯一全量 ZIP 放在 `optional/L4N/`。完整包已含 Starfelll（@Starfelll）的 L4N 2.51.0 本体及维护者提供的 `config.vdf`；来源见 [整合包说明](L4N-BUNDLE.md)。Bridge 本体不依赖设置插件，插件需支持随仓库提供的 SDK v2 的 L4N HUD。
+本页描述完整上游 1.2.1 的常用设置功能。Nightly 从同一源码编译 x86 `L4D2BridgePlugin.dll`，随唯一全量 ZIP 直接放在 `bin/neko/plugins/`。完整包已含 Starfelll（@Starfelll）的 L4N 2.51.0 本体及维护者提供的 `config.vdf`；来源见 [整合包说明](L4N-BUNDLE.md)。Bridge 本体不依赖设置插件，插件需支持随仓库提供的 SDK v2 的 L4N HUD。
 
-## 安装可选插件
+## 安装与停用插件
 
-需要菜单时，将完整包里的 `optional/L4N/L4D2BridgePlugin.dll` 复制到游戏 `bin/neko/plugins/`，重启游戏。解压完整包会安装 L4N，但不会自动启用此 Bridge 设置插件；不需要菜单可忽略 `optional/`。每次升级使用同一包中配套的 Client、Host 和插件。
+按 README 将完整包合并到游戏目录后，插件已位于 `bin/neko/plugins/L4D2BridgePlugin.dll`，下次启动游戏即由 L4N 加载，无需额外复制。安装或加载插件本身不更改配置、切换策略或执行 GC；这些操作由玩家在菜单中主动选择。不需要菜单时，退出游戏后移走或删除该 DLL 即可，Bridge 本体仍可使用。每次升级使用同一包中配套的 Client、Host 和插件；升级会重新放入插件，需继续停用时从临时解压目录移除该 DLL。
 
 上游历史版本的独立插件 ZIP 与拆包脚本保留在源码资料中；本 Nightly 发布不使用独立插件或 update 包。下载、默认 Host 和 ThinFlex 安装规则以 [README](../README.md) 为准。
 

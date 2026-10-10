@@ -130,7 +130,7 @@ class Publishing(unittest.TestCase):
                           "须保留最初原版 DLL 备份", "未知版本应从临时解压目录移除 `bin/studiorender.dll`，仅更新 Bridge",
                           "10000 项扩为 65536 项", "2 MiB", "原数字签名失效",
                           "v1.0.10 ThinFlex 修复有效", "2026-10-10", "反馈未提供游玩时长及完整模型范围",
-                          "完整合并 L4D2 原项目", "尚未进行游戏 FPS 对照", "optional/L4N/L4D2BridgePlugin.dll",
+                          "完整合并 L4D2 原项目", "尚未进行游戏 FPS 对照", "bin/neko/plugins/L4D2BridgePlugin.dll",
                           "L4N 2.51.0", "Starfelll", "runtime/l4n/manifest.json", "请勿与其他类似整合项目混装",
                           "性能测试未安装 ThinFlex", "PERFORMANCE-2026-10-10.md",
                           "引擎 DLL 归属 Valve，不适用项目根目录 MIT 许可", "THIRD-PARTY-NOTICES.txt",

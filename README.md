@@ -8,7 +8,7 @@
 
 ## 下载与安装（先看这里）
 
-**[前往 Releases 下载完整包](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**。每次发布只提供一个 `l4d2-bridge-*.zip`，另附 `.sha256` 校验文件。包内包含 **L4N 2.51.0、DXVK-GPLALL、Bridge、`dxvk.conf`、L4N 的 `left4dead2/neko/config.vdf`** 和修复后的 `bin/studiorender.dll`，无需运行补丁工具或安装 Python。按维护者提供的整合目录布局交付，未附 `config_template.vdf`；组件来源见 [整合包说明](docs/L4N-BUNDLE.md)。安装包仅保留运行组件、实际配置、简短 `README.txt` 和合并后的 `THIRD-PARTY-NOTICES.txt`；开发文档、JSON 清单、诊断脚本、SDK 与离线 Mod 制作工具均留在仓库，不随安装包提供。
+**[前往 Releases 下载完整包](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**。每次发布只提供一个 `l4d2-bridge-*.zip`，另附 `.sha256` 校验文件。包内包含 **L4N 2.51.0、DXVK-GPLALL、Bridge、`dxvk.conf`、L4N 的 `left4dead2/neko/config.vdf`** 和修复后的 `bin/studiorender.dll`，无需运行补丁工具或安装 Python。按维护者提供的整合目录布局交付，未附 `config_template.vdf`；组件来源见 [整合包说明](docs/L4N-BUNDLE.md)。安装包保留运行组件、实际配置、L4N 原配套 VDF 模板和 QC/VMT 范例、简短 `README.txt` 和合并后的 `THIRD-PARTY-NOTICES.txt`；开发文档、JSON 清单、诊断脚本、SDK 与离线 Mod 制作工具均留在仓库，不随安装包提供。
 
 1. **退出游戏和 Bridge Host，备份现有文件。** 备份原 `left4dead2.exe`、L4N 文件、客户端、Host、`dxvk.conf`、`left4dead2/neko/config.vdf`、Bridge 配置和 `bin/studiorender.dll`，将完整 ZIP 解压到临时目录。若已安装 ThinFlex 修复，继续保留最初的原始 DLL 备份，勿用修复版覆盖它。已装其他同类项目时，先按其说明卸载或恢复原文件，再安装本包。
 2. **已有用户先保留配置：** 从临时解压目录移除想保留的 `dxvk.conf`、`left4dead2/neko/config.vdf` 和 `bin/.l4d2bridge/bridge.conf`，再覆盖游戏目录。若自行修改过后端，同样从临时目录移除 `bin/.l4d2bridge/d3d9vk_x64.dll` 与 `d3d9vk_x86.dll`，避免覆盖。首次安装跳过此步；包内 L4N 附带的着色器等同路径文件也会覆盖，请备份个人修改。
@@ -26,7 +26,7 @@ ThinFlex 修复已收到用户复测有效反馈，仍限定于以上精确版�
 
 完整包同时包含 x64/x86 Host 与对应 GPLALL 后端，**默认仍为 x64**。切换 Host 可修改 `client.testX86Server`（`False` 为 x64，`True` 为 x86），保持 `forceX64Server=True`，退出整个游戏后重新启动。
 
-L4N 本体已随包安装。另需 Bridge 常用设置菜单时，把包内 `optional/L4N/L4D2BridgePlugin.dll` 复制到游戏 `bin/neko/plugins/` 并重启；该菜单插件保持可选。无需另下插件包，详见 [L4N 设置说明](docs/L4N-BRIDGE-CONTROLS.md)。L4N 原始说明与作者署名原文收录于包内 `THIRD-PARTY-NOTICES.txt`，另见 [Starfelll 归属说明](licenses/L4N-NOTICE.txt)。
+L4N 本体和 Bridge 常用设置菜单插件一同随包安装，插件直接位于 `bin/neko/plugins/L4D2BridgePlugin.dll`，启动游戏后可在 L4N 菜单中使用。安装插件本身不会更改配置或执行 GC；这些操作需在菜单中主动选择。不需要菜单时，退出游戏后移走或删除该 DLL 即可，Bridge 本体仍可使用。详见 [L4N 设置说明](docs/L4N-BRIDGE-CONTROLS.md)。L4N 原始说明与作者署名原文收录于包内 `THIRD-PARTY-NOTICES.txt`，另见 [Starfelll 归属说明](licenses/L4N-NOTICE.txt)。
 
 新安装配置包含上游的 learned-aggressive 内存策略，并默认关闭日常 memory/crash/data 诊断；已有用户升级继续保留自己的配置，新功能的键与开销见仓库 [配置说明](docs/CONFIGURATION.md)。
 

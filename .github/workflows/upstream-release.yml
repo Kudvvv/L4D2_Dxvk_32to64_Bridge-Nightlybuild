@@ -187,7 +187,8 @@ jobs:
           $metadata.original_project_integration = $original.integration
           $metadata.host_architectures = @('x86', 'x64')
           $metadata.default_host_architecture = 'x64'
-          $metadata.optional_l4n_plugin = 'optional/L4N/L4D2BridgePlugin.dll'
+          $metadata.l4n_plugin = 'bin/neko/plugins/L4D2BridgePlugin.dll'
+          $metadata.l4n_plugin_installed = $true
           $l4n = Get-Content runtime/l4n/manifest.json -Raw -Encoding utf8 | ConvertFrom-Json
           $metadata.l4n_version = $l4n.version
           $metadata.l4n_author = $l4n.author

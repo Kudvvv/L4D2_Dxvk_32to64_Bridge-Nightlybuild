@@ -11,9 +11,11 @@ from engine_payload import (staged_engine_files, read_regular, ORIGINAL_SHA256,
                             PATCHED_SHA256)
 from l4n_payload import staged_l4n_files
 
+PLUGIN_SOURCE = "optional/L4N/L4D2BridgePlugin.dll"
+PLUGIN_DESTINATION = "bin/neko/plugins/L4D2BridgePlugin.dll"
 REQUIRED = ("bin/d3d9.dll", "bin/.l4d2bridge/L4D2Bridge64.exe",
             "bin/.l4d2bridge/L4D2Bridge32.exe", "bin/.l4d2bridge/d3d9vk_x86.dll",
-            "optional/L4N/L4D2BridgePlugin.dll",
+            PLUGIN_SOURCE,
             "bin/.l4d2bridge/d3d9vk_x64.dll", "bin/.l4d2bridge/bridge.conf")
 NOTICE_INPUTS = ("LICENSE", "THIRD_PARTY.md", "licenses/Bridge-MIT.txt",
                 "licenses/Bridge-third-party.txt", "licenses/DXVK-LICENSE.txt",
@@ -24,12 +26,17 @@ L4N_RUNTIME_FIXED = frozenset((
     "left4dead2/bin/game_shader_generic_neko", "left4dead2/bin/game_shader_generic_neko.dll",
     "left4dead2/neko/config.vdf", "left4dead2/neko/key_bind_acts.vdf",
     "left4dead2/neko/l4ngui_english.vdf", "left4dead2/neko/l4ngui_schinese.vdf",
+    # Preserve L4N's configuration templates and model/material reference files.
+    # A template name or QC extension does not make these disposable build files.
+    "left4dead2/neko/localize_overrides_template.vdf", "left4dead2/neko/mdl_extension.qc",
+    "left4dead2/neko/neko_proxy.vmt", "left4dead2/neko/scheme_overrides_template.vdf",
+    "left4dead2/neko/sequence_event_template.vdf",
     # L4N reads this fallback at runtime when server_name_filter.txt is absent.
     "left4dead2/neko/server_name_filter_template.txt",
     "reshade-shaders/Shaders/L4N/L4N_Util.fx"))
 L4N_RUNTIME_PREFIXES = ("left4dead2/materials/l4n/", "left4dead2/shaders/fxc/")
-L4N_RUNTIME_COUNT = 53
-L4N_RUNTIME_SIZE = 10015177
+L4N_RUNTIME_COUNT = 58
+L4N_RUNTIME_SIZE = 10023581
 
 
 def select_l4n_runtime(files):
@@ -87,13 +94,16 @@ def runtime_archive(source, output):
     notices = combined_notices(source, verified)
     files = {**bridge_files, "bin/studiorender.dll": engine_files["bin/studiorender.dll"],
              **select_l4n_runtime(l4n_files)}
+    # The original build receipt verifies the plugin at its staging path;
+    # the player ZIP installs that same verified snapshot into L4N directly.
+    files[PLUGIN_DESTINATION] = files.pop(PLUGIN_SOURCE)
     files["THIRD-PARTY-NOTICES.txt"] = notices
     files["README.txt"] = (
         f"L4D2 Bridge v{version} runtime package\n\n"
         "已包含 DXVK（GPLALL）、L4N 和桥接工具；退出游戏后备份原文件，将本包解压覆盖到游戏根目录即可安装。请勿与其他类似整合项目混装。\n"
         "移除 -vulkan 启动参数，备份移走游戏根目录的 d3d9.dll；保留本包 bin/d3d9.dll 和 bin/.l4d2bridge 目录。\n"
         "升级时先解压到临时目录，保留原有 dxvk.conf、bin/.l4d2bridge/bridge.conf、left4dead2/neko/config.vdf、自定义后端、ReShade 和 retention DB，再合并覆盖。客户端与两个 Host 一并更新、回退。\n"
-        "L4N 原作者：Starfelll（@Starfelll）。可选控制插件 optional/L4N/L4D2BridgePlugin.dll 需要时复制到 bin/neko/plugins/。\n"
+        "L4N 原作者：Starfelll（@Starfelll）。Bridge 设置菜单插件已放在 bin/neko/plugins/L4D2BridgePlugin.dll，随包安装；不需要菜单时退出游戏后移走该 DLL。\n"
         "已含 ThinFlex 修复，无需运行修复工具。覆盖前备份原始 bin/studiorender.dll；已修复玩家保留最初原始备份。只有下列原版或修复版身份匹配时才替换，未知游戏版本请从临时目录移除该 DLL。回退时恢复对应原版备份。\n"
         f"ThinFlex 原版 SHA-256：{ORIGINAL_SHA256}\n"
         f"ThinFlex 修复版 SHA-256：{PATCHED_SHA256}\n\n"

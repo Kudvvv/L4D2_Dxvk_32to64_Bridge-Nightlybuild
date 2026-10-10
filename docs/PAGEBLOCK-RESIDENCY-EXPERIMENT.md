@@ -24,7 +24,7 @@ bin/.l4d2bridge/L4D2Bridge32.exe
 
 [GitHub 直接下载实验 ZIP](https://raw.githubusercontent.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/experimental-downloads-1.1.2-dev.2/l4d2-pageblock-residency-experiment-v1.1.2-dev.3.zip)。继续使用原 ZIP 专用分支；分支名中的 dev.2 是下载位置，实际包内版本为 dev.3。该分支根目录仅存 ZIP，没有新的正式 Release。
 
-可选插件在 `optional/L4N/L4D2BridgePlugin.dll`；需要 HUD 控制时放到 **`bin/neko/plugins/L4D2BridgePlugin.dll`**。另行制作的 PageBlock 实验包直接包含此安装路径。插件使用提供的 L4N SDK **v2**，只把菜单请求交给已加载 Bridge Client 的导出，不注册 Source 命令、不重新实现 GC。
+历史开发包中的可选插件位于 `optional/L4N/L4D2BridgePlugin.dll`，需另行复制到 **`bin/neko/plugins/L4D2BridgePlugin.dll`**。本页的 PageBlock 实验包已经直接包含此安装路径，历史附件保持不变。当前 Nightly 完整 ZIP 也直接安装到 `bin/neko/plugins/L4D2BridgePlugin.dll`，无需额外复制；不需要菜单时退出游戏后移走或删除该 DLL。插件使用提供的 L4N SDK **v2**，只把玩家主动选择的菜单请求交给已加载 Bridge Client 的导出；安装或加载插件本身不改配置或执行 GC，不注册 Source 命令、不重新实现 GC。
 
 当前随包配置默认使用 x86 Host。下列片段对应这一选择；本页最初格式补齐阶段尚未改变当时的随包默认值：
 
