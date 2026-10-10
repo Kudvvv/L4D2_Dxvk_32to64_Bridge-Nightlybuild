@@ -39,6 +39,7 @@ jobs:
         if: always()
         with:
           name: ipc-baseline-evidence
+          include-hidden-files: true
           path: |
             .deps/ipc-baseline/
             .deps/ipc-transport/
