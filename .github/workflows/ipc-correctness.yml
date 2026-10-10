@@ -8,8 +8,29 @@ on:
 permissions:
   contents: read
 jobs:
+  performance-build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prepare production sources and compile all performance variants (no timed execution)
+        shell: powershell
+        run: |
+          python scripts/prepare_bridge.py
+          if ($LASTEXITCODE -ne 0) { throw 'Production preparation failed' }
+          ./scripts/test_ipc_performance.ps1 -CompileOnly
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipc-performance-fixtures
+          path: .deps/ipc-perf-*/
+          include-hidden-files: true
+          if-no-files-found: error
   baseline:
-    needs: windows-build
+    needs: [windows-build, performance-build]
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -32,9 +53,12 @@ jobs:
       - name: Test native Device and Module transport in both directions
         shell: powershell
         run: ./scripts/test_ipc_transport.ps1
+      - uses: actions/download-artifact@v4
+        with:
+          name: ipc-performance-fixtures
+          path: .deps
       - name: Compare x86/x86 and x86/x64 production A/B/C and staged attribution
-        shell: powershell
-        run: ./scripts/test_ipc_performance.ps1
+        run: python scripts/run_ipc_performance.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
