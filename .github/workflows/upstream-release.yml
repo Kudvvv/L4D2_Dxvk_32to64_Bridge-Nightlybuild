@@ -118,11 +118,14 @@ jobs:
         run: ./scripts/test_ati_texture_layout.ps1
       - name: Test command queue wakeups and cross-process transport
         shell: powershell
-        run: ./scripts/test_command_queue.ps1
+        run: ./scripts/test_command_queue.ps1 -ExpectReadyFastPath
+      - name: Test actual Client and Host command publication
+        shell: powershell
+        run: ./scripts/test_command_guard.ps1
       - name: Benchmark command queue ordering
         if: ${{ inputs.validation_only }}
         shell: powershell
-        run: ./scripts/test_command_queue.ps1 -Benchmark
+        run: ./scripts/test_command_queue.ps1 -Benchmark -ExpectReadyFastPath
       - name: Test actual volume lock and upload code (x86 and x64)
         shell: powershell
         run: ./scripts/test_volume_texture.ps1

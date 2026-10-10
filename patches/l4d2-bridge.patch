@@ -13433,7 +13433,7 @@ index 3ed228a9889d109c7d867830406cfdc79ed0c542..d7d767629590158dda4d84b0b09ef495
          return 0;
        }
 diff --git a/bridge/src/util/util_bridgecommand.cpp b/bridge/src/util/util_bridgecommand.cpp
-index a3bed63a88cbff78b5db8b7213b4373ea50bc8ec..19ee8eb40999c1ba2e9e0ce096c95c13f5039053 100644
+index a3bed63a88cbff78b5db8b7213b4373ea50bc8ec..bf7ecc3cc37242c69e277f7aa7c91c3ea680f9e2 100644
 --- a/bridge/src/util/util_bridgecommand.cpp
 +++ b/bridge/src/util/util_bridgecommand.cpp
 @@ -1,3 +1,7 @@
@@ -13569,7 +13569,7 @@ index a3bed63a88cbff78b5db8b7213b4373ea50bc8ec..19ee8eb40999c1ba2e9e0ce096c95c13
    , m_handle((uint32_t) (size_t) pHandle)
    , m_commandFlags(commandFlags) {
    // If the assert or exception gets triggered it means that there is more than one Command
-@@ -276,7 +304,11 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
+@@ -276,25 +304,38 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
  #endif
  
  #ifdef REMIX_BRIDGE_CLIENT
@@ -13581,10 +13581,21 @@ index a3bed63a88cbff78b5db8b7213b4373ea50bc8ec..19ee8eb40999c1ba2e9e0ce096c95c13
 +  }
  #endif
  
-   assert(!s_pWriterChannel->pbCmdInProgress->load());
-@@ -289,12 +321,18 @@ DECL_COMMAND_FUNC(,Command,const Commands::D3D9Command command,
+-  assert(!s_pWriterChannel->pbCmdInProgress->load());
+-  if (s_pWriterChannel->pbCmdInProgress->load()) {
++  // This nesting guard is process-local: Client writers hold m_mutex and the
++  // Host has one writer per channel. IPC publication and wakeup use their own
++  // synchronization; this flag does not publish payloads to another thread.
++  assert(!s_pWriterChannel->pbCmdInProgress->load(std::memory_order_relaxed));
++  if (s_pWriterChannel->pbCmdInProgress->load(std::memory_order_relaxed)) {
+     Logger::errLogMessageBoxAndExit(logger_strings::MultipleActiveCommands);
    }
-   s_pWriterChannel->pbCmdInProgress->store(true);
+   // Only start a data batch if the bridge is actually enabled, otherwise this becomes a no-op
+   if (gbBridgeRunning) {
+     s_pWriterChannel->data->begin_batch();
+   }
+-  s_pWriterChannel->pbCmdInProgress->store(true);
++  s_pWriterChannel->pbCmdInProgress->store(true, std::memory_order_relaxed);
    s_curBatchStartPos = (int32_t) s_pWriterChannel->data->get_pos();
 -  s_cmdCounter++;
 +
@@ -13602,7 +13613,7 @@ index a3bed63a88cbff78b5db8b7213b4373ea50bc8ec..19ee8eb40999c1ba2e9e0ce096c95c13
  #if defined(_DEBUG) || defined(DEBUGOPT)
        if (GlobalOptions::getLogAllCommands()) {
          Logger::info("Pushed UID: " + std::to_string(s_cmdUID));
-@@ -319,6 +357,16 @@ DECL_COMMAND_FUNC(,~Command) {
+@@ -319,6 +360,16 @@ DECL_COMMAND_FUNC(,~Command) {
      // was disabled externally by the server process exit callback.
      do {
        result = s_pWriterChannel->commands->push({ m_command, m_commandFlags, (uint32_t) s_pWriterChannel->data->get_pos(), m_handle });
@@ -13619,7 +13630,7 @@ index a3bed63a88cbff78b5db8b7213b4373ea50bc8ec..19ee8eb40999c1ba2e9e0ce096c95c13
  #if defined(_DEBUG) || defined(DEBUGOPT)
        if (GlobalOptions::getLogAllCommands()) {
          Logger::info("Pushed: " + toString(m_command));
-@@ -332,6 +380,10 @@ DECL_COMMAND_FUNC(,~Command) {
+@@ -332,6 +383,10 @@ DECL_COMMAND_FUNC(,~Command) {
        && BridgeState::getServerState_NoLock() == BridgeState::ProcessState::Running
  #endif
      );
@@ -13630,7 +13641,7 @@ index a3bed63a88cbff78b5db8b7213b4373ea50bc8ec..19ee8eb40999c1ba2e9e0ce096c95c13
  #ifdef REMIX_BRIDGE_CLIENT
      if (BridgeState::getServerState_NoLock() >= BridgeState::ProcessState::DoneProcessing) {
        Logger::warn(format_string("The command %s will not be sent; Server is in the process of or has already shut down. Turning bridge off.", Commands::toString(m_command).c_str()));
-@@ -342,9 +394,13 @@ DECL_COMMAND_FUNC(,~Command) {
+@@ -342,11 +397,15 @@ DECL_COMMAND_FUNC(,~Command) {
          Logger::err(format_string("The command %s could not be successfully sent, turning bridge off and falling back to client rendering!", Commands::toString(m_command).c_str()));
          gbBridgeRunning = false;
        } else if (RESULT_SUCCESS(result) && numRetries > 1) {
@@ -13644,9 +13655,12 @@ index a3bed63a88cbff78b5db8b7213b4373ea50bc8ec..19ee8eb40999c1ba2e9e0ce096c95c13
 +      m_dataWire, false, 0);
 +    // NV-DXVK end
    }
-   s_pWriterChannel->pbCmdInProgress->store(false);
+-  s_pWriterChannel->pbCmdInProgress->store(false);
++  s_pWriterChannel->pbCmdInProgress->store(false, std::memory_order_relaxed);
  #ifdef REMIX_BRIDGE_CLIENT
-@@ -354,4 +410,4 @@ DECL_COMMAND_FUNC(,~Command) {
+   ++s_cmdUID;
+   s_pWriterChannel->m_mutex.unlock();
+@@ -354,4 +413,4 @@ DECL_COMMAND_FUNC(,~Command) {
  }
  
  template class Bridge<BridgeId::Module>;
