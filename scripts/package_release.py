@@ -9,60 +9,76 @@ import json
 from pathlib import Path
 import shutil
 import struct
+import subprocess
 from engine_payload import source_engine_files
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def machine(path):
-    data = path.read_bytes()
+def machine_bytes(data, label="binary"):
     if len(data) < 64 or data[:2] != b"MZ":
-        raise ValueError(f"Not a PE file: {path}")
+        raise ValueError(f"Not a PE file: {label}")
     offset = struct.unpack_from("<I", data, 60)[0]
-    if data[offset:offset + 4] != b"PE\0\0":
-        raise ValueError(f"Invalid PE signature: {path}")
+    if offset > len(data) - 24 or data[offset:offset + 4] != b"PE\0\0":
+        raise ValueError(f"Invalid PE signature: {label}")
     return struct.unpack_from("<H", data, offset + 4)[0]
 
 
-def package(source, dxvk, output):
+def machine(path):
+    return machine_bytes(path.read_bytes(), str(path))
+
+
+def package(source, dxvk, output, dxvk_x86, plugin):
     engine_files = source_engine_files()
-    client_output = output.parent / "l4d2-client-only"
+    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    patch_hash = hashlib.sha256((ROOT / "patches/l4d2-bridge.patch").read_bytes()).hexdigest()
+    build_id = f"l4d2-{version}+{patch_hash[:16]}"
     inputs = {
         "bin/d3d9.dll": (source / "bridge/_compDebugOptimized_x86/src/client/d3d9.dll", 0x14c),
         "bin/.l4d2bridge/L4D2Bridge64.exe": (source / "bridge/_compDebugOptimized_x64/src/server/L4D2Bridge64.exe", 0x8664),
         "bin/.l4d2bridge/d3d9vk_x64.dll": (dxvk, 0x8664),
+        "bin/.l4d2bridge/L4D2Bridge32.exe": (source / "bridge/_compDebugOptimized_x86_server/src/server/L4D2Bridge32.exe", 0x14c),
+        "bin/.l4d2bridge/d3d9vk_x86.dll": (dxvk_x86, 0x14c),
+        "optional/L4N/L4D2BridgePlugin.dll": (plugin, 0x14c),
     }
-    # Validate all inputs before creating output. Never deploy into a game directory.
-    for path, expected in inputs.values():
-        if machine(path) != expected:
-            raise ValueError(f"Wrong architecture: {path}")
-    for destination in (output, client_output):
-        if destination.exists():
-            raise FileExistsError(f"Output already exists; preserve or move it first: {destination}")
+    # Validate and snapshot all binaries before creating output; never deploy into a game directory.
+    files = dict(engine_files)
+    for relative, (path, expected) in inputs.items():
+        data = path.read_bytes()
+        if machine_bytes(data, relative) != expected:
+            raise ValueError(f"Wrong architecture: {relative}")
+        if relative == "bin/d3d9.dll" or relative.endswith(("L4D2Bridge32.exe", "L4D2Bridge64.exe")):
+            if build_id.encode("ascii") not in data:
+                raise ValueError(f"Missing matching build identity: {relative}")
+        if relative.endswith("L4D2Bridge32.exe"):
+            pe = struct.unpack_from("<I", data, 60)[0]
+            if not struct.unpack_from("<H", data, pe + 22)[0] & 0x20:
+                raise ValueError("The x86 Host must be LARGEADDRESSAWARE")
+        files[relative] = data
+    if output.exists():
+        raise FileExistsError(f"Output already exists; preserve or move it first: {output}")
+    source_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     output.mkdir(parents=True, exist_ok=False)
-    for relative, data in engine_files.items():
+    for relative, data in files.items():
         destination = output / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
-    hashes = {}
-    for relative, (path, _) in inputs.items():
-        destination = output / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, destination)
-        hashes[relative] = hashlib.sha256(destination.read_bytes()).hexdigest()
+    hashes = {relative: hashlib.sha256(data).hexdigest() for relative, data in files.items()}
     shutil.copy2(ROOT / "config/bridge.conf", output / "bin/.l4d2bridge/bridge.conf")
-    pinned = ROOT / ".deps/gplall/release/x64/d3d9.dll"
-    backend_info = {"sha256": hashlib.sha256(dxvk.read_bytes()).hexdigest(),
-                    "architecture": "x86_64", "source": "custom -DxvkDll"}
-    if pinned.exists() and pinned.read_bytes() == dxvk.read_bytes():
-        archive = ROOT / ".deps/gplall/backend.zip"
-        metadata = json.loads((ROOT / "config/backend.json").read_text())
-        if archive.exists() and hashlib.sha256(archive.read_bytes()).hexdigest() == metadata["sha256"]:
-            backend_info.update(metadata)
-            backend_info["archive_sha256"] = backend_info.pop("sha256")
-            backend_info["sha256"] = hashlib.sha256(dxvk.read_bytes()).hexdigest()
-            backend_info["source"] = metadata["release"]
-    (output / "BACKEND.json").write_text(json.dumps(backend_info, indent=2) + "\n")
+    backend_hashes = {arch: hashes[f"bin/.l4d2bridge/d3d9vk_{arch}.dll"] for arch in ("x64", "x86")}
+    backend_info = {"files": backend_hashes, "default_architecture": "x86_64", "source": "custom -DxvkDll / -Dxvk32Dll"}
+    archive = ROOT / ".deps/gplall/backend.zip"
+    metadata = json.loads((ROOT / "config/backend.json").read_text(encoding="utf-8"))
+    if (archive.is_file() and hashlib.sha256(archive.read_bytes()).hexdigest() == metadata["sha256"]
+            and backend_hashes == {"x64": metadata["files"]["x64/d3d9.dll"], "x86": metadata["files"]["x32/d3d9.dll"]}):
+        backend_info.update(metadata)
+        backend_info["archive_sha256"] = backend_info.pop("sha256")
+        backend_info["files"] = backend_hashes
+        backend_info["source"] = metadata["release"]
+    (output / "BACKEND.json").write_text(json.dumps(backend_info, indent=2) + "\n", encoding="utf-8")
+    receipt = {"version": version, "build_id": build_id, "patch_sha256": patch_hash, "source_commit": source_commit,
+               "kind": "full", "optional_plugin": True, "plugin_location": "optional/L4N/L4D2BridgePlugin.dll", "files": hashes}
+    (output / "BUILD-INFO.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     shutil.copy2(ROOT / "docs/TESTING.md", output / "TESTING.md")
     shutil.copy2(ROOT / "docs/MEMORY-DIAGNOSTICS.md", output / "MEMORY-DIAGNOSTICS.md")
     shutil.copy2(ROOT / "docs/FIRST-GAME-VALIDATION.md", output / "FIRST-GAME-VALIDATION.md")
@@ -71,6 +87,10 @@ def package(source, dxvk, output):
     # Preserve the README's relative documentation and patch links in the package.
     shutil.copytree(ROOT / "docs", output / "docs")
     shutil.copytree(ROOT / "patches", output / "patches")
+    shutil.copytree(ROOT / "config", output / "config")
+    (output / "scripts").mkdir()
+    for name in ("analyze_api_wait.py", "analyze_color_diagnostics.py", "analyze_data_diagnostics.py", "install_color_diagnostics.ps1"):
+        shutil.copy2(ROOT / "scripts" / name, output / "scripts" / name)
     licenses = output / "licenses"
     licenses.mkdir(exist_ok=True)
     shutil.copy2(source / "bridge/LICENSE-MIT", licenses / "Bridge-MIT.txt")
@@ -79,26 +99,15 @@ def package(source, dxvk, output):
     if backend_info.get("name") == "DXVK-GPLALL":
         shutil.copy2(ROOT / "licenses/DXVK-GPLALL-LICENSE.txt", licenses / "DXVK-GPLALL-LICENSE.txt")
     (output / "SHA256.json").write_text(json.dumps(hashes, indent=2) + "\n")
-    (client_output / "bin").mkdir(parents=True, exist_ok=False)
-    shutil.copy2(output / "bin/d3d9.dll", client_output / "bin/d3d9.dll")
-    shutil.copy2(ROOT / "docs/MEMORY-DIAGNOSTICS.md", client_output / "MEMORY-DIAGNOSTICS.md")
-    (client_output / "licenses").mkdir()
-    for filename in ("Bridge-MIT.txt", "Bridge-third-party.txt"):
-        shutil.copy2(licenses / filename, client_output / "licenses" / filename)
-    shutil.copy2(licenses / "DXVK-LICENSE.txt", client_output / "licenses/DXVK-LICENSE.txt")
-    for filename in ("VERSION", "LICENSE", "THIRD_PARTY.md"):
-        shutil.copy2(ROOT / filename, client_output / filename)
-    (client_output / "SHA256.json").write_text(json.dumps({
-        "bin/d3d9.dll": hashes["bin/d3d9.dll"],
-    }, indent=2) + "\n")
-    print(f"L4D2 D3D9 Bridge v{(ROOT / 'VERSION').read_text().strip()}: {output}")
-    print(f"Client-only update: {client_output}; preserves the installed host and DXVK")
+    print(f"L4D2 D3D9 Bridge v{version}: {output}; one full package with both Hosts and optional L4N")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--dxvk", type=Path, required=True)
+    parser.add_argument("--dxvk-x86", type=Path, required=True)
+    parser.add_argument("--plugin", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "dist/l4d2-bridge")
     args = parser.parse_args()
-    package(args.source.resolve(), args.dxvk.resolve(), args.output.resolve())
+    package(args.source.resolve(), args.dxvk.resolve(), args.output.resolve(), args.dxvk_x86.resolve(), args.plugin.resolve())

@@ -62,6 +62,7 @@ struct Module {
   using Sample = void (*)(int, const char*);
   using Deadline = void (*)(ULONGLONG);
   using Pending = int (*)();
+  using Monitoring = void (*)(int);
   HMODULE handle;
   Sample sample;
   Deadline deadline;
@@ -72,8 +73,18 @@ struct Module {
     sample = reinterpret_cast<Sample>(GetProcAddress(handle, "sample"));
     deadline = reinterpret_cast<Deadline>(GetProcAddress(handle, "deadline"));
     pending = reinterpret_cast<Pending>(GetProcAddress(handle, "pending"));
-    require(configure && sample && deadline && pending, "missing probe exports");
+    const auto monitoring = reinterpret_cast<Monitoring>(GetProcAddress(handle, "monitoring"));
+    require(configure && sample && deadline && pending && monitoring, "missing probe exports");
     configure(&state);
+    monitoring(0);
+    InterlockedExchange(&state.failNew, 1);
+    sample(0, "disabled-periodic"); sample(1, "disabled-forced");
+    InterlockedExchange(&state.failNew, 0);
+    require(!read(state.clockReads) && !read(state.queryCalls) && !read(state.referenceCalls)
+      && !read(state.submissions) && !read(state.opens) && !read(state.logCount)
+      && !read(state.locks) && !read(state.newAttempts) && !pending(),
+      "disabled monitoring performed scan, clock, file, lock, allocation or worker work");
+    monitoring(1);
   }
   void close() { if (handle) { require(FreeLibrary(handle) != FALSE, "cannot release caller DLL reference"); handle = nullptr; } }
   ~Module() { if (handle) { FreeLibrary(handle); } }

@@ -72,7 +72,8 @@ def pending():
     if not re.fullmatch(r"[0-9]+\.[0-9]+(?:\.[0-9]+)?", version):
         raise ValueError("Invalid project version")
     identifier = "v" + version + ("-thinflex-test-" if thinflex else "-") + names["release_tag"]
-    title = "v" + version + (" 性能优化 + ThinFlex 崩溃修复测试版" if thinflex else "")
+    original = json.loads((Path(__file__).resolve().parents[1] / "config/original-project.json").read_text(encoding="utf-8"))
+    title = "v" + version + " 完整同步上游 " + original["version"] + (" + ThinFlex 测试版" if thinflex else "")
     names.update(release_tag=identifier, title=title,
                  archive="l4d2-bridge-" + identifier + ".zip")
     return [{"tag": names["group"], "commit": commit, "branch": branch,

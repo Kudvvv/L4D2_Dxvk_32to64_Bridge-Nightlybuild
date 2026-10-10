@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <string>
 #include <thread>
@@ -27,3 +28,9 @@ struct GlobalOptions {
 };
 
 void _LogFunctionCall(const std::string& functionName, void* thiz);
+
+// Crash-history observation is covered independently by the runtime observation
+// suite. Keep the real production logging macros without recording history here.
+namespace bridge_exception {
+struct CallScope { CallScope(const char*, uintptr_t) {} };
+}

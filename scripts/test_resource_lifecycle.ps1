@@ -20,7 +20,7 @@ Push-Location $testDir
 try {
   python "$PSScriptRoot/prepare_resource_lifecycle_test.py" $source $testDir
   if ($LASTEXITCODE -ne 0) { throw 'Resource lifecycle extraction failed' }
-  $compilerOptions = @('/nologo','/std:c++17','/EHsc','/W4','/WX',"/I$source/bridge/src/client","/I$testDir","$repoRoot/tests/resource_lifecycle.cpp")
+  $compilerOptions = @('/nologo','/std:c++17','/EHsc','/W4','/WX',"/I$source/bridge/src/client","/I$source/bridge/src/util","/I$testDir","$repoRoot/tests/resource_lifecycle.cpp")
   & cl.exe @compilerOptions /Fe:resource-lifecycle.exe
   if ($LASTEXITCODE -ne 0) { throw 'Resource lifecycle test compilation failed' }
   & ./resource-lifecycle.exe

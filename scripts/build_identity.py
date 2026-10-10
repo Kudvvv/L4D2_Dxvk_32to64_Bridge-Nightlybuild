@@ -3,7 +3,7 @@ import hashlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-INPUT_DIRS = ("patches", "config", "scripts", "tests", "licenses", "runtime", ".github/workflows")
+INPUT_DIRS = ("patches", "config", "scripts", "tests", "licenses", "runtime", "plugins", "experiments", "docs", ".github/workflows")
 INPUT_FILES = ("VERSION", "LICENSE", "THIRD_PARTY.md",
                "docs/THINFLEX-CRASH-FIX.md", "docs/THINFLEX-TEST-README.txt")
 
@@ -15,7 +15,7 @@ def recipe_digest(root=ROOT):
                      if p.is_file() and "__pycache__" not in p.parts
                      and p.suffix not in (".pyc", ".pyo"))
     digest = hashlib.sha256()
-    for path in sorted(paths, key=lambda p: p.relative_to(root).as_posix()):
+    for path in sorted(set(paths), key=lambda p: p.relative_to(root).as_posix()):
         relative = path.relative_to(root).as_posix().encode("utf-8")
         data = path.read_bytes()
         if path.suffix != ".patch" and b"\0" not in data:

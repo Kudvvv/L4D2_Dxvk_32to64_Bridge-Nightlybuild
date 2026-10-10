@@ -32,6 +32,8 @@ def prepare(source, output, copy_reference=False, negative_control=False):
     if copy_reference:
         # Restore only the previous copy loop; transport and layout are identical.
         methods = methods[:start] + """        FOR_EACH_RECT_ROW(lockInfo.lockedRect, height, m_desc.Format, {
+          if (hash) { hash->add(ptr, rowSize); }
+          if (colorSample) { colorDigest.add(ptr, rowSize); }
           memcpy(blobPacketPtr, ptr, rowSize);
           blobPacketPtr += rowSize;
         });""" + methods[end:]

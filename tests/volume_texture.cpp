@@ -14,9 +14,12 @@
 #include <queue>
 #include <limits>
 #include <stdexcept>
+#include <sstream>
 #include <tuple>
 #include <utility>
 #include <vector>
+#include "upload_observers.h"
+#include "volume_layout.h"
 
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 namespace allocation {
@@ -72,6 +75,7 @@ struct Capture {
   bool boxSent = false;
 } capture;
 struct ClientMessage {
+  uint32_t get_uid() const { return 123; }
   ClientMessage(uint32_t, uint32_t) {
     if (transportFault == TransportFault::Construct) { throw TransportFailure(); }
     ++capture.count;
@@ -104,12 +108,13 @@ struct ClientMessage {
     if (transportFault == TransportFault::Finish) { throw TransportFailure(); }
   }
 };
-struct Logger { static void err(const char*) {} };
+struct Logger { static void err(const std::string&) {} };
 #define LogFunctionCall() ((void)0)
 #define BRIDGE_PARENT_DEVICE_LOCKGUARD() ((void)0)
 class Direct3DVolume9_LSS {
 #include "volume_lock_storage.h"
   D3DVOLUME_DESC m_desc {};
+  l4d2_data::Resource m_dataTrace;
 public:
   explicit Direct3DVolume9_LSS(D3DFORMAT format, UINT width=32, UINT height=16, UINT depth=8) {
     m_desc.Format = format; m_desc.Width = width; m_desc.Height = height; m_desc.Depth = depth;
@@ -118,15 +123,15 @@ public:
   size_t pendingLocks() const { return m_lockInfoQueue.size(); }
   HRESULT LockBox(D3DLOCKED_BOX*, CONST D3DBOX*, DWORD);
   HRESULT UnlockBox();
-  bool lock(D3DLOCKED_BOX&, const D3DBOX* const, const DWORD);
+  HRESULT lock(D3DLOCKED_BOX&, const D3DBOX* const, const DWORD);
   void unlock();
   static D3DBOX resolveLockInfoBox(const D3DBOX* const, const D3DVOLUME_DESC&);
-  static std::tuple<size_t,size_t,size_t> getBoxDimensions(const D3DBOX&);
 };
 #include "volume_methods.h"
 
 void run(D3DFORMAT format, D3DBOX box, bool whole, DWORD flags) {
   capture = {};
+  l4d2_color::lastUpload.clear();
   Direct3DVolume9_LSS volume(format);
   if (whole) box = {0,0,32,16,0,8};
   const uint32_t block = bridge_util::getBlockSize(format);
@@ -155,6 +160,9 @@ void run(D3DFORMAT format, D3DBOX box, bool whole, DWORD flags) {
   require(capture.fields == std::array<uint32_t,4>{bytes,cols,rows,depth}, "wire fields must remain block counts");
   require(std::memcmp(&capture.box, &box, sizeof(box)) == 0, "partial box changed");
   require(capture.flags == flags && capture.bytes == expected, "upload data overlaps or truncates");
+  if (l4d2_color::enabled.load()) {
+    require(l4d2_color::lastUpload == expected, "enabled volume diagnostics missed upload bytes");
+  }
 #ifndef SEND_ALL_LOCK_DATA_AT_ONCE
   require(capture.packets.size() == static_cast<size_t>(rows) * depth, "row packet count");
   for (auto size : capture.packets) require(size == rowBytes, "row packet bytes");
@@ -196,7 +204,7 @@ void testPayloadBounds() {
       require(result == E_OUTOFMEMORY && allocation::arrayAttempts == previousAttempts + 1,
         "representable payload was rejected before the allocation fault");
     } else {
-      require(result == E_FAIL && allocation::arrayAttempts == previousAttempts,
+      require(result == D3DERR_INVALIDCALL && allocation::arrayAttempts == previousAttempts,
         "oversized wire payload reached allocation instead of being rejected");
     }
     requireEmptyOutput(locked);
@@ -333,24 +341,28 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
 #endif
-    for (auto format : {D3DFMT_A8R8G8B8,D3DFMT_DXT1,D3DFMT_DXT5}) {
-      run(format, {}, true, 0);
-      run(format, {4,4,11,9,2,5}, false, 0);
-      run(format, {0,0,1,1,0,1}, false, D3DLOCK_DISCARD);
-      run(format, {0,0,4,4,0,2}, false, D3DLOCK_READONLY);
+    for (bool diagnostics : {false, true}) {
+      l4d2_color::enabled.store(diagnostics);
+      for (auto format : {D3DFMT_A8R8G8B8,D3DFMT_DXT1,D3DFMT_DXT5}) {
+        run(format, {}, true, 0);
+        run(format, {4,4,11,9,2,5}, false, 0);
+        run(format, {0,0,1,1,0,1}, false, D3DLOCK_DISCARD);
+        run(format, {0,0,4,4,0,2}, false, D3DLOCK_READONLY);
+      }
     }
+    l4d2_color::enabled.store(false);
     D3DLOCKED_BOX rejected {};
     Direct3DVolume9_LSS unsupported(D3DFMT_UNKNOWN);
-    require(!unsupported.lock(rejected,nullptr,0), "unsupported format must fail");
+    require(FAILED(unsupported.lock(rejected,nullptr,0)), "unsupported format must fail");
     Direct3DVolume9_LSS huge(D3DFMT_A8R8G8B8,0xffffffffu,0xffffffffu,8);
-    require(!huge.lock(rejected,nullptr,0), "overflowing pitch must fail before allocation");
+    require(FAILED(huge.lock(rejected,nullptr,0)), "overflowing pitch must fail before allocation");
     Direct3DVolume9_LSS hugeCompressed(D3DFMT_DXT1,0xffffffffu,0xffffffffu,8);
-    require(!hugeCompressed.lock(rejected,nullptr,0), "compressed dimension overflow must fail");
+    require(FAILED(hugeCompressed.lock(rejected,nullptr,0)), "compressed dimension overflow must fail");
     Direct3DVolume9_LSS normal(D3DFMT_A8R8G8B8);
     const D3DBOX invalid {8,0,4,4,0,1};
-    require(!normal.lock(rejected,&invalid,0), "invalid box must fail");
+    require(FAILED(normal.lock(rejected,&invalid,0)), "invalid box must fail");
     rejected = sentinelOutput();
-    require(normal.LockBox(&rejected, &invalid, 0) == E_FAIL, "invalid box HRESULT changed");
+    require(normal.LockBox(&rejected, &invalid, 0) == D3DERR_INVALIDCALL, "invalid box HRESULT changed");
     requireEmptyOutput(rejected);
     testPayloadBounds();
     testAllocationFailuresAndDestruction();

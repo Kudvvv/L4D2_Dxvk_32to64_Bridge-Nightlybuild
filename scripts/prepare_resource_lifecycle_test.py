@@ -72,9 +72,14 @@ def prepare(source, output, negative_control=None):
   SharedHeap::AllocId m_bufferId = SharedHeap::kInvalidId;
   PagefileShadow m_shadow;
   bool m_isBackBuffer;
+  std::unique_ptr<l4d2_residency::Entry> m_residency;
+  std::shared_ptr<l4d2_retention::Parent> m_retention;
+  uint32_t m_readbackMip = 0;
+  void initializeShadowDiagnostics();
 """
-            constructor = "  Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS*, const D3DSURFACE_DESC&, bool = false);\n  ~Direct3DSurface9_LSS() override;"
+            constructor = "  Direct3DSurface9_LSS(BaseDirect3DDevice9Ex_LSS*, const D3DSURFACE_DESC&, bool = false, l4d2_control::Category = l4d2_control::Category::IndependentSurface);\n  ~Direct3DSurface9_LSS() override;"
             methods.append(function(implementation, "Direct3DSurface9_LSS::Direct3DSurface9_LSS("))
+            methods.append(function(implementation, "void Direct3DSurface9_LSS::initializeShadowDiagnostics()"))
             methods.append(function(implementation, "Direct3DSurface9_LSS::~Direct3DSurface9_LSS()"))
         else:
             base = f"LockableBuffer<IDirect3D{kind}9>"

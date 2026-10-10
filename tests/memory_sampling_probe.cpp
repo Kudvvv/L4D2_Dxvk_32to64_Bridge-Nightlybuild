@@ -21,8 +21,12 @@ void operator delete[](void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
-static ULONGLONG WINAPI testClock() { return static_cast<ULONGLONG>(InterlockedCompareExchange64(&state->clock, 0, 0)); }
+static ULONGLONG WINAPI testClock() {
+  InterlockedIncrement(&state->clockReads);
+  return static_cast<ULONGLONG>(InterlockedCompareExchange64(&state->clock, 0, 0));
+}
 static BOOL WINAPI testReference(DWORD flags, LPCWSTR address, HMODULE* module) {
+  InterlockedIncrement(&state->referenceCalls);
   const bool owns = (flags & GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT) == 0;
   if (owns && InterlockedCompareExchange(&state->failReference, 0, 0)) {
     SetLastError(ERROR_MOD_NOT_FOUND); return FALSE;
@@ -56,6 +60,7 @@ static SIZE_T WINAPI testQuery(LPCVOID address, PMEMORY_BASIC_INFORMATION result
   return VirtualQuery(address, result, size);
 }
 static HANDLE WINAPI testOpen(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE) {
+  InterlockedIncrement(&state->opens);
   // The log sink is captured in fixed storage; no disk or heap is used by it.
   return reinterpret_cast<HANDLE>(static_cast<uintptr_t>(0x1234));
 }
@@ -76,6 +81,9 @@ static BOOL WINAPI testWrite(HANDLE, LPCVOID bytes, DWORD count, LPDWORD written
 static BOOL WINAPI testFlush(HANDLE) {
   state->flushThread = GetCurrentThreadId(); InterlockedIncrement(&state->flushCount); return TRUE;
 }
+static VOID WINAPI testLock(PSRWLOCK lock) {
+  InterlockedIncrement(&state->locks); AcquireSRWLockExclusive(lock);
+}
 
 // Compile the real header and callback. Adapters only control Win32 boundaries,
 // capture logging, and inject scheduler failure; the DLL lifetime APIs are real.
@@ -88,6 +96,7 @@ static BOOL WINAPI testFlush(HANDLE) {
 #define CreateFileW testOpen
 #define WriteFile testWrite
 #define FlushFileBuffers testFlush
+#define AcquireSRWLockExclusive testLock
 #include "memory_diagnostics.h"
 #undef GetTickCount64
 #undef GetModuleHandleExW
@@ -98,8 +107,12 @@ static BOOL WINAPI testFlush(HANDLE) {
 #undef CreateFileW
 #undef WriteFile
 #undef FlushFileBuffers
+#undef AcquireSRWLockExclusive
 
-extern "C" __declspec(dllexport) void configure(SamplingTestState* testState) { state = testState; }
+extern "C" __declspec(dllexport) void configure(SamplingTestState* testState) {
+  state = testState;
+}
+extern "C" __declspec(dllexport) void monitoring(int enabled) { l4d2_observation::memoryMonitoring = enabled != 0; }
 extern "C" __declspec(dllexport) void sample(int force, const char* event) {
   l4d2_memory::sample(force != 0, event, l4d2_memory::Kind::Vertex, 12345, 67, 89, 21, 8);
 }

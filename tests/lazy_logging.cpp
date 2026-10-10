@@ -60,6 +60,7 @@ template<size_t N> static void getLocalTimeString(char (&out)[N]) {
   std::memcpy(out, "[00:00:00.000] ", 16);
 }
 }
+namespace bridge_exception { void setLogFile(HANDLE) {} }
 #define CreateFileA fixtureCreateFileA
 #define CloseHandle fixtureCloseHandle
 #define WriteFile fixtureWriteFile
@@ -94,6 +95,14 @@ static void released(size_t size, Kind kind) {
   bytes[static_cast<unsigned>(kind)] -= size;
   --objects[static_cast<unsigned>(kind)];
 }
+}
+namespace l4d2_buffer {
+static uint8_t* allocate(size_t size, l4d2_memory::Kind kind, bool zero) {
+  return l4d2_memory::allocate(size, kind, 0, 0, 0, zero);
+}
+}
+namespace l4d2_data {
+struct Resource { void destroyLocked(size_t) {} };
 }
 #include "lazy_logging_buffer.h"
 

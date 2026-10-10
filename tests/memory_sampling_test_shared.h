@@ -9,12 +9,13 @@
 
 struct SamplingLog {
   DWORD thread;
-  char text[1600];
+  char text[4096];
 };
 struct SamplingTestState {
   alignas(8) volatile LONG64 clock;
   volatile LONG failReference, failSubmit, blockNextQuery, failNew;
   volatile LONG acquired, released, deferred, submissions, queryCalls, newAttempts;
+  volatile LONG clockReads, referenceCalls, opens, locks;
   volatile LONG logCount, flushCount, queryTimeout;
   DWORD flushThread;
   SRWLOCK recordsLock;

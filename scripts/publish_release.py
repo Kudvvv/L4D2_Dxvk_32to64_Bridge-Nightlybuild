@@ -1,5 +1,6 @@
 """Publish a new build instance without replacing a published release."""
 import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -108,15 +109,14 @@ def publish():
         uploads = pending_uploads(repo, existing, uploads)
     upstream = os.environ["UPSTREAM_COMMIT"]
     recipe = os.environ["RECIPE_COMMIT"]
+    original = json.loads((Path(__file__).resolve().parents[1] / "config/original-project.json").read_text(encoding="utf-8"))
     introduction = (
         f"L4D2 Bridge {title}\n\n"
         "**只提供一个完整 ZIP：包含配套 Client/Host、固定 GPLALL 后端、默认配置和已修复的 `bin/studiorender.dll`。核对游戏 DLL 版本并备份后，复制文件即可应用 ThinFlex 修复，无需运行补丁工具或安装 Python。**\n\n"
-        "- 同步原项目的独立修复：更正 DirectInput 成功请求误报警、移除无效线程键盘 hook、修正 Query 引用日志分类；动态 VB/IB 的两处 Trace 消息按日志级别构造。该批改动没有新的游戏 FPS 实测，保留现有配置及诊断行为。\n"
-        f"- 选择性移植范围与延期内容见[更新记录](https://github.com/{repo}/blob/{recipe}/docs/ORIGINAL-PROJECT-UPDATES.md)。\n"
-        "- Bridge 包含三项性能优化：关闭 API 日志时避免临时字符串分配、完整且紧密排列的表面整块复制、普通定期内存扫描移出 Present 线程。\n"
-        "- 固定 L4N 回放的三对对照中，配对提升中位数为 1% low **4.57%**、0.1% low **33.09%**、平均 FPS **10.14%**、一秒 Present 峰值 **7.89%**。"
-        "p99 帧时间同时增加 **3.48%**，并非所有帧时间指标均改善。性能测试未安装 ThinFlex，不能将这些数据当作合并安装后的性能结果。\n"
-        f"- 测试条件、逐对数据与限制见[性能报告](https://github.com/{repo}/blob/{recipe}/docs/PERFORMANCE-2026-10-10.md)。这是单台机器、固定回放的短时对照，不保证其他场景获得相同幅度。\n"
+        f"- 完整合并 L4D2 原项目 **{original['version']}**（`{original['commit']}`），包括 PageBlock/retention/readback、ReShade Presenter、Steam 输入支持、诊断体系、x86 Host 和 L4N 控制插件。\n"
+        f"- 合并范围及本分支保留项见[更新记录](https://github.com/{repo}/blob/{recipe}/docs/ORIGINAL-PROJECT-UPDATES.md)。默认继续使用 GPLALL 后端和 x64 Host；可选功能按包内文档启用。\n"
+        "- 同一完整包包含配套 x86 Client、x86/x64 Host、两种架构的 GPLALL 后端，以及 `optional/L4N/L4D2BridgePlugin.dll`。需要 L4N 控制菜单时将插件复制到 `bin/neko/plugins/`，普通安装不依赖该插件。\n"
+        f"- 本次完整合并版本尚未进行游戏 FPS 对照，不宣称性能提升。此前[性能报告](https://github.com/{repo}/blob/{recipe}/docs/PERFORMANCE-2026-10-10.md)对应旧版与固定回放，性能测试未安装 ThinFlex，不能当作本次完整合并后的性能结果。\n"
         f"- 玩家包不包含补丁工具；先阅读包内 `README.txt`，详细安装与回退见[说明](https://github.com/{repo}/blob/{recipe}/docs/THINFLEX-TEST-README.txt)。升级前关闭游戏及 Host，备份原文件，保留已有配置及自定义后端。已打补丁的玩家须保留最初原版 DLL 备份，不能用修复文件覆盖它。\n"
         "- 支持的原始 `studiorender.dll` SHA-256："
         "`3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85`；"
@@ -125,14 +125,15 @@ def publish():
         "- ThinFlex 缓存从 10000 项扩为 65536 项，新增 2 MiB 缓存；保留原有表情计算。"
         "修改后的 DLL 原数字签名失效；回退前须核对原版备份及当前 DLL 身份，不能用旧备份覆盖游戏更新后的未知版本。\n"
         "- 2026-10-10 收到用户反馈：**v1.0.10 ThinFlex 修复有效**。本次保留相同补丁算法和 DLL 哈希；反馈未提供游玩时长及完整模型范围，不能据此确认所有场景的长期稳定性。\n"
-        "- 包内引擎 DLL 归属 Valve，不适用项目根目录 MIT 许可；公开 Source SDK 的常量参考不代表其许可覆盖整个游戏 DLL。见 `licenses/Valve-engine-NOTICE.txt` 与 `ENGINE-PATCH.json`。附件不包含玩家私有 dump。Bridge 偏色修复、GPLALL 后端、x64 Host 及默认配置保持原有设计。\n\n")
+        "- 包内引擎 DLL 归属 Valve，不适用项目根目录 MIT 许可；公开 Source SDK 的常量参考不代表其许可覆盖整个游戏 DLL。见 `licenses/Valve-engine-NOTICE.txt` 与 `ENGINE-PATCH.json`。附件不包含玩家私有 dump。Bridge 偏色修复、GPLALL 后端和默认 x64 Host 保留。\n\n")
     channel = "thinflex-test" if experimental else "nightly"
     digest_label = "Experimental recipe digest" if experimental else "Recipe digest"
     notes = introduction + (
         f"Release channel: {channel}\nUpstream commit: {upstream}\n"
+        f"L4D2 original project: {original['repository']}\nL4D2 original commit: {original['commit']}\nL4D2 original version: {original['version']}\n"
         f"Build recipe: {recipe}\n{digest_label}: {os.environ['RECIPE_DIGEST']}\n\n"
-        "包含 x86 客户端和配套 x64 Host；编译与原生测试通过。游戏性能对照及 ThinFlex 用户反馈的范围见上述说明与报告。\n\n"
-        "- 首次安装按包内说明合并到游戏目录。升级前备份，成对替换客户端和 Host，保留已调整的配置、后端、ReShade 和 DB；不要直接覆盖自己的配置。\n"
+        "包含 x86 客户端和配套 x86/x64 Host；编译与原生测试通过。游戏性能对照及 ThinFlex 用户反馈的范围见上述说明与报告。\n\n"
+        "- 首次安装按包内说明合并到游戏目录。升级前备份，一并替换客户端和两种 Host，保留已调整的配置、后端、ReShade 和 DB；不要直接覆盖自己的配置。\n"
         "- 客户端位于 bin/d3d9.dll，默认移除 -vulkan；需要该启动项时自行改名为 dxvk_d3d9.dll ，仍位于 bin。Host 仍在 bin/.l4d2bridge。\n"
         "- 完整 ZIP 包含 UPSTREAM.json、ENGINE-PATCH.json 及 Valve 引擎归属说明，附件另提供完整 ZIP 的 SHA-256；旧发布包不被覆盖。\n\n"
         f"上游：[NVIDIA 提交](https://github.com/NVIDIAGameWorks/dxvk-remix/commit/{upstream})\n\n"

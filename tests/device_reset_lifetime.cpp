@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <initializer_list>
 #include <stdexcept>
+#include "upload_observers.h"
 
 static void require(bool condition, const char* message) {
   if (!condition) { throw std::runtime_error(message); }
@@ -22,6 +23,7 @@ enum D3D9Command { Bridge_Response, IDirect3DDevice9Ex_GetSwapChain,
 }
 struct State {
   HRESULT queryResult = D3D_OK;
+  HRESULT resetResult = D3D_OK;
   bool queryPointer = true, allResponses = false, fullscreenPointer = false;
   unsigned queries = 0, resets = 0, resetsEx = 0, responses = 0;
   UINT index = 0;
@@ -32,7 +34,8 @@ struct State {
 } state;
 
 // Only the surrounding COM objects and transport are adapters. The three Host
-// switch branches and optional response macro are extracted verbatim.
+// switch branches and response macro are extracted verbatim. Upstream Reset
+// now always replies, independently of the optional command response policy.
 class FakeSwapChain {
 public:
   ULONG references = 1, releases = 0;
@@ -58,7 +61,7 @@ public:
     require(presentation && presentation->BackBufferWidth == 1920 && presentation->Windowed,
       "Reset presentation arguments changed");
     ++state.resets;
-    return D3D_OK;
+    return state.resetResult;
   }
   HRESULT ResetEx(D3DPRESENT_PARAMETERS* presentation, D3DDISPLAYMODEEX* fullscreen) {
     require(swapchain.references == 1, "temporary query reference survived until ResetEx");
@@ -67,7 +70,7 @@ public:
     require(fullscreen == (state.fullscreenPointer ? &state.fullscreen : nullptr),
       "ResetEx fullscreen argument changed");
     ++state.resetsEx;
-    return D3D_OK;
+    return state.resetResult;
   }
 } device;
 
@@ -86,6 +89,12 @@ static D3DPRESENT_PARAMETERS getPresParamFromRaw(uint32_t* input) {
   require(input == &state.rawPresent, "Reset stopped decoding the original payload");
   return state.presentation;
 }
+static void configureOverlayPresenter(D3DPRESENT_PARAMETERS&) {}
+namespace bridge_exception { static void logDiagnostic(const char*) {} }
+struct SurfaceQueries {
+  uint64_t count() const { return 0; }
+  uint64_t mismatches() const { return 0; }
+} gSurfaceQueries;
 struct GlobalOptions {
   static bool getSendAllServerResponses() { return state.allResponses; }
 };
@@ -100,6 +109,8 @@ struct ServerMessage {
 static void dispatch(Commands::D3D9Command command) {
   using namespace Commands;
   const uint32_t currentUID = 77;
+  const uint32_t pD3DDeviceHandle = 7;
+  const struct { uint32_t pHandle; } rpcHeader { pD3DDeviceHandle };
   const bool bDxvkModuleLoaded = true;
   bool done = false;
   switch (command) {
@@ -113,6 +124,7 @@ static void dispatch(Commands::D3D9Command command) {
 // dialog. Keep SEH in this leaf wrapper (no C++ unwinding objects); other test
 // failures remain ordinary C++ exceptions caught by main.
 static bool invoke(Commands::D3D9Command command) {
+#ifdef _MSC_VER
   __try {
     dispatch(command);
     return true;
@@ -120,6 +132,12 @@ static bool invoke(Commands::D3D9Command command) {
                 ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
     return false;
   }
+#else
+  // GCC does not provide MSVC SEH. Production/null-reference negative controls
+  // run under MSVC CI; the portable build validates all positive branches.
+  dispatch(command);
+  return true;
+#endif
 }
 
 static void resetState() {
@@ -143,12 +161,13 @@ static void testReset(bool extended) {
   for (bool respond : {false, true}) {
     for (bool withPointer : {false, true}) {
       for (HRESULT result : {D3D_OK, E_FAIL}) {
-        for (bool withFullscreen : {false, true}) {
+        for (bool withFullscreen : {false, true}) for (HRESULT backendResult : {D3D_OK, D3DERR_DEVICELOST}) {
           resetState();
           state.allResponses = respond;
           state.queryPointer = withPointer;
           state.queryResult = result;
           state.fullscreenPointer = withFullscreen;
+          state.resetResult = backendResult;
           const auto command = extended ? Commands::IDirect3DDevice9Ex_ResetEx : Commands::IDirect3DDevice9Ex_Reset;
           for (unsigned i = 0; i < 8; ++i) {
             require(invoke(command), "Reset query with a null result caused an access violation");
@@ -157,8 +176,8 @@ static void testReset(bool extended) {
               "Reset query reference was leaked or released twice");
             require(state.resets == (extended ? 0 : i + 1) && state.resetsEx == (extended ? i + 1 : 0),
               "backend Reset dispatch changed");
-            require(state.responses == (respond ? i + 1 : 0), "optional response policy changed");
-            if (respond) { require(state.response == D3D_OK, "Reset returned the query HRESULT instead of backend HRESULT"); }
+            require(state.responses == i + 1, "Reset must always return one response regardless of optional reply policy");
+            require(state.response == backendResult, "Reset returned the query HRESULT instead of backend HRESULT");
           }
         }
       }
@@ -171,7 +190,7 @@ int main() {
     testQueries();
     testReset(false);
     testReset(true);
-    std::puts("PASS: actual Host swapchain query/Reset/ResetEx branches; balanced temporary references, null/failed queries and unchanged optional replies");
+    std::puts("PASS: actual Host swapchain query/Reset/ResetEx branches; balanced temporary references, null/failed queries and mandatory backend results");
     return 0;
   } catch (const std::exception& error) {
     std::fprintf(stderr, "FAIL: %s\n", error.what());

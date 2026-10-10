@@ -24,6 +24,25 @@
 #include "memory_diagnostics.h"
 #include "pagefile_shadow.h"
 #include "texture_creation.h"
+#include "buffer_shadow.h"
+#include "pageblock_capability.h"
+#include "upload_observers.h"
+
+// Registry and optional observers are covered by their dedicated native suites.
+// Keep production constructor/destructor calls intact while isolating ownership.
+namespace l4d2_residency {
+struct Context { std::recursive_mutex mutex; };
+Context& context() { static Context value; return value; }
+struct Entry {
+  l4d2_control::Category categoryOverride = l4d2_control::Category::IndependentSurface;
+  l4d2_shadow::Type type = l4d2_shadow::Type::Surface;
+  Entry(Context&, PagefileShadow&, uint64_t, const D3DSURFACE_DESC&) {}
+};
+}
+namespace l4d2_retention { struct Parent { void detach(uint32_t) {} }; }
+struct Config { template<typename T> static T getOption(const char*, T fallback) { return fallback; } };
+namespace l4d2_host_memory { enum class ResourceKind { VertexBuffer, IndexBuffer, Surface }; }
+struct ResourceInventory { void track(uint32_t, uintptr_t, l4d2_host_memory::ResourceKind) {} } gResourceInventory;
 
 void require(bool condition, const char* message) {
   if (!condition) { throw std::runtime_error(message); }
@@ -445,6 +464,7 @@ int main() {
   // Async sampling/lifetime is exercised in memory_sampling_async.cpp. Keep
   // these ownership tests free of callbacks during executable CRT teardown.
   l4d2_memory::nextSample.store((std::numeric_limits<ULONGLONG>::max)());
+  l4d2_observation::memoryMonitoring = true;
   try {
     testCreations<false>();
     testCreations<true>();

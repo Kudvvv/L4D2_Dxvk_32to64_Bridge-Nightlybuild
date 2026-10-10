@@ -4,13 +4,19 @@
 
 param(
   [string]$DxvkDll,
+  [string]$Dxvk32Dll,
   [string]$VcVarsVer = '14.29',
   [string]$UpstreamCommit = '9aa74f8dfad2188efbd0f717c64d9f8fa909787e'
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 if (-not $DxvkDll) { $DxvkDll = & "$PSScriptRoot/prepare_backend.ps1" }
+if (-not $Dxvk32Dll) { $Dxvk32Dll = & "$PSScriptRoot/prepare_backend.ps1" -Architecture x86 }
 $dxvkPath = (Resolve-Path $DxvkDll).Path
+$dxvk32Path = (Resolve-Path $Dxvk32Dll).Path
+$projectVersion = (Get-Content (Join-Path $repoRoot 'VERSION') -Raw).Trim()
+$patchHash = (Get-FileHash (Join-Path $repoRoot 'patches/l4d2-bridge.patch') -Algorithm SHA256).Hash.ToLower().Substring(0, 16)
+$env:L4D2_BRIDGE_BUILD_ID = "l4d2-$projectVersion+$patchHash"
 function Invoke-Checked {
   param([string]$Program, [string[]]$Arguments)
   & $Program @Arguments
@@ -25,6 +31,11 @@ try {
     $buildCommand = ". .\build_bridge.ps1; Build -Platform $arch -BuildFlavour debugoptimized -BuildSubDir _compDebugOptimized_$arch -VcVarsVer $VcVarsVer; exit `$LASTEXITCODE"
     Invoke-Checked 'powershell.exe' @('-NoProfile', '-Command', $buildCommand)
   }
+  # The separate server build keeps SERVER channel semantics out of the x86 Client.
+  $buildCommand = ". .\build_common.ps1; SetupVS -Platform x86 -VcVarsVer $VcVarsVer; & meson setup _compDebugOptimized_x86_server --buildtype debugoptimized --backend ninja --debug -Dexperimental_x86_server=true; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; & meson compile -C _compDebugOptimized_x86_server; exit `$LASTEXITCODE"
+  Invoke-Checked 'powershell.exe' @('-NoProfile', '-Command', $buildCommand)
 } finally { Pop-Location }
-Invoke-Checked 'python' @("$PSScriptRoot/package_release.py", '--source', $source, '--dxvk', $dxvkPath)
+Invoke-Checked 'powershell.exe' @('-NoProfile', '-File', "$PSScriptRoot/build_l4n_plugin.ps1")
+Invoke-Checked 'python' @("$PSScriptRoot/package_release.py", '--source', $source, '--dxvk', $dxvkPath,
+  '--dxvk-x86', $dxvk32Path, '--plugin', (Join-Path $repoRoot '.deps/l4n-plugin/L4D2BridgePlugin.dll'))
 

@@ -7,9 +7,9 @@
 **[Download the full package from Releases](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**. Each release has one `l4d2-bridge-*.zip` and its `.sha256` checksum. It includes the repaired `bin/studiorender.dll`; no patch tool or Python installation is needed.
 
 1. **Exit the game and Bridge Host, then back up existing files.** Save the original client, Host, configuration and `bin/studiorender.dll`. Extract the ZIP into a temporary directory. If ThinFlex is already installed, keep the initial original-DLL backup; do not replace it with the repaired file.
-2. **Preserve configuration before upgrading:** remove the packaged `bin/.l4d2bridge/bridge.conf` from the temporary extraction directory, keeping your installed configuration. If you customized your backend, also remove `bin/.l4d2bridge/d3d9vk_x64.dll` from that temporary directory. Skip this step on first installation. Existing `dxvk.conf`, ReShade and the DB are not included and will not be overwritten.
+2. **Preserve configuration before upgrading:** remove the packaged `bin/.l4d2bridge/bridge.conf` from the temporary extraction directory, keeping your installed configuration. If you customized your backend, also remove `bin/.l4d2bridge/d3d9vk_x64.dll` and `d3d9vk_x86.dll` from that temporary directory. Skip this step on first installation. Existing `dxvk.conf`, ReShade and the DB are not included and will not be overwritten.
 3. **Check the installed engine DLL:** run `Get-FileHash 'your-game-directory\bin\studiorender.dll' -Algorithm SHA256` in PowerShell and compare with the table below. The supported original can be replaced. If the repair is already installed, retain it and the original backup. **For any other hash, remove `bin/studiorender.dll` from the temporary extraction directory and update Bridge only.**
-4. **Copy the prepared files:** merge them into the game root beside `left4dead2.exe`, updating the client and Host together. Replacing the matching `studiorender.dll` applies the ThinFlex repair directly. The client goes in `bin/d3d9.dll`; the matching x64 Host, backend and configuration stay in `bin/.l4d2bridge`. Remove `-vulkan` for the default loading path.
+4. **Copy the prepared files:** merge them into the game root beside `left4dead2.exe`, updating the client and Host together. Replacing the matching `studiorender.dll` applies the ThinFlex repair directly. The client goes in `bin/d3d9.dll`; the matching x86/x64 Hosts, backends and configuration stay in `bin/.l4d2bridge`. Remove `-vulkan` for the default loading path.
 
 | Installed `bin/studiorender.dll` | SHA-256 |
 |---|---|
@@ -20,11 +20,17 @@ The user has reported a successful ThinFlex retest, limited to this exact versio
 
 To use `-vulkan`, rename the client to `dxvk_d3d9.dll` within the game `bin`. When switching to the default loading path, back up the old `bin/dxvk_d3d9.dll` and remove `-vulkan`. Both paths share `bin/.l4d2bridge`.
 
+The full package includes both x64/x86 Hosts and matching GPLALL backends. **x64 remains the default.** To switch, set `client.testX86Server=False` for x64 or `True` for x86, retain `forceX64Server=True`, and restart the entire game.
+
+For the optional L4N settings menu, copy `optional/L4N/L4D2BridgePlugin.dll` from this same ZIP to the game's `bin/neko/plugins/` and restart. No separate plugin download is needed. See the [L4N guide](docs/L4N-BRIDGE-CONTROLS.md).
+
+Fresh installs use upstream's learned-aggressive retention policy and disable routine memory/crash/data diagnostics by default. Preserve your installed configuration when upgrading. See [configuration settings and costs](docs/CONFIGURATION.md).
+
 Roll back the Bridge client and Host together. Restore your original `studiorender.dll` backup to undo ThinFlex. To uninstall, remove the installed files and restore your backups.
 
 See the [three paired performance runs and limitations](docs/PERFORMANCE-2026-10-10.md) and [game validation guide](docs/GAME-VALIDATION.md).
 
-Based on [NVIDIA dxvk-remix Bridge](https://github.com/NVIDIAGameWorks/dxvk-remix), this repository retains the patches from the [original L4D2 project](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge) and automatically builds an x86 client and an x64 Host for 32-bit Left 4 Dead 2.
+Based on [NVIDIA dxvk-remix Bridge](https://github.com/NVIDIAGameWorks/dxvk-remix), this repository retains the patches from the [original L4D2 project](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge) and automatically builds an x86 client and both x86/x64 Hosts for 32-bit Left 4 Dead 2.
 
 ## Differences from upstream
 
@@ -33,22 +39,22 @@ Based on [NVIDIA dxvk-remix Bridge](https://github.com/NVIDIAGameWorks/dxvk-remi
 - Uses **DXVK-GPLALL 2.6.8-2 x64** as the default backend. Its version and download checksum are pinned separately in [config/backend.json](config/backend.json); updating Bridge does not automatically update the backend.
 - Adds upstream monitoring, automated builds and tests, Nightly releases, and minimal runtime packaging.
 - Fixes volume-texture byte pitches and upload offsets to prevent corrupted color-correction lookup tables. See [fix provenance and validation](docs/VOLUME-TEXTURE-COLOR-FIX.md).
-- Ports texture-creation failure cleanup, ATI1/ATI2 compressed-transfer bounds fixes, and event-based command-queue wakeups from the original project, with native tests. See [update tracking](docs/ORIGINAL-PROJECT-UPDATES.md).
+- Fully integrates original-project **1.2.1 / `cf49175`**, including PageBlock retention/reclaim/recovery, manual GC, Reset state handling, Presenter/input paths, diagnostic separation, x86 Host and L4N settings. Source, presets, tests and the optional DXVK memory experiment are retained; the experimental backend does not replace default GPLALL. See [integration tracking](docs/ORIGINAL-PROJECT-UPDATES.md).
 - Extends creation-failure cleanup to volume/cube textures, vertex/index buffers and standalone surfaces, releasing client wrappers and clearing outputs. Response timeouts retain ordered server cleanup.
 - Hardens buffer-lock bounds and volume temporary ownership, and optimizes contiguous uploads and queue reads. See [validation methodology](docs/RUNTIME-RELIABILITY.md).
 
-`d3d9.dll` is the 32-bit Bridge client; `d3d9vk_x64.dll` is the 64-bit DXVK backend. They serve different purposes.
+`bin/d3d9.dll` is the 32-bit Bridge client. `.l4d2bridge/d3d9vk_x64.dll` and `d3d9vk_x86.dll` serve the matching Host architectures.
 
 ## Automatic and manual builds
 
-The workflow checks the upstream default branch (currently `main`) every hour at minute 23. It builds unpublished commits and skips commits that already have a published release. GitHub scheduling may be delayed.
+The workflow checks the NVIDIA build source default branch (currently `main`) every hour at minute 23. It builds unpublished commits and skips commits that already have a published release. GitHub scheduling may be delayed.
 
 Under **Actions → Build latest upstream Bridge → Run workflow**:
 
 - Leave `upstream_commit` empty to follow the latest source, or enter a full 40-character SHA to select a commit.
 - Enable `force_rebuild` to create a new independent build without replacing existing assets. This option is disabled by default.
 - Enable `validation_only` to build, test and run A/B benchmarks, saving artifacts and skipping publication.
-- Enable `thinflex_test` to label a performance + ThinFlex test release (Pre-release, not Latest). Every build includes the fixed ThinFlex engine DLL in one full package; check the installed game version before copying it.
+- Enable `thinflex_test` to label a full upstream integration + ThinFlex test release (Pre-release, not Latest). Every build includes the fixed ThinFlex engine DLL in one full package; check the installed game version before copying it.
 
 Deduplication checks both upstream SHA and a fingerprint of build/package/test inputs. Versions use `nightly-YYYYMMDD-upstreamSHA-rRecipeDigest-bRunID.Attempt`. Dates use upstream commit UTC time. Rebuilds and reruns have separate versions, preserving old assets. Release notes and packaged `UPSTREAM.json` record full identities. Patch, compile or test failures prevent publication.
 

@@ -20,11 +20,12 @@ def prepare(source, output, old_signature=False):
     implementation = (source / "bridge/src/client/d3d9_lss.cpp").read_text(encoding="utf-8")
     declaration = extract(header, "class FunctionEntryExitLogger {", "\n};")
     macros = "\n".join(line for line in header.splitlines() if line.startswith((
-        "#define LogFunctionCall() FunctionEntryExitLogger",
-        "#define LogStaticFunctionCall() FunctionEntryExitLogger")))
+        "#define LogFunctionCall()",
+        "#define LogStaticFunctionCall()")))
+    macros = "\n".join(line for line in macros.splitlines() if "FunctionEntryExitLogger" in line)
     if len(macros.splitlines()) != 2:
         raise ValueError("Expected both production function logging macros")
-    marker = "std::map<std::thread::id, std::atomic<size_t>> FunctionEntryExitLogger::s_counters;"
+    marker = "std::map<std::thread::id, std::atomic<size_t>>& FunctionEntryExitLogger::counters()"
     if implementation.count(marker) != 1:
         raise ValueError("Expected one production logger implementation")
     start = implementation.index(marker)

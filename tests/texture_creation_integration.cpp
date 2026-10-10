@@ -13,6 +13,12 @@
 #include <stdexcept>
 #include <vector>
 #include "texture_creation.h"
+#include "upload_observers.h"
+#ifdef _MSC_VER
+#include <intrin.h>
+#else
+#define _ReturnAddress() __builtin_return_address(0)
+#endif
 
 void require(bool condition, const char* message) {
   if (!condition) { throw std::runtime_error(message); }

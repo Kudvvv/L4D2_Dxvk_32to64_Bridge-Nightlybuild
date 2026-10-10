@@ -66,6 +66,7 @@ def prepare(source, output, negative_control=None):
     fixture += "struct Descriptor { unsigned Size; };\nDescriptor m_desc;\n"
     fixture += "bool m_bUseSharedHeap = false;\nSharedHeap::AllocId m_bufferId = SharedHeap::kInvalidId;\n"
     fixture += "std::unique_ptr<uint8_t[]> m_shadow;\ninline static size_t g_totalBufferShadow = 0;\n"
+    fixture += "l4d2_data::Resource m_dataTrace;\nstd::vector<unsigned> m_lockInfos;\n"
     fixture += "explicit LockableBuffer(unsigned size) : m_desc{size} { initShadowMem(); }\n" + lifecycle + "\n};\n"
     output.mkdir(parents=True, exist_ok=True)
     outputs = {"lazy_logging_production.h": logger, "lazy_logging_buffer.h": fixture}

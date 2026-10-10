@@ -9,6 +9,9 @@ on:
       - 'tests/**'
       - 'licenses/**'
       - 'runtime/**'
+      - 'plugins/**'
+      - 'docs/**'
+      - 'experiments/**'
       - '.github/workflows/**'
       - 'VERSION'
       - 'LICENSE'
@@ -32,7 +35,7 @@ on:
         default: false
         type: boolean
       thinflex_test:
-        description: 'Label the single full package as a performance + ThinFlex test release'
+        description: 'Label the full upstream integration + ThinFlex package as a test release'
         required: false
         default: false
         type: boolean
@@ -80,11 +83,14 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install meson==1.3.2 ninja==1.11.1.1
-      - name: Build patched x86 client and x64 Host
+      - name: Build patched x86 Client, both Hosts and optional L4N plugin
         shell: powershell
         run: ./scripts/build_bridge.ps1 -UpstreamCommit $env:UPSTREAM_COMMIT
         env:
           UPSTREAM_COMMIT: ${{ matrix.commit }}
+      - name: Test all merged upstream features and both Host architectures
+        shell: powershell
+        run: ./scripts/test_upstream_features.ps1
       - name: Test diagnostics and shadow eviction
         shell: powershell
         run: ./scripts/test_diagnostics.ps1
@@ -174,6 +180,14 @@ jobs:
         run: |
           $metadata = @{ release_tag = $env:RELEASE_TAG; upstream_branch = $env:UPSTREAM_BRANCH; upstream_commit = $env:UPSTREAM_COMMIT; recipe_commit = $env:RECIPE_COMMIT; recipe_digest = $env:RECIPE_DIGEST; build_run = $env:GITHUB_RUN_ID; build_attempt = $env:GITHUB_RUN_ATTEMPT; game_validation = 'Prior performance measurements: docs/PERFORMANCE-2026-10-10.md; this exact packaged build has not been game-tested'; thinflex_tool_included = $false; thinflex_engine_patch_applied = $true; release_channel = 'nightly' }
           if ($env:THINFLEX_TEST -eq 'true') { $metadata.release_channel = 'thinflex-test' }
+          $original = Get-Content config/original-project.json -Raw | ConvertFrom-Json
+          $metadata.original_project = $original.repository
+          $metadata.original_project_commit = $original.commit
+          $metadata.original_project_version = $original.version
+          $metadata.original_project_integration = $original.integration
+          $metadata.host_architectures = @('x86', 'x64')
+          $metadata.default_host_architecture = 'x64'
+          $metadata.optional_l4n_plugin = 'optional/L4N/L4D2BridgePlugin.dll'
           $metadata | ConvertTo-Json | Set-Content dist/l4d2-bridge/UPSTREAM.json -Encoding utf8
           python scripts/archive_runtime.py dist/l4d2-bridge $env:ARCHIVE_NAME
           if ($LASTEXITCODE -ne 0) { throw 'Archive failed' }

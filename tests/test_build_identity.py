@@ -27,3 +27,18 @@ class Identity(unittest.TestCase):
             binary.write_bytes(b"MZ\0\r\n"); self.assertNotEqual(before,recipe_digest(root))
             before=recipe_digest(root)
             binary.write_bytes(b"MZ\0\n"); self.assertNotEqual(before,recipe_digest(root))
+
+    def test_plugin_and_experiment_sources_change_recipe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in INPUT_FILES:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"fixture")
+            before = recipe_digest(root)
+            for relative in ("plugins/l4n/plugin.cpp", "experiments/dxvk-memory/prepare.py"):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"new source")
+                self.assertNotEqual(before, recipe_digest(root))
+                before = recipe_digest(root)

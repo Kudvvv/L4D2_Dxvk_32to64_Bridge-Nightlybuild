@@ -12,11 +12,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
+#include <mutex>
 #include <queue>
 #include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
+#include "upload_observers.h"
 
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 struct Logger { static void err(const std::string&) {} };
@@ -52,6 +55,7 @@ struct Capture {
   static constexpr size_t guard = 32;
 } capture;
 struct ClientMessage {
+  uint32_t get_uid() const { return 123; }
   ClientMessage(uint32_t command, uint32_t id, uint32_t flag) {
     require(command == Commands::IDirect3DSurface9_UnlockRect && id == 7, "command or resource id changed");
     ++capture.commands; capture.dataFlag = flag;
@@ -78,22 +82,73 @@ struct ClientMessage {
   }
 };
 size_t surfaceShadowBudget() { return 128u * 1024u * 1024u; }
-struct Shadow {
+struct PagefileShadow {
   unsigned releases = 0;
+  unsigned transfers = 0;
+  unsigned observations = 0;
+  struct Transfer {
+    PagefileShadow& shadow;
+    explicit Transfer(PagefileShadow& value) : shadow(value) { ++shadow.transfers; }
+    ~Transfer() { --shadow.transfers; }
+  };
   void release(size_t budget) {
     require(budget == surfaceShadowBudget(), "shadow budget changed"); ++releases;
   }
+  void observeUnlock(DWORD) { ++observations; }
 };
+namespace l4d2_readback {
+using Digest = std::vector<uint8_t>;
+struct Hasher {
+  Digest bytes;
+  void add(const void* data, size_t size) {
+    const auto* first = static_cast<const uint8_t*>(data);
+    bytes.insert(bytes.end(), first, first + size);
+  }
+  HRESULT finish(Digest& output) { output = bytes; return S_OK; }
+};
+bool enabled() { return false; }
+void test(uint32_t, uint32_t, const D3DSURFACE_DESC&, PagefileShadow&) {}
+}
+namespace l4d2_residency {
+struct Context { std::recursive_mutex mutex; };
+Context& context() { static Context value; return value; }
+struct Entry {
+  unsigned idle = 0, attempts = 0, uploads = 0;
+  void becameIdle() { ++idle; }
+  void uploadFailed() { ++attempts; }
+  void uploaded(size_t, bool) { ++uploads; }
+};
+}
+namespace l4d2_retention {
+struct Parent {
+  l4d2_readback::Digest lastUpload;
+  HRESULT result = E_FAIL;
+  bool hashUpload(uint32_t, bool) { return true; }
+  void uploaded(uint32_t, bool, const l4d2_readback::Digest& digest, HRESULT value) {
+    lastUpload = digest; result = value;
+  }
+};
+}
+bool retentionEnabled = false;
 class Direct3DSurface9_LSS {
 #include "surface_lock_storage.h"
   D3DSURFACE_DESC m_desc {};
   bool m_bUseSharedHeap;
-  void sendDataToServer(const LockInfo&) const;
+  uint32_t m_readbackParentId = 0, m_readbackMip = 0;
+  bool m_readbackTexture2D = false, m_readbackAttempted = false;
+  l4d2_readback::Digest m_uploadHash;
+  HRESULT m_uploadHashResult = E_FAIL;
+  void sendDataToServer(const LockInfo&);
   static std::tuple<size_t, size_t> getRectDimensions(const RECT&);
 public:
-  Shadow m_shadow;
+  PagefileShadow m_shadow;
+  std::unique_ptr<l4d2_residency::Entry> m_residency;
+  std::shared_ptr<l4d2_retention::Parent> m_retention;
   Direct3DSurface9_LSS(D3DFORMAT format, UINT width, UINT height, bool shared = false)
-    : m_bUseSharedHeap(shared) { m_desc.Format = format; m_desc.Width = width; m_desc.Height = height; }
+    : m_bUseSharedHeap(shared), m_residency(std::make_unique<l4d2_residency::Entry>()) {
+    m_desc.Format = format; m_desc.Width = width; m_desc.Height = height;
+    if (retentionEnabled) { m_retention = std::make_shared<l4d2_retention::Parent>(); }
+  }
   uint32_t getId() const { return 7; }
   void queue(const RECT& rect, INT pitch, void* data, DWORD flags = 0,
              SharedHeap::AllocId discard = SharedHeap::kInvalidId) {
@@ -148,10 +203,13 @@ void runCase(D3DFORMAT format, UINT width, UINT height, RECT rect, uint32_t padd
   const auto preserved = source;
   Direct3DSurface9_LSS surface(format, width, height, shared);
   capture = {}; capture.refuseBlob = refuse; SharedHeap::freed.clear(); copyCalls = 0;
+  l4d2_color::lastUpload.clear();
   surface.queue(rect, static_cast<INT>(apiPitch), source.data() + 32 + offset, flags, 456);
   surface.unlock(); surface.unlock();
   require(source == preserved, "upload changed source, padding or guards");
   require(surface.m_shadow.releases == (shared ? 0u : 1u), "shadow release count changed");
+  require(surface.m_shadow.transfers == 0 && surface.m_shadow.observations == (shared ? 0u : 1u),
+    "upload transfer lifetime or unlock observation changed");
   if (flags & D3DLOCK_READONLY) {
     require(capture.commands == 0 && SharedHeap::freed.empty(), "readonly lock sent data or changed shared ownership"); return;
   }
@@ -167,13 +225,23 @@ void runCase(D3DFORMAT format, UINT width, UINT height, RECT rect, uint32_t padd
   require(SharedHeap::freed.empty() && capture.begins == 1, "unexpected shared release or blob count");
   if (refuse) { require(capture.ends == 0 && copyCalls == 0, "failed reservation still copied or completed"); return; }
   checkPayload(expected);
+  require(surface.m_residency->attempts == 1 && surface.m_residency->uploads == 1 && surface.m_residency->idle == 1,
+    "surface upload skipped residency notifications");
+  if (!ati && retentionEnabled) {
+    require(surface.m_retention->result == S_OK && surface.m_retention->lastUpload == expected,
+      "retention hash missed upload bytes");
+  }
+  if (!ati && l4d2_color::enabled.load() && (width <= 4 || height <= 4)) {
+    require(l4d2_color::lastUpload == expected, "enabled surface diagnostics missed upload bytes");
+  }
 #ifndef SURFACE_COPY_BENCHMARK
   if (!ati) {
     const bool complete = rect.left == 0 && rect.top == 0 && regionWidth == width && regionHeight == height;
 #ifdef SURFACE_ROW_REFERENCE
     (void)complete; const size_t expectedCopies = rows;
 #else
-    const size_t expectedCopies = complete && pitch == rowBytes ? 1u : rows;
+    const bool colorSample = l4d2_color::enabled.load() && (width <= 4 || height <= 4);
+    const size_t expectedCopies = complete && pitch == rowBytes && !retentionEnabled && !colorSample ? 1u : rows;
 #endif
     require(copyCalls == expectedCopies, "copy path did not preserve the whole-surface eligibility rule");
   }
@@ -244,6 +312,14 @@ int main(int argc, char** argv) {
       runCase(format, 32, 16, {0, 0, 32, 16}, 0, D3DLOCK_READONLY);
       runCase(format, 32, 16, {0, 0, 32, 16}, 0, D3DLOCK_DISCARD, true);
     }
+    // The fast path must preserve real retention hashing and diagnostic digests.
+    for (bool diagnostics : {false, true}) for (bool retention : {false, true}) {
+      l4d2_color::enabled.store(diagnostics); retentionEnabled = retention;
+      runCase(D3DFMT_A8R8G8B8, 4, 4, {0, 0, 4, 4}, 0);
+      runCase(D3DFMT_A8R8G8B8, 32, 16, {0, 0, 32, 16}, 0);
+      runCase(D3DFMT_DXT5, 8, 8, {0, 0, 8, 8}, 0);
+    }
+    l4d2_color::enabled.store(false); retentionEnabled = false;
     testSizeBoundaries();
     std::puts("PASS: production surface upload/unlock; full, padded, offset, compressed and tiny layouts; ATI, readonly, shared heap, wire fields, payload guards and failed reservations");
     return 0;

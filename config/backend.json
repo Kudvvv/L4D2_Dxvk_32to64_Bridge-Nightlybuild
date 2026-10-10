@@ -4,5 +4,9 @@
   "variant": "GCC-WinMacLinux-SSE2-O3-LTO",
   "release": "https://github.com/Digger1955/dxvk-gplall/releases/tag/DXVK-GPLALL-2.6.8-2",
   "url": "https://github.com/Digger1955/dxvk-gplall/releases/download/DXVK-GPLALL-2.6.8-2/DXVK-GPLALL-GCC-WinMacLinux-SSE2-O3-LTO.2.6.8-2.zip",
-  "sha256": "4391b1da19230ac1754a80ab073123edd98231876151fa66e745c5453fa74729"
+  "sha256": "4391b1da19230ac1754a80ab073123edd98231876151fa66e745c5453fa74729",
+  "files": {
+    "x32/d3d9.dll": "9b0113fd1e596a45c75368f8568858a0c5f004f1a5560f66e29d41b098b8fd1d",
+    "x64/d3d9.dll": "d7b3e078a913f8ae66e29851b9dbcdf40a4d35639d6ef6493a6f9382173e3300"
+  }
 }

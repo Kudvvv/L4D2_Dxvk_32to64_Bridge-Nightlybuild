@@ -44,7 +44,7 @@
 
 TXVK（https://github.com/tianxiaols/TXVK，作者 tianxiaols）的公开文档、配置和发布二进制用于静态行为分析与实现思路参考。本项目没有恢复或复制其完整定制源码，不分发其客户端、Host 或定制 DXVK 二进制，也不声称拥有其原始代码。
 
-TXVK 自身的 [LICENSE](https://github.com/tianxiaols/TXVK/blob/main/LICENSE) 为 MIT，保留其 `Copyright (c) 2026 TXVK contributors` 归属。它随附的 Bridge、DXVK、Detours 仍遵循相应上游许可；参考 TXVK 不会将这些代码的版权归到本项目名下。
+TXVK 的跨进程桥思路提供了早期启发，感谢 tianxiaols / TXVK contributors。当前公开仓库的 [LICENSE](https://github.com/tianxiaols/TXVK/blob/main/LICENSE) 明确标注项目自身闭源、© 2026 TXVK contributors、保留所有权利；本项目不再将其标为 MIT 项目，也不从公开下载推定复制或再分发授权。上述参考是历史事实，不代表继续分析新版闭源实现。本项目实际构建来源是 NVIDIA RTX Remix Bridge、官方 DXVK 及分别列出的获授权组件；它们各自的版权与许可证不因 TXVK 的发布方式而改变。
 
 L4D2 与 Steam 属于 Valve，游戏及平台不包含在本项目的授权范围内。显卡驱动亦遵循各厂商自己的许可。
 
@@ -58,7 +58,22 @@ L4D2 与 Steam 属于 Valve，游戏及平台不包含在本项目的授权范�
 ## DXVK-GPLALL 后端变体
 
 - 来源：https://github.com/Digger1955/dxvk-gplall/releases/tag/DXVK-GPLALL-2.6.8-2 。
-- 使用 GCC-WinMacLinux-SSE2-O3-LTO 发布包中的 x64/d3d9.dll，仅重命名，不修改二进制。
+- 使用 GCC-WinMacLinux-SSE2-O3-LTO 发布包中的 x32/d3d9.dll 和 x64/d3d9.dll，仅重命名，不修改二进制。
 - 归属 Digger1955、上游 DXVK 和原文件所列贡献者；保留原始 [LICENSE](licenses/DXVK-GPLALL-LICENSE.txt)。
-- 下载地址和 SHA-256 固定在 config/backend.json，构建目录记录 BACKEND.json 和 DLL 校验值；精简 Release 安装包不包含这些开发元数据，归档校验值由附件 .sha256 提供。
+- 下载地址和 SHA-256 固定在 config/backend.json，完整包记录 BACKEND.json、BUILD-INFO.json 和 DLL 校验值；归档校验值另由附件 .sha256 提供。
 - 原版实测结果不能视作该变体已经通过验证。
+
+## ReShade 接口参考
+
+- 来源：https://github.com/crosire/reshade/tree/v6.0.1
+- 作者：Patrick Mours；SDK 标注 `Copyright (C) 2021 Patrick Mours`、`BSD-3-Clause OR MIT`。
+- 使用范围：核对输入窗口所有权检查及 API 10 的公开插件 ABI、overlay 事件编号与签名。只新增独立的动态接口绑定，不复制或分发 SDK 实现、头文件或 ReShade DLL；不把 ReShade 代码归为本项目原创。
+- 窗口/输入方案还参考 TXVK 固定提交 `7d466d794926ce26c113d810172c2abc37058319` 的公开说明与二进制静态分析，参考范围与上文归属一致。
+
+## 可选 L4N v2 控制插件 SDK
+
+`plugins/l4n/sdk/l4n_plugin.h` 是用户提供的 L4N / Left4Neko plugin SDK v2 header，原样保留；所提供文件没有作者版权或许可证声明，本项目不推定其为 MIT，也不声称它由本项目生成。它定义 `IL4NPlugin`、`GetL4NPluginInstance` 与 `RequestHudMenu`。新增 UI/control 实现位于 `plugins/l4n/L4D2BridgePlugin.cpp`，按本项目新增代码署名与 MIT 发布；SDK 本身的权利仍归其原权利人。
+
+## 可选 DXVK 内存实验
+
+从 1.0.1 延续至 v1.1 的可选 [DXVK 内存修复 mem1](docs/DXVK-MEMORY-EXPERIMENT.md) 是基于官方 v2.6.1 提交 `2b1a284f8453baa2bd193709b67e5183074c74ba` 的明确标识修改版，通过独立补丁构建，不替换本 Nightly 完整包的 GPLALL 默认后端。原 DXVK 继续遵循其 zlib/libpng 许可；本项目新增实现遵循根目录 MIT 许可及上述生成来源声明。独立后端更新包保存上游源提交与原许可证，并保留 libdisplay-info Contributors 的 MIT、Khronos SPIRV-Headers 原许可、Vulkan-Headers 各文件的 Apache-2.0／MIT 声明、Valve Corporation 的 OpenVR BSD-3-Clause、Steve Reid 的 SHA-1 Public Domain 声明、MinGW 头文件和编译器运行库的原通知；具体源地址、固定提交和原文见包内 `UPSTREAM-SOURCES.json`、`licenses/`。其中 source checkout 的部分头文件供其他平台使用，不表示全部编入该 Windows DLL。Vulkan-Headers 的 [原始声明](https://github.com/KhronosGroup/Vulkan-Headers/blob/234c4b7370a8ea3239a214c9e871e4b17c89f4ab/LICENSE.md) 按文件适用不同条款，其中核心 C 头文件为 Apache-2.0，部分 C++ 文件允许 Apache-2.0 OR MIT，不归属本项目原创。

@@ -20,7 +20,7 @@ class Packaging(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.source = self.root / "source"
         self.source.mkdir()
-        for name in runtime.REQUIRED + ("UPSTREAM.json", "licenses/Bridge-MIT.txt"):
+        for name in runtime.REQUIRED + runtime.SUPPORT_FILES + ("UPSTREAM.json", "licenses/Bridge-MIT.txt"):
             path = self.source / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"fixture")
@@ -44,7 +44,8 @@ class Packaging(unittest.TestCase):
             for name, data in self.engine_files.items():
                 self.assertEqual(archive.read(name), data)
             self.assertEqual({name for name in names if name.endswith(".dll")},
-                             {"bin/d3d9.dll", "bin/.l4d2bridge/d3d9vk_x64.dll", "bin/studiorender.dll"})
+                             {"bin/d3d9.dll", "bin/.l4d2bridge/d3d9vk_x64.dll", "bin/.l4d2bridge/d3d9vk_x86.dll",
+                              "optional/L4N/L4D2BridgePlugin.dll", "bin/studiorender.dll"})
             for name in ("bin/dxvk_d3d9.dll", "d3d9.dll", "bin/.l4d2bridge/ReShade.dll",
                          "bin/.l4d2bridge/resource-retention.db", "bin/other-engine.dll", "player.dmp", "private.log"):
                 self.assertNotIn(name, names)

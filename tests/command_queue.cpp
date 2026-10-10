@@ -256,6 +256,7 @@ void testPeer(const std::wstring& executable, size_t capacity) {
     kMessageCount, capacity);
 }
 int wmain(int argc, wchar_t** argv) {
+  l4d2_observation::memoryMonitoring = true;
   try {
     if (argc == 4 && std::wstring(argv[1]) == L"--reader") {
       const std::wstring wideName = argv[2];

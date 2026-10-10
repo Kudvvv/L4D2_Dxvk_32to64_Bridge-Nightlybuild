@@ -19,6 +19,12 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Texture creation failure test compilation failed' }
   & ./texture-creation-test.exe
   if ($LASTEXITCODE -ne 0) { throw "Texture creation failure test failed: $LASTEXITCODE" }
+  foreach ($case in @('shadow_lifetime', 'pageblock_diagnostics')) {
+    & cl.exe /nologo /std:c++17 /EHsc /W4 /WX "/I$source/bridge/src/client" "$repoRoot/tests/$case.cpp" "/Fe:$case.exe"
+    if ($LASTEXITCODE -ne 0) { throw "Upstream diagnostics test compilation failed: $case" }
+    & (Join-Path $testDir "$case.exe") (Join-Path $testDir 'l4d2-pageblock.log')
+    if ($LASTEXITCODE -ne 0) { throw "Upstream diagnostics test failed: $case" }
+  }
   python "$PSScriptRoot/prepare_texture_creation_test.py" $source $testDir
   if ($LASTEXITCODE -ne 0) { throw 'Texture creation integration extraction failed' }
   & cl.exe /nologo /std:c++17 /EHsc /W4 /WX "/I$source/bridge/src/client" "/I$testDir" "$repoRoot/tests/texture_creation_integration.cpp" /Fe:texture-creation-integration.exe
