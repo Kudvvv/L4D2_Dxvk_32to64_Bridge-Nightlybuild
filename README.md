@@ -1,10 +1,10 @@
 # L4D2 DXVK Bridge
 
-[中文](#chinese) | [English](#english) · [v1.2.0 发布说明](docs/RELEASE-V1.2.0.md) · [简明版本记录](LDBREADME.md) · [详细更新历史](CHANGELOG.md)
+[中文](#chinese) | [English](#english) · [v1.2.2 可选更新说明](docs/RELEASE-V1.2.2.md) · [简明版本记录](LDBREADME.md) · [详细更新历史](CHANGELOG.md)
 
-**当前正式版：v1.2.0。** 修复已确认的窗口/全屏切换黑屏和联机 Volume 蓝绿偏色，扩展 PageBlock 管理与恢复，并提供可选 L4N 常用设置菜单。完整包默认 **x86 Host + learned-aggressive**，x64 Host 保留；详细诊断默认关闭。
+**当前正式版：v1.2.2（Optional / 可选更新）。** 重点修复地图加载和切换期间的 IPC 正确性问题，已验证本次枪店图与训练图来回切换。如果 v1.2.1 没有进图/切图闪退，可以继续使用原版。部分场景可能损失约 **10% FPS**，个别场景更高；加载时间也可能增加，详见发布说明。
 
-[下载 v1.2.0](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/releases/tag/v1.2.0)：首次安装选完整包，已有安装选三件套补丁，L4N 插件单独下载。旧开发版附件保持原样。
+[下载 v1.2.2](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/releases/tag/v1.2.2)：已有安装优先选三件套补丁，保留配置、DXVK、ReShade 和 retention DB。完整包用于首次安装；L4N 插件未修改，继续使用原插件。历史附件保持原样。
 
 开发者参考：[当前技术架构](docs/ARCHITECTURE.md) · [API 与 ABI](docs/API.md) · [配置说明](docs/CONFIGURATION.md)。
 
@@ -15,6 +15,13 @@
 在 Windows《Left 4 Dead 2》的 **32 位游戏进程**中接收 D3D9 调用，通过共享内存和命令队列交给独立 x86/x64 Bridge Host，由 DXVK 转为 Vulkan 渲染。游戏引擎和 Bridge Client 始终是 32 位；x64 Host 提供更大的渲染端地址空间。
 
 桥负责 D3D9 接口、桥接资源、跨进程传输与呈现，以及这些实现引起的问题。它不修改 Source 游戏逻辑、私有对象或任务队列。项目没有显卡厂商白名单，不要求 NVIDIA/RTX，实际支持取决于所选 DXVK、GPU 和驱动。
+
+## v1.2.2 的变化
+
+- 修复数据队列覆盖、遗漏唤醒与等待失败后继续提交的风险，保留必要的边界、所有权和失败检查。
+- 修复完整上传包在特定回绕位置被拒绝的问题，通用布局处理不针对 64 MiB 特判。
+- 协议版本为 3，三个 Bridge 二进制必须同批更新。未改 VB/IB FULL_SHADOW、Lock、上传内容或 DXVK 后端。
+- 本版是稳定性与性能的取舍；详情及已知限制见 [可选更新说明](docs/RELEASE-V1.2.2.md)。
 
 ## v1.2.0 的变化
 
@@ -33,8 +40,8 @@
 
 | Release 文件 | 选择方式 |
 |---|---|
-| `l4d2-bridge-v1.2.0.zip` | 首次安装；包含 Client、x86/x64 Host、官方 DXVK 2.6.1 和默认配置 |
-| `l4d2-bridge-patch-v1.2.0.zip` | 已有安装；只更新三个桥二进制，保留运行配置、后端、ReShade 和 retention DB |
+| `l4d2-bridge-v1.2.2.zip` | 首次安装；包含 Client、x86/x64 Host、官方 DXVK 2.6.1 和默认配置 |
+| `l4d2-bridge-patch-v1.2.2.zip` | 已有安装；只更新三个桥二进制，保留运行配置、后端、ReShade 和 retention DB |
 | `l4d2-bridge-l4n-v1.2.0.zip` | 可选 L4N SDK v2 菜单插件，独立于本体和补丁 |
 | `SHA256SUMS.txt` | 下载文件校验；包内另有二进制 SHA256 和构建记录 |
 
@@ -151,7 +158,7 @@ Client 日志为 `bridge32.log`，x86/x64 Host 分别为 `bridge-host32.log` / `
 
 ## English
 
-**v1.2.0 is the current stable release.** This Windows bridge forwards D3D9 calls from the 32-bit L4D2 process to an independent x86/x64 Host running DXVK. The game engine and Client remain 32-bit. There is no NVIDIA/RTX requirement; use a compatible Vulkan GPU, driver and DXVK backend.
+**v1.2.2 is an optional stable update focused on map-loading stability. Keep v1.2.1 if map entry/switching works for you. Some scenes may lose roughly 10% FPS, with larger losses possible, and loading may take longer.** This Windows bridge forwards D3D9 calls from the 32-bit L4D2 process to an independent x86/x64 Host running DXVK. The game engine and Client remain 32-bit. There is no NVIDIA/RTX requirement; use a compatible Vulkan GPU, driver and DXVK backend.
 
 The release fixes confirmed fullscreen/windowed Reset failures and Volume byte-pitch corruption behind the reported network colour tint. It expands selective PageBlock management/recovery, adds optional L4N common settings and Client-owned configuration persistence, and retains the ReShade reactivation fix. Detailed diagnostics default off. See [release notes](docs/RELEASE-V1.2.0.md) and the [version ledger](LDBREADME.md).
 

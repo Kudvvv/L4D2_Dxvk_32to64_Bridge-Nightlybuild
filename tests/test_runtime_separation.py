@@ -10,8 +10,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / '.deps/dxvk-remix'
 # Project digests normalize only checkout CRLF/LF; all other bytes are protected.
-# Digests from the patched v1.2.0 baseline, commit 47c4da5403e3b8f1b1beca0ffa35474be3027394.
-PROTECTED_RUNTIME = {'bridge/src/client/d3d9_volume.cpp': '33673701ba3fdab4aa014ea15f32133c5aabeaea4ae0356355e5cb4098270edb', 'bridge/src/client/d3d9_volume.h': '8417cacce6b3fb5da18218c584d1afe995b4b12789e9bdb53abf27c84239c695', 'bridge/src/client/d3d9_volumetexture.cpp': '1d528fff6f939106ca5bc46fdfb12e4d237d221c25b674a97ec1fd11036f405b', 'bridge/src/util/volume_layout.h': '8c4ea033ae1eba2441642ffa5ef2a3c82c732654b95857defcfecfe766d423d1', 'bridge/src/util/util_texture_and_volume.h': 'c53ac762333bc5192f23a4b397a5325903d542313609abbd5f476f8cd7349ae1', 'bridge/src/util/pageblock_control.h': 'c91375dc22442cc3162b2361fd7ac1b57fadd5155ed38026a17370f5c8d1d52e', 'bridge/src/util/bridge_control.h': '512739b3c28052f6ce48ac42c5762ea7aab1c4276729c863f22b9c48252b8ef4', 'bridge/src/client/d3d9_bootstrap.cpp': '81037c8c457ca557d4a5e040d4d1e7afbd22881bbe6b2a31d6de9cde182d5a56', 'bridge/src/util/device_reset.h': '661b781c69b21084751cb0a2a1fad3c3bc6dac9a4dd750d74dbc19237b54d06c'}
+# Volume status propagation updated for IPC v2; unchanged layout, wire and Host handlers remain pinned.
+# Other digests from the patched v1.2.0 baseline, commit 47c4da5403e3b8f1b1beca0ffa35474be3027394.
+PROTECTED_RUNTIME = {'bridge/src/client/d3d9_volume.cpp': '00743b1442d8d81d47bc79e2f3d2bb449a4894a4eec7c665de8777b7690ef9b9', 'bridge/src/client/d3d9_volume.h': 'e35bd6c55e2e662597be4138406c365db880029f4f742f022034947a902a8632', 'bridge/src/client/d3d9_volumetexture.cpp': '678385c548b2612f4f415009e99d5630d8d560347ea6a00a0fac19a408d43153', 'bridge/src/util/volume_layout.h': '8c4ea033ae1eba2441642ffa5ef2a3c82c732654b95857defcfecfe766d423d1', 'bridge/src/util/util_texture_and_volume.h': 'c53ac762333bc5192f23a4b397a5325903d542313609abbd5f476f8cd7349ae1', 'bridge/src/util/pageblock_control.h': 'c91375dc22442cc3162b2361fd7ac1b57fadd5155ed38026a17370f5c8d1d52e', 'bridge/src/util/bridge_control.h': '512739b3c28052f6ce48ac42c5762ea7aab1c4276729c863f22b9c48252b8ef4', 'bridge/src/client/d3d9_bootstrap.cpp': '81037c8c457ca557d4a5e040d4d1e7afbd22881bbe6b2a31d6de9cde182d5a56', 'bridge/src/util/device_reset.h': '661b781c69b21084751cb0a2a1fad3c3bc6dac9a4dd750d74dbc19237b54d06c'}
 PROTECTED_PROJECT = {'tests/volume_layout_test.cpp': '8ac62a56526cbadaecbe92785665176fb653ae40c54c14df01e8b92be4a8f527', 'scripts/test_volume_layout.ps1': '10f5349ab3aecc11228bdaa363bddb2ca1e13cd586129a2696bb03c793c732e8', 'plugins/l4n/L4D2BridgePlugin.cpp': '87de950b7fc0c178e4e7131dc529b8ccc959fe131d7d37e8e5aa45e23cd0cb82'}
 VOLUME_HANDLERS = {'IDirect3DVolume9_UnlockBox': '4d8c518fb453a3a27a4cad09de54bfb89cf75556e51305f0ae7c6aacef7629bc', 'IDirect3DVolumeTexture9_UnlockBox': '8bc4482d0ea7c4b4aaad70c70bbdbb1a85ca7064acedeb2aee96b8b50219defe'}
 
@@ -50,6 +51,12 @@ class RuntimeSeparation(unittest.TestCase):
             start = server.index('      case ' + name + ':')
             end = server.index('      case ', start + 10)
             self.assertEqual(hashlib.sha256(server[start:end].encode()).hexdigest(), digest)
+
+    def test_original_volume_lock_layout_is_unchanged(self):
+        from scripts.generate_buffer_contract_test import method
+        contents = (SOURCE / 'bridge/src/client/d3d9_volume.cpp').read_text(encoding='utf-8')
+        start, end = method(contents, 'HRESULT Direct3DVolume9_LSS::lock(')
+        self.assertEqual(hashlib.sha256(contents[start:end].encode()).hexdigest(), "591148f996f95255fde3ec9d33116a33beb1d88b68ba4b126ddd69d5f85f5a1c")
 
     def test_packaged_defaults_and_independent_monitoring(self):
         config = (ROOT / 'config/bridge.conf').read_text(encoding="utf-8")
