@@ -9,27 +9,33 @@ void require(bool value,const char* message) {
 }
 uint32_t pattern(uint32_t sequence,uint32_t offset) { return sequence*1664525u+offset*1013904223u; }
 template<typename B> void receiveKnown(uint32_t sequence, bool request) {
+  const bool blob=(sequence%3)!=0;
 #ifdef REMIX_BRIDGE_CLIENT
   require(B::waitForCommand(Commands::Bridge_Response,0,nullptr,true,sequence)==Result::Success,"known matching reply");
-  const auto packet=B::template get_packet<2>();
+  const auto packet=B::template get_packet<2>(blob);
   const auto receivedSequence=packet.fields[0],size=packet.fields[1];
 #else
   require(B::waitForCommand()==Result::Success,"known wait packet");
   B::pop_front();
-  const auto packet=B::template get_packet<3>();
+  const auto packet=B::template get_packet<3>(blob);
   require(packet.fields[0]==sequence,"known UID sequence");
   const auto receivedSequence=packet.fields[1],size=packet.fields[2];
 #endif
-  require(receivedSequence==sequence && size==sequence%65 && packet.bytes==size+8,"known metadata and length");
-  require(packet.data!=nullptr,"known pointer");
+  require(receivedSequence==sequence && size==sequence%65 && packet.bytes==(blob?size+8:0),"known metadata and length");
+  require((packet.data!=nullptr)==blob,"known pointer");
   for(uint32_t i=0;i<packet.bytes;++i){require(static_cast<uint8_t*>(packet.data)[i]==static_cast<uint8_t>(pattern(sequence,i)),"known every byte");}
 #ifdef REMIX_BRIDGE_SERVER
   B::end_read_data();
   if(request){
     std::array<uint8_t,72> bytes{};
     for(uint32_t i=0;i<size+8;++i){bytes[i]=static_cast<uint8_t>(pattern(sequence,i));}
-    typename B::Command reply(Commands::Bridge_Response,sequence,0,bridge_data::payload(size+8,bytes.data(),sequence,size));
-    require(reply.finish()==Result::Success,"known reply commit");
+    if(blob){
+      typename B::Command reply(Commands::Bridge_Response,sequence,0,bridge_data::payload(size+8,bytes.data(),sequence,size));
+      require(reply.finish()==Result::Success,"known reply commit");
+    }else{
+      typename B::Command reply(Commands::Bridge_Response,sequence,0,bridge_data::fields(sequence,size));
+      require(reply.finish()==Result::Success,"known fields reply commit");
+    }
   }
 #else
   B::pop_front();
@@ -39,7 +45,10 @@ template<typename B> void sendKnown(uint32_t sequence, bool reply) {
   const auto size=sequence%65;
   std::array<uint8_t,72> bytes{};
   for(uint32_t i=0;i<size+8;++i){bytes[i]=static_cast<uint8_t>(pattern(sequence,i));}
-  {
+  if((sequence%3)==0){
+    typename B::Command command(Commands::Bridge_Response,0,0,bridge_data::fields(sequence,size));
+    require(command.finish()==Result::Success,"known scalar complete reservation commit");
+  }else{
     typename B::Command command(Commands::Bridge_Response,0,0,bridge_data::payload(size+8,bytes.data(),sequence,size));
     require(command.finish()==Result::Success,"known complete reservation commit");
   }
