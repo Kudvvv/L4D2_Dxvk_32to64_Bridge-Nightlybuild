@@ -113,7 +113,7 @@ def publish():
     introduction = (
         f"L4D2 Bridge {title}\n\n"
         "**只提供一个完整 ZIP：已包含 DXVK（GPLALL）、L4N 2.51.0、完整桥接工具和已修复的 `bin/studiorender.dll`。备份后解压覆盖到游戏根目录即可安装，请勿与其他类似整合项目混装。核对游戏 DLL 版本并备份后，复制文件即可应用 ThinFlex 修复，无需运行补丁工具或安装 Python。**\n\n"
-        "- L4N / Left4Neko 原作者：**Starfell**。作者的启动器、模块、着色器、素材、转换工具和 `readme_l4n.txt` 原样保留；另含用户提供的 `dxvk.conf`、L4N `config.vdf` 及配套 shader 预设，不能将这些预设当作作者原始默认值。逐文件来源及 SHA-256 见 `L4N-PAYLOAD.json`，归属说明见 `licenses/L4N-NOTICE.txt`。\n"
+        "- L4N / Left4Neko 原作者：**Starfelll**。作者的启动器、模块、着色器、素材、转换工具和 `readme_l4n.txt` 原样保留；另含用户提供的 `dxvk.conf`、L4N `config.vdf` 及配套 shader 预设，不能将这些预设当作作者原始默认值。逐文件来源及 SHA-256 见 `L4N-PAYLOAD.json`，归属说明见 `licenses/L4N-NOTICE.txt`。\n"
         f"- 完整合并 L4D2 原项目 **{original['version']}**（`{original['commit']}`），包括 PageBlock/retention/readback、ReShade Presenter、Steam 输入支持、诊断体系、x86 Host 和 L4N 控制插件。\n"
         f"- 合并范围及本分支保留项见[更新记录](https://github.com/{repo}/blob/{recipe}/docs/ORIGINAL-PROJECT-UPDATES.md)。默认继续使用 GPLALL 后端和 x64 Host；可选功能按包内文档启用。\n"
         "- 同一完整包包含配套 x86 Client、x86/x64 Host、两种架构的 GPLALL 后端，以及 `optional/L4N/L4D2BridgePlugin.dll`。需要 L4N 控制菜单时将插件复制到 `bin/neko/plugins/`，普通安装不依赖该插件。\n"

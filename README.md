@@ -2,7 +2,7 @@
 
 > **本构建已包含 DXVK（GPLALL）、L4N 和 Bridge 桥接工具，一体整合，解压覆盖即可一键安装，无需另下这三项组件。请勿与其他同类项目或整合包混合安装。**
 >
-> **安装前移除 `-vulkan` 启动参数，并备份移走游戏根目录的 `d3d9.dll`；保留本包的 `bin/d3d9.dll`。** L4N / Left4Neko 原作者为 **Starfell（@Starfelll）**，感谢原作者的工作。
+> **安装前移除 `-vulkan` 启动参数，并备份移走游戏根目录的 `d3d9.dll`；保留本包的 `bin/d3d9.dll`。** L4N / Left4Neko 原作者为 **Starfelll（@Starfelll）**，感谢原作者的工作。
 
 **简体中文** | [English](README.en.md)
 
@@ -26,7 +26,7 @@ ThinFlex 修复已收到用户复测有效反馈，仍限定于以上精确版�
 
 完整包同时包含 x64/x86 Host 与对应 GPLALL 后端，**默认仍为 x64**。切换 Host 可修改 `client.testX86Server`（`False` 为 x64，`True` 为 x86），保持 `forceX64Server=True`，退出整个游戏后重新启动。
 
-L4N 本体已随包安装。另需 Bridge 常用设置菜单时，把包内 `optional/L4N/L4D2BridgePlugin.dll` 复制到游戏 `bin/neko/plugins/` 并重启；该菜单插件保持可选。无需另下插件包，详见 [L4N 设置说明](docs/L4N-BRIDGE-CONTROLS.md)。L4N 原始说明与作者署名原样保留在 `readme_l4n.txt`，另见 [Starfell 归属说明](licenses/L4N-NOTICE.txt)。
+L4N 本体已随包安装。另需 Bridge 常用设置菜单时，把包内 `optional/L4N/L4D2BridgePlugin.dll` 复制到游戏 `bin/neko/plugins/` 并重启；该菜单插件保持可选。无需另下插件包，详见 [L4N 设置说明](docs/L4N-BRIDGE-CONTROLS.md)。L4N 原始说明与作者署名原样保留在 `readme_l4n.txt`，另见 [Starfelll 归属说明](licenses/L4N-NOTICE.txt)。
 
 新安装配置包含上游的 learned-aggressive 内存策略，并默认关闭日常 memory/crash/data 诊断；已有用户升级继续保留自己的配置，新功能的键与开销见 [配置说明](docs/CONFIGURATION.md)。
 
@@ -70,7 +70,7 @@ L4N 本体已随包安装。另需 Bridge 常用设置菜单时，把包内 `opt
 
 - 项目特有的新增与修改：**MIT**，见 [LICENSE](LICENSE)，保留 `yeyunyyds` 的原版权声明。
 - NVIDIA Bridge：**MIT**，见 [licenses/Bridge-MIT.txt](licenses/Bridge-MIT.txt)。
-- L4N / Left4Neko 2.51.0：原作者 **Starfell（@Starfelll）**，原文件与说明保留作者归属，不属于本项目原创或根目录 MIT 授权，见 [L4N-NOTICE](licenses/L4N-NOTICE.txt)。
+- L4N / Left4Neko 2.51.0：原作者 **Starfelll（@Starfelll）**，原文件与说明保留作者归属，不属于本项目原创或根目录 MIT 授权，见 [L4N-NOTICE](licenses/L4N-NOTICE.txt)。
 - DXVK／DXVK-GPLALL：随附 **zlib/libpng** 许可，见 [licenses/DXVK-LICENSE.txt](licenses/DXVK-LICENSE.txt) 和 [licenses/DXVK-GPLALL-LICENSE.txt](licenses/DXVK-GPLALL-LICENSE.txt)。
 - Bridge 所含 Detours、Tracy 等依赖继续遵循各自许可，见 [licenses/Bridge-third-party.txt](licenses/Bridge-third-party.txt)。
 - 包内修改版 `studiorender.dll` 来自维护者本机的匹配游戏文件，按用户要求应用限定 ThinFlex 修复。原引擎归 Valve，不属于根目录 MIT 授权；见 [引擎归属说明](licenses/Valve-engine-NOTICE.txt)。

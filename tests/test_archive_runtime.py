@@ -58,7 +58,7 @@ class Packaging(unittest.TestCase):
             self.assertLess(guide.index("先从临时目录移除"), guide.index("然后将临时目录内容合并"))
             self.assertIn("无需运行修复工具", guide)
             self.assertIn("原始备份", guide)
-            self.assertIn("Starfell", guide)
+            self.assertIn("Starfelll", guide)
             self.assertNotIn("update 包", guide)
         before = self.output.read_bytes()
         with self.assertRaises(FileExistsError):

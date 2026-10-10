@@ -1,5 +1,5 @@
 L4N / Left4Neko 2.51.0
-Original author: Starfell (original files identify the author as @Starfelll).
+Original author: Starfelll (original files identify the author as @Starfelll).
 
 L4N is an independent third-party project. Its launcher, modules, shaders,
 materials, conversion tools, SDK and original documentation were supplied by

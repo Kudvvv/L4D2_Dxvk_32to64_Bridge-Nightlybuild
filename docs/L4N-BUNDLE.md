@@ -2,7 +2,7 @@
 
 本构建包含 DXVK-GPLALL、L4N 2.51.0 和 Bridge 桥接工具，按 [README 的下载与安装步骤](../README.md) 解压覆盖即可安装。不要与其他同类项目或整合包混装；先移除 `-vulkan`，备份移走游戏根目录的 `d3d9.dll`，保留本包的 `bin/d3d9.dll`。
 
-**L4N / Left4Neko 原作者为 Starfell，原文件署名为 @Starfelll。** 本仓库负责组合交付和 Bridge 构建，不将 L4N 标为本项目或 Codex 原创。原 `readme_l4n.txt` 保持原字节，另附 [L4N 归属说明](../licenses/L4N-NOTICE.txt)。原说明涉及普通 DXVK 的安装路径时，以本整合包的 Bridge 路径为准。
+**L4N / Left4Neko 原作者为 Starfelll，原文件署名为 @Starfelll。** 本仓库负责组合交付和 Bridge 构建，不将 L4N 标为本项目或 Codex 原创。原 `readme_l4n.txt` 保持原字节，另附 [L4N 归属说明](../licenses/L4N-NOTICE.txt)。原说明涉及普通 DXVK 的安装路径时，以本整合包的 Bridge 路径为准。
 
 ## 文件来源
 

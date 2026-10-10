@@ -2,7 +2,7 @@
 
 开发接入见 [完整 API 参考](API.md)，进程/资源/配置的技术边界见 [当前架构](ARCHITECTURE.md)。本文描述最终 HUD 行为；控制 ABI 仍提供 runtime Host 等字段，插件按当前菜单要求不显示这些字段。
 
-本页描述完整上游 1.2.1 的常用设置功能。Nightly 从同一源码编译 x86 `L4D2BridgePlugin.dll`，随唯一全量 ZIP 放在 `optional/L4N/`。完整包已含 Starfell（@Starfelll）的 L4N 2.51.0 本体及维护者提供的 `config.vdf`；来源见 [整合包说明](L4N-BUNDLE.md)。Bridge 本体不依赖设置插件，插件需支持随仓库提供的 SDK v2 的 L4N HUD。
+本页描述完整上游 1.2.1 的常用设置功能。Nightly 从同一源码编译 x86 `L4D2BridgePlugin.dll`，随唯一全量 ZIP 放在 `optional/L4N/`。完整包已含 Starfelll（@Starfelll）的 L4N 2.51.0 本体及维护者提供的 `config.vdf`；来源见 [整合包说明](L4N-BUNDLE.md)。Bridge 本体不依赖设置插件，插件需支持随仓库提供的 SDK v2 的 L4N HUD。
 
 ## 安装可选插件
 

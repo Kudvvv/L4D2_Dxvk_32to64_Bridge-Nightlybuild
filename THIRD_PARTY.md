@@ -72,7 +72,7 @@ L4D2 与 Steam 属于 Valve，游戏及平台不包含在本项目的授权范�
 
 ## L4N / Left4Neko 2.51.0
 
-- 原作者：**Starfell（原文件署名 @Starfelll）**。感谢原作者提供的 L4N 启动器、模块、着色器与工具；它们不是本项目或 Codex 的原创代码。
+- 原作者：**Starfelll（原文件署名 @Starfelll）**。感谢原作者提供的 L4N 启动器、模块、着色器与工具；它们不是本项目或 Codex 的原创代码。
 - 来源为维护者提供的原始 `L4N_v2.51.0.7z`，SHA-256 为 `5a530a24ee0e8a3014ab99df35e22279e410bed1a1f4cca1a08c2eb058eb0d4c`。保留原包 75 个文件，原字节与署名不变；仅按用户要求省略参考 `config_template.vdf`。
 - 另附维护者整合目录中的 `dxvk.conf`、`left4dead2/neko/config.vdf` 和 `neko_floattoscreen_ps20b.vcs`，明确区分为用户预设，不冒充 L4N 原版默认配置。
 - 原 `readme_l4n.txt`、原组件声明及 [L4N-NOTICE](licenses/L4N-NOTICE.txt) 随包保留。根 MIT 许可不覆盖 L4N；组合打包不转移作者归属，也不表示原作者认可本构建。

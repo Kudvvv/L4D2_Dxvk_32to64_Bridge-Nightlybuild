@@ -1,4 +1,4 @@
-"""Pin the complete Starfell distribution and explicit user preset, without private material."""
+"""Pin the complete Starfelll distribution and explicit user preset, without private material."""
 import hashlib
 import json
 from pathlib import Path
@@ -19,7 +19,8 @@ class L4NPayload(unittest.TestCase):
 
     def test_exact_distribution_and_original_author_readme(self):
         metadata = l4n.manifest_metadata(self.files[l4n.MANIFEST_NAME])
-        self.assertEqual(metadata["author"], "Starfell")
+        self.assertEqual(metadata["author"], "Starfelll")
+        self.assertEqual(metadata["original_author_signature"], "@Starfelll")
         self.assertEqual(metadata["version"], "2.51.0")
         self.assertEqual(len(metadata["files"]), 78)
         self.assertEqual(sum(len(self.files[name]) for name in metadata["files"]), 23232626)

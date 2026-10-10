@@ -2,7 +2,7 @@
 
 > **This build includes DXVK (GPLALL), L4N and the Bridge tools in one package. Extract and copy to install; no separate component downloads are needed. Do not mix it with other similar projects or bundles.**
 >
-> **Remove the `-vulkan` launch option and back up/move away `d3d9.dll` from the game root; keep this package's `bin/d3d9.dll`.** L4N / Left4Neko is the work of **Starfell (@Starfelll)**, with thanks to its original author.
+> **Remove the `-vulkan` launch option and back up/move away `d3d9.dll` from the game root; keep this package's `bin/d3d9.dll`.** L4N / Left4Neko is the work of **Starfelll (@Starfelll)**, with thanks to its original author.
 
 [简体中文](README.md) | **English**
 
@@ -26,7 +26,7 @@ To use `-vulkan`, rename the client to `dxvk_d3d9.dll` within the game `bin`. Wh
 
 The full package includes both x64/x86 Hosts and matching GPLALL backends. **x64 remains the default.** To switch, set `client.testX86Server=False` for x64 or `True` for x86, retain `forceX64Server=True`, and restart the entire game.
 
-L4N itself is installed with the package. For the optional Bridge settings menu, copy `optional/L4N/L4D2BridgePlugin.dll` from this same ZIP to the game's `bin/neko/plugins/` and restart. No separate plugin download is needed. See the [L4N guide](docs/L4N-BRIDGE-CONTROLS.md). Original documentation and author attribution remain in `readme_l4n.txt`; see also the [Starfell notice](licenses/L4N-NOTICE.txt).
+L4N itself is installed with the package. For the optional Bridge settings menu, copy `optional/L4N/L4D2BridgePlugin.dll` from this same ZIP to the game's `bin/neko/plugins/` and restart. No separate plugin download is needed. See the [L4N guide](docs/L4N-BRIDGE-CONTROLS.md). Original documentation and author attribution remain in `readme_l4n.txt`; see also the [Starfelll notice](licenses/L4N-NOTICE.txt).
 
 Fresh installs use upstream's learned-aggressive retention policy and disable routine memory/crash/data diagnostics by default. Preserve your installed configuration when upgrading. See [configuration settings and costs](docs/CONFIGURATION.md).
 
@@ -68,7 +68,7 @@ When reusing a local source checkout, the build script verifies the complete pat
 
 - Project-specific additions and modifications: **MIT**, see [LICENSE](LICENSE). The original copyright notice for `yeyunyyds` is retained.
 - NVIDIA Bridge: **MIT**, see [licenses/Bridge-MIT.txt](licenses/Bridge-MIT.txt).
-- L4N / Left4Neko 2.51.0: original author **Starfell (@Starfelll)**. Original files and documentation retain their attribution and are outside this project's root MIT license; see [L4N-NOTICE](licenses/L4N-NOTICE.txt).
+- L4N / Left4Neko 2.51.0: original author **Starfelll (@Starfelll)**. Original files and documentation retain their attribution and are outside this project's root MIT license; see [L4N-NOTICE](licenses/L4N-NOTICE.txt).
 - DXVK / DXVK-GPLALL: distributed with the **zlib/libpng** license; see [licenses/DXVK-LICENSE.txt](licenses/DXVK-LICENSE.txt) and [licenses/DXVK-GPLALL-LICENSE.txt](licenses/DXVK-GPLALL-LICENSE.txt).
 - Dependencies included in Bridge, such as Detours and Tracy, retain their respective licenses. See [licenses/Bridge-third-party.txt](licenses/Bridge-third-party.txt).
 - The modified `studiorender.dll` comes from the maintainer's matching local game file, with the limited ThinFlex repair applied at the user's request. The original engine belongs to Valve and is outside the root MIT license; see [engine attribution](licenses/Valve-engine-NOTICE.txt).

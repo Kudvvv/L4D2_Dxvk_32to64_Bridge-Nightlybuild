@@ -45,7 +45,7 @@ class FullPackage(unittest.TestCase):
                                    "x32/d3d9.dll": hashlib.sha256(self.backend32.read_bytes()).hexdigest()}}
         (self.root / "config/backend.json").write_text(json.dumps(self.metadata), encoding="utf-8")
         for target, value in (("ROOT", self.root), ("source_engine_files", lambda: {"bin/studiorender.dll": b"verified fixture"}),
-                              ("source_l4n_files", lambda: {"left4dead2.exe": b"verified L4N fixture", "readme_l4n.txt": b"Starfell original"})):
+                              ("source_l4n_files", lambda: {"left4dead2.exe": b"verified L4N fixture", "readme_l4n.txt": b"Starfelll original"})):
             patcher = mock.patch.object(package, target, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -74,10 +74,10 @@ class FullPackage(unittest.TestCase):
         self.assertEqual([path.name for path in self.output.parent.iterdir()], ["full"])
         receipt = json.loads((self.output / "BUILD-INFO.json").read_text())
         self.assertEqual(receipt["build_id"], self.identity)
-        self.assertEqual(receipt["l4n_author"], "Starfell")
+        self.assertEqual(receipt["l4n_author"], "Starfelll")
         self.assertEqual(receipt["l4n_version"], "2.51.0")
         self.assertEqual((self.output / "left4dead2.exe").read_bytes(), b"verified L4N fixture")
-        self.assertEqual((self.output / "readme_l4n.txt").read_bytes(), b"Starfell original")
+        self.assertEqual((self.output / "readme_l4n.txt").read_bytes(), b"Starfelll original")
         manifest = json.loads((self.output / "SHA256.json").read_text())
         for relative, digest in manifest.items():
             self.assertEqual(hashlib.sha256((self.output / relative).read_bytes()).hexdigest(), digest)

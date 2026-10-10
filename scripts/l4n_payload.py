@@ -6,11 +6,11 @@ import stat
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "2.51.0"
-AUTHOR = "Starfell"
+AUTHOR = "Starfelll"
 SOURCE_ARCHIVE_SHA256 = "5a530a24ee0e8a3014ab99df35e22279e410bed1a1f4cca1a08c2eb058eb0d4c"
 # Canonical JSON digest pins both the file list and its provenance. Text checkout
 # line endings and formatting may differ without altering the recorded identity.
-MANIFEST_SHA256 = "794da288f160facaaef9259ccf8e9b53c8a5f1027adfc6c5de7de398b9228fe1"
+MANIFEST_SHA256 = "a89b66f79dba8f5e12414551dbab2eb762bfb1007cf020ff4c6c103d6ddc0fe7"
 MANIFEST_NAME = "L4N-PAYLOAD.json"
 NOTICE_NAME = "licenses/L4N-NOTICE.txt"
 FILE_COUNT = 78
@@ -77,8 +77,8 @@ def validate_l4n_files(files):
         data = files[name]
         if len(data) != entry["size"] or hashlib.sha256(data).hexdigest() != entry["sha256"]:
             raise ValueError(f"L4N payload differs from its verified source: {name}")
-    if b"Starfell" not in files[NOTICE_NAME]:
-        raise ValueError("Missing L4N author credit: Starfell")
+    if b"Starfelll" not in files[NOTICE_NAME]:
+        raise ValueError("Missing L4N author credit: Starfelll")
     return files
 
 
