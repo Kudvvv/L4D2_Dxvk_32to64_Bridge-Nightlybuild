@@ -54,6 +54,37 @@ int main() {
     }
   }
   require(!packetAt(UINT64_MAX-1,2,8,2,1,true).valid,"whole packet overflow");
+  uint64_t packetEdgeCases = 0;
+  for (uint32_t capacity : {0u,1u,2u,67u,UINT32_MAX-1,UINT32_MAX}) {
+    for (uint32_t position : {0u,capacity/2,capacity?capacity-1:0u,capacity}) {
+      for (uint64_t prefix : {uint64_t(0),uint64_t(1),uint64_t(capacity/2),uint64_t(capacity),uint64_t(capacity)+1,UINT64_MAX}) {
+        for (size_t bytes : {size_t(0),size_t(1),size_t(3),size_t(4),size_t(UINT32_MAX)}) {
+          for (uint64_t begin : {uint64_t(0),uint64_t(1),UINT64_MAX-capacity,UINT64_MAX-1,UINT64_MAX}) {
+            for (bool blob : {false,true}) {
+              const auto actual=packetAt(begin,position,capacity,prefix,bytes,blob);
+              const auto first=planAt(begin,position,capacity,prefix,false);
+              Reservation expected=first;
+              if (first.valid && blob) {
+                const uint64_t next=position+prefix;
+                uint64_t words=0; blobWords(bytes,words);
+                expected=planAt(first.end,static_cast<uint32_t>(next>=capacity?next-capacity:next),capacity,words,true);
+                if (expected.valid && expected.end-begin>capacity) {expected.valid=false;}
+              }
+              require(actual.valid==expected.valid,"whole packet extreme validity");
+              if (expected.valid) {
+                require(actual.end==expected.end && actual.words==expected.end-begin && actual.payload==expected.payload,
+                  "whole packet extreme incremental equivalence");
+              }
+              ++packetEdgeCases;
+            }
+          }
+        }
+      }
+    }
+  }
+  if constexpr (sizeof(size_t)>4) {
+    require(!packetAt(0,0,UINT32_MAX,0,static_cast<size_t>(UINT32_MAX)+1,true).valid,"whole packet native wire overflow");
+  }
   require(!plan(UINT64_MAX-2,8,4,true).valid,"padding overflow");
   uint64_t words=0;
   require(blobWords(0,words) && words==1,"zero-length prefix");
@@ -83,6 +114,6 @@ int main() {
   require(!waitForSpace(c,12,8,[](){return uint64_t(4);},[](){return true;},[](){return false;}),"peer exited");
   c.fault=1;
   require(!waitForSpace(c,4,8,[](){return uint64_t(0);},[](){return true;},[](){return true;}),"poison blocks fast path");
-  std::printf("DATA_RING_CONTRACT_PASS checked_space_states=%llu packet_layout_cases=%llu pointer_bits=%u\n",
-    static_cast<unsigned long long>(cases),static_cast<unsigned long long>(packetCases),static_cast<unsigned>(sizeof(void*)*8));
+  std::printf("DATA_RING_CONTRACT_PASS checked_space_states=%llu packet_layout_cases=%llu packet_extreme_cases=%llu pointer_bits=%u\n",
+    static_cast<unsigned long long>(cases),static_cast<unsigned long long>(packetCases),static_cast<unsigned long long>(packetEdgeCases),static_cast<unsigned>(sizeof(void*)*8));
 }
