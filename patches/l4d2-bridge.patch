@@ -15448,7 +15448,7 @@ index a3bed63..db1a7a7 100644
 \ No newline at end of file
 +template class Bridge<BridgeId::Device>;
 diff --git a/bridge/src/util/util_bridgecommand.h b/bridge/src/util/util_bridgecommand.h
-index a555f8c..9ad9b02 100644
+index a555f8c..e90a735 100644
 --- a/bridge/src/util/util_bridgecommand.h
 +++ b/bridge/src/util/util_bridgecommand.h
 @@ -1,3 +1,7 @@
@@ -15527,8 +15527,8 @@ index a555f8c..9ad9b02 100644
 -      *getReaderChannel().serverResetPosRequired = false;
 -    }
 -    return retval;
-+    const auto r = ensureRead(1, false);
-+    return getReaderChannel().data->pull_reserved(r);
++    ensureScalarRead();
++    return getReaderChannel().data->pull_scalar_in_packet();
    }
  
    static inline const DataT& get_data(void** obj) {
@@ -15541,7 +15541,7 @@ index a555f8c..9ad9b02 100644
 -      *getReaderChannel().serverResetPosRequired = false;
 -    }
 -    return retval;
-+    ensureRead(1, false);
++    ensureScalarRead();
 +    const auto length = getReaderChannel().data->peek();
 +    uint64_t words = 0;
 +    if (!bridge_data::blobWords(length, words)) { failRead(); }
@@ -15842,12 +15842,19 @@ index a555f8c..9ad9b02 100644
      const Commands::D3D9Command m_command;
      const uint32_t m_handle;
      const Commands::Flags m_commandFlags;
-@@ -337,12 +424,27 @@ private:
+@@ -337,12 +424,34 @@ private:
    Bridge() = delete;
    Bridge(const Bridge&) = delete;
    Bridge(const Bridge&&) = delete;
 +  static void startRead(const Header& header);
 +  static void startPendingRead();
++  static inline void ensureScalarRead() {
++    if (!s_readActive) { startPendingRead(); }
++    // startRead validated a complete span no larger than capacity, including
++    // its overflow limit. This comparison checks the remaining scalar without
++    // re-planning those same capacity / position / overflow conditions.
++    if (getReaderChannel().data->cursor() >= s_readEnd) { failRead(); }
++  }
 +  static inline bridge_data::Reservation ensureRead(uint64_t words, bool blob) {
 +    if (!s_readActive) { startPendingRead(); }
 +    const auto r = getReaderChannel().data->reservation(words, blob);
@@ -15872,10 +15879,10 @@ index a555f8c..9ad9b02 100644
    static constexpr char kWriterChannelName[] = "Client2Server";
    static constexpr char kReaderChannelName[] = "Server2Client";
 diff --git a/bridge/src/util/util_circularbuffer.h b/bridge/src/util/util_circularbuffer.h
-index 79310b6..5e7c236 100644
+index 79310b6..323d390 100644
 --- a/bridge/src/util/util_circularbuffer.h
 +++ b/bridge/src/util/util_circularbuffer.h
-@@ -30,133 +30,170 @@
+@@ -30,133 +30,178 @@
  #include "log/log_strings.h"
  #include "log/log.h"
  
@@ -15920,15 +15927,7 @@ index 79310b6..5e7c236 100644
 -    CircularBuffer(const CircularBuffer& q) = delete;
 -
 -    ~CircularBuffer() {
-+    uint64_t cursor() const { return m_cursor; }
-+    size_t get_total_size() const { return Base::m_size; }
-+    size_t get_pos() const { return Base::m_pos; }
-+    bool blobOpen() const { return m_blobOpen; }
-+    bridge_data::Reservation reservation(uint64_t words, bool blob) const { return reserve(words, blob); }
-+    bridge_data::Reservation packetReservation(uint64_t fields, size_t bytes, bool blob) const {
-+      return bridge_data::packetAt(m_cursor, static_cast<uint32_t>(Base::m_pos),
-+        static_cast<uint32_t>(Base::m_size), fields, bytes, blob);
-     }
+-    }
 -
 -    template<typename DataType>
 -    Result begin_blob_push(const size_t size, DataType*& blobPtr) {
@@ -15942,7 +15941,15 @@ index 79310b6..5e7c236 100644
 -        }
 -      }
 -      return Result::Failure;
--    }
++    uint64_t cursor() const { return m_cursor; }
++    size_t get_total_size() const { return Base::m_size; }
++    size_t get_pos() const { return Base::m_pos; }
++    bool blobOpen() const { return m_blobOpen; }
++    bridge_data::Reservation reservation(uint64_t words, bool blob) const { return reserve(words, blob); }
++    bridge_data::Reservation packetReservation(uint64_t fields, size_t bytes, bool blob) const {
++      return bridge_data::packetAt(m_cursor, static_cast<uint32_t>(Base::m_pos),
++        static_cast<uint32_t>(Base::m_size), fields, bytes, blob);
+     }
 -
 -    void end_blob_push() {
 -      // Nothing to do. Left for future checks.
@@ -16057,6 +16064,14 @@ index 79310b6..5e7c236 100644
 +    const T& pull_reserved(const bridge_data::Reservation& r) {
 +      const T& value = Base::m_data[Base::m_pos];
 +      advanceTo(r.end);
++      return value;
++    }
++    const T& pull_scalar_in_packet() {
++      // Bridge has established cursor < the checked packet end <= UINT64_MAX.
++      // A one-word advance therefore cannot overflow; advanceTo preserves the
++      // queue's constructor-established position < capacity invariant.
++      const T& value = Base::m_data[Base::m_pos];
++      advanceTo(m_cursor + 1);
 +      return value;
 +    }
 +    const T& pull_blob_reserved(void** pointer, const bridge_data::Reservation& r) {

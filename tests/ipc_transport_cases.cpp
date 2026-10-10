@@ -306,6 +306,30 @@ int knownReadFailures(const std::wstring& mode) {
   require(input.data->cursor()==0,"known malformed read advanced cursor");
   std::printf("IPC_KNOWN_READ_REJECTION_PASS mode=%ls\n",mode.c_str());return 0;
 }
+int genericReadFailures(const std::wstring& mode) {
+  const size_t memory=32*sizeof(Header)+256+128*sizeof(uint32_t);
+  WriterChannel output("genericReadReply",memory,32,128);
+  ReaderChannel input("genericReadForward",memory,32,128);
+  WriterChannel peer("genericReadForward",memory,32,128);Device::install(&output,&input);
+  if(mode!=L"generic-read-truncated") {peer.data->push(mode==L"generic-read-length"?UINT32_MAX:7);}
+  peer.control->published.store(peer.data->cursor());
+  require(peer.commands->push({Commands::Bridge_Response,0,static_cast<uint32_t>(peer.data->get_pos()),0})==Result::Success,"generic malformed Header");
+  bool rejected=false;
+  const uint64_t expected=mode==L"generic-read-overrun"?1:0;
+  try{
+    require(Device::waitForCommand()==Result::Success,"generic malformed wait");
+#ifdef REMIX_BRIDGE_SERVER
+    Device::pop_front();
+#endif
+    if(mode==L"generic-read-overrun") {
+      require(Device::get_data()==7,"generic valid first field");
+      Device::get_data();
+    }else{void* pointer=nullptr;Device::get_data(&pointer);}
+  }catch(const BridgeReadFailure&){rejected=true;}
+  require(rejected && input.control->fault.load()==1 && input.control->consumed.load()==0
+    && input.data->cursor()==expected,"generic invalid read no extra advance/ack");
+  std::printf("IPC_GENERIC_READ_REJECTION_PASS mode=%ls\n",mode.c_str());return 0;
+}
 int wmain(int argc,wchar_t** argv) {
   if(argc==2) {
     const std::wstring mode=argv[1];
@@ -314,6 +338,7 @@ int wmain(int argc,wchar_t** argv) {
     if(mode==L"serializer") { return serializerBoundaries(); }
     if(mode==L"protocol") { return protocolMismatch(); }
     if(mode.rfind(L"known-read-",0)==0) { return knownReadFailures(mode); }
+    if(mode.rfind(L"generic-read-",0)==0) { return genericReadFailures(mode); }
     if(mode.rfind(L"known-",0)==0) { return knownFailures(mode); }
     return failureCases(mode);
   }

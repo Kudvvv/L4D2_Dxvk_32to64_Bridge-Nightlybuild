@@ -81,7 +81,7 @@ if __name__=='__main__':
     for variant in ('B','C','F','R'):
         p=ROOT/f'.deps/ipc-perf-{variant}/ipc_transport.cpp'
         code=p.read_text().replace('#include "ipc_transport_cases.cpp"','#include "ipc_performance_cases.cpp"')
-        if variant=='C':code='#define IPC_KNOWN_PACKET\n'+code
+        if variant=='C':code='#ifndef IPC_BENCH_GENERIC\n#define IPC_KNOWN_PACKET\n#endif\n'+code
         p.write_text(code)
     # Supplemental fidelity check: Command / out-of-line Bridge definitions
     # are compiled separately from the caller, as in the production project.

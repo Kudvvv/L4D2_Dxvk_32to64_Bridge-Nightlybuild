@@ -16,6 +16,11 @@ int wmain(int argc,wchar_t** argv){
   const bool batched=mode==L"batch" || mode==L"near-full";
   const auto capacity=static_cast<uint32_t>(std::wcstoul(argv[5],nullptr,10));
   const bool known=std::wstring(argv[6])==L"known";
+#ifdef IPC_KNOWN_PACKET
+  require(known,"fixed known-layout executable");
+#else
+  require(!known,"fixed generic-layout executable");
+#endif
   const uint32_t commandCapacity=32768;
   const size_t memory=commandCapacity*sizeof(Header)+256+static_cast<size_t>(capacity)*4;
 #ifdef REMIX_BRIDGE_CLIENT
@@ -38,11 +43,11 @@ int wmain(int argc,wchar_t** argv){
   const auto cpuBegin=cpuNow();QueryPerformanceCounter(&begin);
   for(uint32_t sequence=0;mode!=L"idle" && sequence<count;++sequence){
 #ifdef IPC_KNOWN_PACKET
-    if(known){
+    {
       Device::Command command(Commands::Bridge_Response,0,0,bridge_data::payload(size,size?bytes.data():nullptr,sequence,size));
       require(command.finish()==Result::Success,"Client known submission");
-    } else
-#endif
+    }
+#else
     {
     Device::Command command(Commands::Bridge_Response);
     command.send_many(sequence,size);command.send_data(size,size?bytes.data():nullptr);
@@ -50,6 +55,7 @@ int wmain(int argc,wchar_t** argv){
     require(command.finish()==Result::Success,"Client submission");
 #endif
     }
+#endif
   }
   QueryPerformanceCounter(&end);const auto cpuEnd=cpuNow();QueryThreadCycleTime(GetCurrentThread(),&cyclesEnd);
   if(batched){SetEvent(start);}
@@ -63,7 +69,7 @@ int wmain(int argc,wchar_t** argv){
   for(uint32_t sequence=0;mode!=L"idle" && sequence<count;++sequence){
     require(Device::waitForCommand()==Result::Success,"Host packet wait");const auto header=Device::pop_front();
 #ifdef IPC_KNOWN_PACKET
-    if(known){
+    {
 #ifdef IPC_SEPARATE_CALLER
       // Production Device dispatch reads the common UID before switching to
       // the handler, whose known remainder excludes that UID.
@@ -76,14 +82,15 @@ int wmain(int argc,wchar_t** argv){
 #endif
       require(packet.bytes==size,"Host known blob size");
       if(size){require(packet.data && static_cast<uint8_t*>(packet.data)[0]==0x6b && static_cast<uint8_t*>(packet.data)[size-1]==0x6b,"Host known payload integrity");}
-    } else
-#endif
+    }
+#else
     {
     require(Device::get_data()==sequence,"Host UID order");require(Device::get_data()==sequence,"Host metadata order");
     require(Device::get_data()==size,"Host size");void* pointer=nullptr;
     require(Device::get_data(&pointer)==size,"Host blob size");
     if(size){require(pointer && static_cast<uint8_t*>(pointer)[0]==0x6b && static_cast<uint8_t*>(pointer)[size-1]==0x6b,"Host payload integrity");}
     }
+#endif
     require(Device::get_data_pos()==header.dataOffset,"Host packet boundary");
 #ifdef IPC_OLD_BASELINE
     benchmarkComplete();

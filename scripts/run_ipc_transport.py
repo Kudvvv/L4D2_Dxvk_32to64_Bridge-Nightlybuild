@@ -34,7 +34,8 @@ for mode in ('serializer','oversize','timeout','partial-timeout','header-full','
     print(result.stdout,result.stderr,sep='',flush=True)
     if result.returncode: raise RuntimeError(f'Native fault failed: {mode} code={result.returncode}')
 for role in ('client32','host32','host64'):
-    for mode in ('known-read-truncated','known-read-length','known-read-extra'):
+    for mode in ('known-read-truncated','known-read-length','known-read-extra',
+                 'generic-read-truncated','generic-read-length','generic-read-overrun'):
         result=subprocess.run([str(TEST/f'transport-{role}.exe'),mode],capture_output=True,text=True,timeout=20)
         print(result.stdout,result.stderr,sep='',flush=True)
         if result.returncode: raise RuntimeError(f'Native known read failed: {role} {mode}')

@@ -25,7 +25,7 @@ def sample(phase, arch, variant, mode, size, count, capacity, iteration):
     executable_variant = 'C' if variant == 'Q' else variant
     layout = 'known' if variant == 'C' else 'generic'
     directory = ROOT / f'.deps/ipc-perf-{executable_variant}'
-    suffix = '-separate' if phase == 'separate-caller' else ''
+    suffix = ('-generic' if variant == 'Q' else '') + ('-separate' if phase == 'separate-caller' else '')
     args = [str(uuid.uuid4()), str(count), str(size), mode, str(capacity), layout]
     host = subprocess.Popen([str(directory / f'perf-host{arch}{suffix}.exe'), *args],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
