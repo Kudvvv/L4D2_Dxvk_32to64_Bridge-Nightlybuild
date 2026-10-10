@@ -91,10 +91,11 @@ if __name__=='__main__':
         code=(directory/'ipc_transport.cpp').read_text()
         seam=code.index('\nnamespace {')
         header=code[:seam]
-        header=header.replace('std::atomic<bool> gbBridgeRunning {true};', 'inline std::atomic<bool> gbBridgeRunning {true};')
-        header=header.replace('bool gbBridgeRunning=true;', 'inline bool gbBridgeRunning=true;')
-        header=header.replace('std::atomic<bool> ipcInjectWaitFailure {false};', 'inline std::atomic<bool> ipcInjectWaitFailure {false};')
-        header=header.replace('bridge_util::Guid gUniqueIdentifier;', 'inline bridge_util::Guid gUniqueIdentifier;')
+        running_type='bool' if variant=='A' else 'std::atomic<bool>'
+        header=header.replace('std::atomic<bool> gbBridgeRunning {true};', 'extern std::atomic<bool> gbBridgeRunning;')
+        header=header.replace('bool gbBridgeRunning=true;', 'extern bool gbBridgeRunning;')
+        header=header.replace('std::atomic<bool> ipcInjectWaitFailure {false};', 'extern std::atomic<bool> ipcInjectWaitFailure;')
+        header=header.replace('bridge_util::Guid gUniqueIdentifier;', 'extern bridge_util::Guid gUniqueIdentifier;')
         body=code[seam:code.index('#include "ipc_performance_cases.cpp"')]
         old_completion=''
         if variant=='A':
@@ -102,7 +103,8 @@ if __name__=='__main__':
             old_completion=body[split:]
             body=body[:split]
         (directory/'ipc_fixture.h').write_text('#pragma once\n'+header)
-        (directory/'ipc_command.cpp').write_text('#include "ipc_fixture.h"\n'+body)
+        globals=f'{running_type} gbBridgeRunning {{true}};\nstd::atomic<bool> ipcInjectWaitFailure {{false}};\nbridge_util::Guid gUniqueIdentifier;\n'
+        (directory/'ipc_command.cpp').write_text('#include "ipc_fixture.h"\n'+globals+body)
         (directory/'ipc_caller.cpp').write_text('#include "ipc_fixture.h"\n'+old_completion+'\n#include "ipc_performance_cases.cpp"\n')
         manifest=directory/'source-manifest.json'
         metadata=json.loads(manifest.read_text())

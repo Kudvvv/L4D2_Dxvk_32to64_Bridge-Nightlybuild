@@ -69,7 +69,7 @@ def summarize():
     for phase, arch, mode, size in keys:
         samples = [r for r in rows if (r['phase'], r['host_arch'], r['mode'], r['bytes'])
                    == (phase, arch, mode, size) and r['iteration'] >= 0]
-        variants = ('B', 'F', 'R', 'Q', 'C') if phase == 'attribution' else ('A', 'B', 'C')
+        variants = ('B', 'F', 'R', 'Q', 'C') if phase == 'attribution' else ('A', 'B', 'Q', 'C') if phase == 'separate-caller' else ('A', 'B', 'C')
         group = dict(phase=phase, host_arch=arch, mode=mode, bytes=size, variants={}, paired={})
         for variant in variants:
             valid = [r for r in samples if r['variant'] == variant and r['valid']]
@@ -83,6 +83,8 @@ def summarize():
                                                         min=min(values), max=max(values))
             group['variants'][variant] = stats
         pairs = list(zip(variants, variants[1:])) if phase == 'attribution' else [('A', 'B'), ('A', 'C'), ('B', 'C')]
+        if phase=='separate-caller':
+            pairs += [('A','Q'), ('B','Q'), ('Q','C')]
         for old, new in pairs:
             changes = {}
             for role in ('client', 'host'):
@@ -133,11 +135,13 @@ for arch in ('32', '64'):
             for variant in ordered:
                 sample('attribution', arch, variant, mode, size, count, capacity, iteration)
     for mode, size, count, capacity in SCENARIOS[:8]:
-        for variant in ('A', 'B', 'C'):
+        variants=('A','B','Q','C')
+        for variant in variants:
             sample('separate-caller', arch, variant, mode, size, count, capacity, -1)
-        orders = list(itertools.permutations(('A', 'B', 'C')))
         for iteration in range(11):
-            for variant in orders[iteration % len(orders)]:
+            ordered=variants[iteration%4:]+variants[:iteration%4]
+            if (iteration//4)%2:ordered=ordered[::-1]
+            for variant in ordered:
                 sample('separate-caller', arch, variant, mode, size, count, capacity, iteration)
 # A failure is retained as failure evidence; it never enters a timing ratio.
 summarize()
