@@ -10,10 +10,12 @@ if($CompileRole){
   $arch=if($CompileRole -eq 'host64'){'x64'}else{'x86'}
   . (Join-Path $source 'bridge/build_common.ps1')
   SetupVS -Platform $arch -VcVarsVer '14.29'
+  $assemblyDir=Join-Path $testDir "assembly-$CompileRole"
+  New-Item -ItemType Directory -Force $assemblyDir | Out-Null
   Push-Location $testDir
   try{
     $roleFlags=if($CompileRole -eq 'host32'){@('/DREMIX_BRIDGE_X86_SERVER','/DREMIX_BRIDGE_SERVER')}else{@()}
-    & cl.exe /nologo /std:c++17 /EHsc /O2 /W3 /FAs "/Fa:perf-$CompileRole.asm" /DNOMINMAX /DWIN32 @roleFlags "/I$testDir" "/I$repoRoot/tests" ipc_transport.cpp util_sharedmemory.cpp util_semaphore.cpp data_diagnostics.cpp exception_diagnostics.cpp "/Fe:perf-$CompileRole.exe" /link ole32.lib psapi.lib
+    & cl.exe /nologo /std:c++17 /EHsc /O2 /W3 /FAs "/Fa:$assemblyDir\" /DNOMINMAX /DWIN32 @roleFlags "/I$testDir" "/I$repoRoot/tests" ipc_transport.cpp util_sharedmemory.cpp util_semaphore.cpp data_diagnostics.cpp exception_diagnostics.cpp "/Fe:perf-$CompileRole.exe" /link ole32.lib psapi.lib
     if($LASTEXITCODE -ne 0){throw "Performance compilation failed $Variant $CompileRole"}
   }finally{Pop-Location}
 }else{

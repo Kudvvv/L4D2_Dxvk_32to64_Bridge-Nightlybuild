@@ -88,6 +88,6 @@ int wmain(int argc,wchar_t** argv){
 #endif
   const auto ns=static_cast<double>(end.QuadPart-begin.QuadPart)*1e9/static_cast<double>(frequency.QuadPart);
   const auto total=static_cast<double>(complete.QuadPart-begin.QuadPart)*1e9/static_cast<double>(frequency.QuadPart);
-  std::printf("{\"role\":\"%s\",\"count\":%u,\"bytes\":%u,\"wall_ns_call\":%.3f,\"cpu_ns_call\":%.3f,\"end_to_end_ns_call\":%.3f,\"cycles_call\":%.3f}\n",role,count,size,ns/count,static_cast<double>(cpuEnd-cpuBegin)*100/count,total/count,static_cast<double>(cyclesEnd-cyclesBegin)/count);
+  std::printf("{\"role\":\"%s\",\"count\":%u,\"bytes\":%u,\"wall_ns_call\":%.3f,\"cpu_ns_call\":%.3f,\"end_to_end_ns_call\":%.3f,\"cycles_call\":%.3f,\"channel_bytes\":%u,\"command_bytes\":%u}\n",role,count,size,ns/count,static_cast<double>(cpuEnd-cpuBegin)*100/count,total/count,static_cast<double>(cyclesEnd-cyclesBegin)/count,static_cast<unsigned>(sizeof(WriterChannel)),static_cast<unsigned>(sizeof(Device::Command)));
   CloseHandle(ready);CloseHandle(start);CloseHandle(done);return 0;
 }

@@ -48,7 +48,7 @@ jobs:
             .deps/ipc-perf-C/source-manifest.json
             .deps/ipc-perf-F/source-manifest.json
             .deps/ipc-perf-R/source-manifest.json
-            .deps/ipc-perf-*/*.asm
+            .deps/ipc-perf-*/assembly-*/
           if-no-files-found: error
   windows-build:
     runs-on: windows-2022
