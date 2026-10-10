@@ -12,6 +12,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -20,9 +22,122 @@ jobs:
       - name: Reproduce old transport failures on x86 and x64
         shell: powershell
         run: ./scripts/test_ipc_baseline.ps1
+      - name: Validate shared ABI and data ring invariants on x86 and x64
+        shell: powershell
+        run: ./scripts/test_data_ring_contract.ps1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ipc-baseline-evidence
           path: .deps/ipc-baseline/
           if-no-files-found: error
+  windows-build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Read project version
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          "L4D2_PROJECT_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Install build tools
+        run: python -m pip install meson==1.3.2 ninja==1.11.1.1
+      - name: Download pinned upstream DXVK
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .deps | Out-Null
+          curl.exe --fail --location --retry 3 --retry-delay 5 --max-time 90 https://github.com/doitsujin/dxvk/releases/download/v2.6.1/dxvk-2.6.1.tar.gz --output .deps/dxvk.tar.gz
+          if ($LASTEXITCODE -ne 0) { throw 'DXVK download failed' }
+          $expected = '7ee0bef415910c943d3bda47d9d6821b9c8ca7a74f1e9f6151707d268cf3ce7f'
+          if ((Get-FileHash .deps/dxvk.tar.gz -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'DXVK checksum mismatch' }
+          tar -xzf .deps/dxvk.tar.gz -C .deps
+          if ($LASTEXITCODE -ne 0) { throw 'DXVK extraction failed' }
+      - name: Prepare pinned Bridge sources
+        run: python scripts/prepare_bridge.py
+      - name: Test Client input hooks, legacy DirectInput results and Query logging
+        shell: powershell
+        run: ./scripts/test_input_hooks.ps1
+      - name: Test disabled diagnostic work and on-demand input on x86 and x64
+        shell: powershell
+        run: |
+          ./scripts/test_runtime_observation.ps1
+          python -m unittest discover -s tests -p test_runtime_separation.py
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime separation contract tests failed' }
+      - name: Test PageBlock residency, GC and L4N v2 callbacks
+        shell: powershell
+        run: |
+          ./scripts/test_pageblock_gc.ps1 -SkipPluginTests
+      - name: Build x86 client, x64 host and isolated x86 comparison host
+        shell: powershell
+        run: |
+          ./scripts/build_bridge.ps1 -DxvkDll .deps/dxvk-2.6.1/x64/d3d9.dll -Dxvk32Dll .deps/dxvk-2.6.1/x32/d3d9.dll -PatchOnly
+      - name: Test exception attribution, flushing and bounded termination
+        shell: powershell
+        run: ./scripts/test_exception_diagnostics.ps1
+      - name: Test mandatory device reset results and failure state
+        shell: powershell
+        run: ./scripts/test_device_reset.ps1
+      - name: Test bounded color diagnostics, texture wire and temporary query references
+        shell: powershell
+        run: |
+          ./scripts/test_color_diagnostics.ps1
+          python -m unittest discover -s tests -p test_color_analysis.py
+          if ($LASTEXITCODE -ne 0) { throw 'Color log analysis tests failed' }
+      - name: Test independent L4N Release packaging
+        run: python -m unittest discover -s tests -p test_release_packaging.py
+      - name: Test data/resource tracing and offline analysis on x86 and x64
+        shell: powershell
+        run: |
+          ./scripts/test_data_diagnostics.ps1
+          python -m unittest discover -s tests -p test_data_analysis.py
+          if ($LASTEXITCODE -ne 0) { throw 'Data log analysis tests failed' }
+      - name: Test x86 VB and IB historical contents and multiple Lock contract
+        shell: powershell
+        run: ./scripts/test_buffer_contract.ps1
+      - name: Test Volume byte pitches and partial uploads on x86 and x64
+        shell: powershell
+        run: ./scripts/test_volume_layout.ps1
+      - name: Test x86 diagnostics and shadow eviction
+        shell: powershell
+        run: ./scripts/test_diagnostics.ps1
+      - name: Test x64 Host memory and CPU diagnostics
+        shell: powershell
+        run: ./scripts/test_host_diagnostics.ps1
+      - name: Test x86 Host address and process memory diagnostics
+        shell: powershell
+        run: ./scripts/test_host_diagnostics.ps1 -Platform x86
+      - name: Load the official x86 DXVK DLL in a native x86 process
+        shell: powershell
+        run: |
+          ./scripts/test_x86_backend.ps1 -DllPath .deps/dxvk-2.6.1/x32/d3d9.dll
+      - name: Test native x86 and x64 adapter identifiers and Shader capability transport
+        shell: powershell
+        run: ./scripts/test_adapter_information.ps1
+      - name: Test ATI1 and ATI2 guarded texture transfers on x86 and x64
+        shell: powershell
+        run: ./scripts/test_ati_texture_layout.ps1
+      - name: Test cross-process overlay presentation windows and input capture
+        shell: powershell
+        run: ./scripts/test_overlay_presenter.ps1
+      - name: Test API wait attribution and snapshots on x86 and x64
+        shell: powershell
+        run: |
+          ./scripts/test_api_wait_diagnostics.ps1
+          python -m unittest discover -s tests -p test_api_wait_analysis.py
+          if ($LASTEXITCODE -ne 0) { throw 'API wait snapshot analysis tests failed' }
+      - name: Test command queue idle CPU and x86 to x64 wakeups
+        shell: powershell
+        run: ./scripts/test_command_queue.ps1
+      - name: Test readback, real backing eviction, recovery and persistent retention
+        shell: powershell
+        run: ./scripts/test_readback_recovery.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ipc-correctness-paired-test-build
+          path: dist/l4d2-bridge-patch/
+          include-hidden-files: true
+          if-no-files-found: warn

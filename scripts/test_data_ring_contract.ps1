@@ -5,24 +5,21 @@ param([ValidateSet('x86','x64')][string]$CompileArchitecture)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $source = Join-Path $repoRoot '.deps/dxvk-remix'
-$testDir = Join-Path $repoRoot '.deps/ipc-baseline'
+$testDir = Join-Path $repoRoot '.deps/data-ring-test'
+New-Item -ItemType Directory -Force $testDir | Out-Null
 if ($CompileArchitecture) {
   . (Join-Path $source 'bridge/build_common.ps1')
   SetupVS -Platform $CompileArchitecture -VcVarsVer '14.29'
   Push-Location $testDir
   try {
-    & cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /WX ipc_baseline.cpp "/Fe:baseline-$CompileArchitecture.exe"
-    if ($LASTEXITCODE -ne 0) { throw 'IPC baseline compilation failed' }
-    & ".\baseline-$CompileArchitecture.exe"
-    if ($LASTEXITCODE -ne 0) { throw 'Old IPC defect was not reproduced' }
+    & cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /WX "/I$source/bridge/src/util" "$repoRoot/tests/data_ring_contract.cpp" "/Fe:contract-$CompileArchitecture.exe"
+    if ($LASTEXITCODE -ne 0) { throw 'Data ring contract compilation failed' }
+    & ".\contract-$CompileArchitecture.exe"
+    if ($LASTEXITCODE -ne 0) { throw 'Data ring contract failed' }
   } finally { Pop-Location }
 } else {
-  python "$repoRoot/scripts/prepare_ipc_baseline.py"
-  if ($LASTEXITCODE -ne 0) { throw 'Pinned IPC baseline preparation failed' }
-  python "$repoRoot/scripts/generate_ipc_baseline_test.py" --source "$repoRoot/.deps/ipc-v1.2.1"
-  if ($LASTEXITCODE -ne 0) { throw 'IPC extraction failed' }
   foreach ($arch in @('x86','x64')) {
     & powershell.exe -NoProfile -File $PSCommandPath -CompileArchitecture $arch
-    if ($LASTEXITCODE -ne 0) { throw "IPC baseline failed for $arch" }
+    if ($LASTEXITCODE -ne 0) { throw "Data ring contract failed for $arch" }
   }
 }
