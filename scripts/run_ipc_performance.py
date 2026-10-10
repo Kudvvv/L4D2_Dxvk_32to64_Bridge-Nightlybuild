@@ -25,10 +25,11 @@ def sample(phase, arch, variant, mode, size, count, capacity, iteration):
     executable_variant = 'C' if variant == 'Q' else variant
     layout = 'known' if variant == 'C' else 'generic'
     directory = ROOT / f'.deps/ipc-perf-{executable_variant}'
+    suffix = '-separate' if phase == 'separate-caller' else ''
     args = [str(uuid.uuid4()), str(count), str(size), mode, str(capacity), layout]
-    host = subprocess.Popen([str(directory / f'perf-host{arch}.exe'), *args],
+    host = subprocess.Popen([str(directory / f'perf-host{arch}{suffix}.exe'), *args],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    client = subprocess.Popen([str(directory / 'perf-client32.exe'), *args],
+    client = subprocess.Popen([str(directory / f'perf-client32{suffix}.exe'), *args],
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     row = dict(phase=phase, host_arch=arch, variant=variant, layout=layout,
                mode=mode, bytes=size, count=count, capacity=capacity,
@@ -68,7 +69,7 @@ def summarize():
     for phase, arch, mode, size in keys:
         samples = [r for r in rows if (r['phase'], r['host_arch'], r['mode'], r['bytes'])
                    == (phase, arch, mode, size) and r['iteration'] >= 0]
-        variants = ('A', 'B', 'C') if phase == 'comparison' else ('B', 'F', 'R', 'Q', 'C')
+        variants = ('B', 'F', 'R', 'Q', 'C') if phase == 'attribution' else ('A', 'B', 'C')
         group = dict(phase=phase, host_arch=arch, mode=mode, bytes=size, variants={}, paired={})
         for variant in variants:
             valid = [r for r in samples if r['variant'] == variant and r['valid']]
@@ -81,7 +82,7 @@ def summarize():
                         stats[f'{role}_{metric}'] = dict(median=statistics.median(values),
                                                         min=min(values), max=max(values))
             group['variants'][variant] = stats
-        pairs = [('A', 'B'), ('A', 'C'), ('B', 'C')] if phase == 'comparison' else list(zip(variants, variants[1:]))
+        pairs = list(zip(variants, variants[1:])) if phase == 'attribution' else [('A', 'B'), ('A', 'C'), ('B', 'C')]
         for old, new in pairs:
             changes = {}
             for role in ('client', 'host'):
@@ -131,5 +132,12 @@ for arch in ('32', '64'):
                 ordered = ordered[::-1]
             for variant in ordered:
                 sample('attribution', arch, variant, mode, size, count, capacity, iteration)
+    for mode, size, count, capacity in SCENARIOS[:8]:
+        for variant in ('A', 'B', 'C'):
+            sample('separate-caller', arch, variant, mode, size, count, capacity, -1)
+        orders = list(itertools.permutations(('A', 'B', 'C')))
+        for iteration in range(11):
+            for variant in orders[iteration % len(orders)]:
+                sample('separate-caller', arch, variant, mode, size, count, capacity, iteration)
 # A failure is retained as failure evidence; it never enters a timing ratio.
 summarize()

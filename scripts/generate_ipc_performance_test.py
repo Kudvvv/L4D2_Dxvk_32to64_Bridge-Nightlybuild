@@ -83,3 +83,28 @@ if __name__=='__main__':
         code=p.read_text().replace('#include "ipc_transport_cases.cpp"','#include "ipc_performance_cases.cpp"')
         if variant=='C':code='#define IPC_KNOWN_PACKET\n'+code
         p.write_text(code)
+    # Supplemental fidelity check: Command / out-of-line Bridge definitions
+    # are compiled separately from the caller, as in the production project.
+    # Preserve the original single-TU comparison rather than replacing it.
+    for variant in ('A', 'B', 'C'):
+        directory=ROOT/f'.deps/ipc-perf-{variant}'
+        code=(directory/'ipc_transport.cpp').read_text()
+        seam=code.index('\nnamespace {')
+        header=code[:seam]
+        header=header.replace('std::atomic<bool> gbBridgeRunning {true};', 'inline std::atomic<bool> gbBridgeRunning {true};')
+        header=header.replace('bool gbBridgeRunning=true;', 'inline bool gbBridgeRunning=true;')
+        header=header.replace('std::atomic<bool> ipcInjectWaitFailure {false};', 'inline std::atomic<bool> ipcInjectWaitFailure {false};')
+        header=header.replace('bridge_util::Guid gUniqueIdentifier;', 'inline bridge_util::Guid gUniqueIdentifier;')
+        body=code[seam:code.index('#include "ipc_performance_cases.cpp"')]
+        old_completion=''
+        if variant=='A':
+            split=body.index('bool gOverwriteConditionAlreadyActive')
+            old_completion=body[split:]
+            body=body[:split]
+        (directory/'ipc_fixture.h').write_text('#pragma once\n'+header)
+        (directory/'ipc_command.cpp').write_text('#include "ipc_fixture.h"\n'+body)
+        (directory/'ipc_caller.cpp').write_text('#include "ipc_fixture.h"\n'+old_completion+'\n#include "ipc_performance_cases.cpp"\n')
+        manifest=directory/'source-manifest.json'
+        metadata=json.loads(manifest.read_text())
+        metadata['compilation_checks']=['original single translation unit', 'separate caller and Command translation units, no LTO']
+        manifest.write_text(json.dumps(metadata,indent=2)+'\n')
