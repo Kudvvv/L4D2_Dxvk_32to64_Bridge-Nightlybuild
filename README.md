@@ -8,7 +8,7 @@
 
 ## 下载与安装（先看这里）
 
-**默认下载仍为 [v1.1.10](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases/latest)。本隔离候选 v1.2 完整同步上游 1.2.2，正在评估，尚未合入正式版或发布。** 主要修复进图、切图时的 IPC 覆盖、遗漏唤醒、失败提交和大包回绕问题。上游初步截图对照出现约 **1%～19% 的平均 FPS 下降**，另有切图多耗时约 20 秒的反馈；不是本分支实测数据，low 帧尚无一致结论。没有这些加载问题的玩家可以继续使用 v1.1.10，详情见 [本分支合并与验证说明](docs/UPSTREAM-1.2.2-INTEGRATION.md)。
+**默认下载仍为 [v1.1.10](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases/latest)。本隔离候选 v1.2.1 完整同步上游 1.2.2，正在评估，尚未合入正式版或发布。** 主要修复进图、切图时的 IPC 覆盖、遗漏唤醒、失败提交和大包回绕问题。上游初步截图对照出现约 **1%～19% 的平均 FPS 下降**，另有切图多耗时约 20 秒的反馈；不是本分支实测数据，low 帧尚无一致结论。没有这些加载问题的玩家可以继续使用 v1.1.10，详情见 [本分支合并与验证说明](docs/UPSTREAM-1.2.2-INTEGRATION.md)。
 
 **[前往 Releases 下载完整包](https://github.com/NPCodex/L4D2_Dxvk_32to64_Bridge-Nightlybuild/releases)**。每次发布只提供一个 `l4d2-bridge-*.zip`，另附 `.sha256` 校验文件。包内包含 **L4N 2.51.0、DXVK-GPLALL、Bridge、`dxvk.conf`、L4N 的 `left4dead2/neko/config.vdf`** 和修复后的 `bin/studiorender.dll`，无需运行补丁工具或安装 Python。按维护者提供的整合目录布局交付，未附 `config_template.vdf`；组件来源见 [整合包说明](docs/L4N-BUNDLE.md)。安装包保留运行组件、实际配置、L4N 原配套 VDF 模板和 QC/VMT 范例、简短 `README.txt` 和合并后的 `THIRD-PARTY-NOTICES.txt`；开发文档、JSON 清单、诊断脚本、SDK 与离线 Mod 制作工具均留在仓库，不随安装包提供。
 

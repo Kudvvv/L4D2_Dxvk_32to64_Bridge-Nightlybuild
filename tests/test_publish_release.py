@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -10,6 +11,9 @@ from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 import publish_release
+import detect_release
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 class Publishing(unittest.TestCase):
@@ -26,6 +30,15 @@ class Publishing(unittest.TestCase):
             "RECIPE_DIGEST": "c" * 64, "GITHUB_RUN_ID": "123",
             "THINFLEX_TEST": "false", "RELEASE_TITLE": "v1.0.6", "ARCHIVE_NAME": "full.zip",
         }))
+        self.enterContext(patch.object(publish_release, "ROOT", Path.cwd()))
+        Path("VERSION").write_text("1.2.1\n", encoding="utf-8")
+        Path("docs").mkdir()
+        self.changes = "本次修复 IPC 数据覆盖与回绕；本候选尚未完成游戏复测，不宣称提帧。"
+        Path("docs/RELEASE-NOTES.md").write_text("# v1.2.1\n\n" + self.changes + "\n", encoding="utf-8")
+        Path("config").mkdir()
+        Path("config/original-project.json").write_text(json.dumps({
+            "repository": "upstream/project", "version": "1.2.2", "commit": "d" * 40,
+        }), encoding="utf-8")
         self.existing = None
         self.other_releases = []
         self.assets = []
@@ -105,13 +118,17 @@ class Publishing(unittest.TestCase):
         self.assertIn("Recipe digest: " + "c" * 64, notes)
         self.assertIn("Release channel: nightly", notes)
         self.assertNotIn("Experimental recipe digest:", notes)
-        self.assertIn("keyou91", notes)
-        self.assertIn("已修复的 `bin/studiorender.dll`", notes)
-        self.assertIn("runtime/engine/studiorender.manifest.json", notes)
+        self.assertIn(self.changes, notes)
+        self.assertIn("Upstream commit: " + "a" * 40, notes.splitlines())
+        self.assertIn("Build recipe: " + "b" * 40, notes.splitlines())
+        self.assertIn("/README.md)", notes)
+        self.assertIn("<summary>构建指纹</summary>", notes)
+        for old_content in ("ThinFlex 缓存", "L4N 2.51.0", "FLASHLIGHT-PERFORMANCE", "v1.0.10"):
+            self.assertNotIn(old_content, notes)
         self.assertNotIn("tools/thinflex/ThinFlexPatch.exe", notes)
         self.assertEqual({asset["name"] for asset in self.assets}, {"full.zip", "full.zip.sha256"})
 
-    def test_thinflex_publishes_one_full_package_with_explicit_limitations(self):
+    def test_thinflex_publishes_one_full_package_with_current_notes(self):
         self.enable_thinflex()
         publish_release.publish()
         commands = self.release_commands()
@@ -125,24 +142,54 @@ class Publishing(unittest.TestCase):
         self.assertIn("Release channel: thinflex-test", notes.splitlines())
         self.assertIn("Experimental recipe digest: " + "c" * 64, notes.splitlines())
         self.assertNotIn("Recipe digest: " + "c" * 64, notes.splitlines())
-        for statement in ("已修复的 `bin/studiorender.dll`", "复制文件即可应用 ThinFlex 修复",
-                          "无需运行补丁工具或安装 Python", "只提供一个完整 ZIP", "玩家包不包含补丁工具",
-                          "须保留最初原版 DLL 备份", "未知版本应从临时解压目录移除 `bin/studiorender.dll`，仅更新 Bridge",
-                          "10000 项扩为 65536 项", "2 MiB", "原数字签名失效",
-                          "v1.0.10 ThinFlex 修复有效", "2026-10-10", "反馈未提供游玩时长及完整模型范围",
-                          "完整合并 L4D2 原项目", "未证实稳定 FPS 或 low 帧提升", "FLASHLIGHT-PERFORMANCE-2026-10-10.md", "bin/neko/plugins/L4D2BridgePlugin.dll",
-                          "L4N 2.51.0", "Starfelll", "runtime/l4n/manifest.json", "请勿与其他类似整合项目混装",
-                          "性能测试未安装 ThinFlex", "PERFORMANCE-2026-10-10.md",
-                          "引擎 DLL 归属 Valve，不适用项目根目录 MIT 许可", "THIRD-PARTY-NOTICES.txt",
-                          "runtime/engine/studiorender.manifest.json", "附件不包含玩家私有 dump",
-                          "3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85",
-                          "03964dedcf8b7f4ebde24cd3d0738873d37c075a7a9b313dad001bb937f9d1b6"):
-            self.assertIn(statement, notes)
-        self.assertLess(notes.index("复制文件即可应用 ThinFlex 修复"), notes.index("Upstream commit:"))
-        self.assertNotIn("tools/thinflex", notes)
-        self.assertNotIn("工具 BUILD.json", notes)
-        self.assertNotIn("update 包", notes)
-        self.assertNotIn("独立工具 ZIP", notes)
+        self.assertIn(self.changes, notes)
+        self.assertNotIn("ThinFlex 缓存", notes)
+        self.assertNotIn("runtime/engine/studiorender.manifest.json", notes)
+        self.assertIn("/README.md)", notes)
+
+    def test_stale_or_empty_current_notes_fail_before_network_calls(self):
+        for content in ("# v1.2\n旧更新", "# v1.2.1\n\n", "旧更新", "# v1.2.10\n未来更新"):
+            with self.subTest(content=content):
+                Path("docs/RELEASE-NOTES.md").write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "must match VERSION"):
+                    publish_release.publish()
+        self.api.assert_not_called()
+        self.run.assert_not_called()
+
+    def test_future_release_uses_its_own_notes(self):
+        Path("VERSION").write_text("2.0\n", encoding="utf-8")
+        Path("docs/RELEASE-NOTES.md").write_text("# v2.0\n\n本次修复其他问题。\n", encoding="utf-8")
+        publish_release.publish()
+        notes = Path("notes.md").read_text(encoding="utf-8")
+        self.assertIn("本次修复其他问题。", notes)
+        self.assertNotIn(self.changes, notes)
+        self.assertNotIn("IPC 数据覆盖", notes)
+
+    def test_repository_current_notes_match_the_release_version(self):
+        notes = publish_release.current_release_notes(REPOSITORY_ROOT)
+        self.assertTrue(notes.strip())
+
+    def test_current_notes_metadata_remains_usable_for_channel_deduplication(self):
+        for thinflex in (False, True):
+            with self.subTest(thinflex=thinflex):
+                self.existing = None
+                self.assets.clear()
+                if thinflex:
+                    self.enable_thinflex()
+                publish_release.publish()
+                notes = Path("notes.md").read_text(encoding="utf-8")
+                def detected_api(path):
+                    if path == detect_release.UPSTREAM:
+                        return {"default_branch": "main"}
+                    if "/commits/" in path:
+                        return {"sha": "a" * 40, "commit": {"committer": {"date": "2026-10-11T00:00:00Z"}}}
+                    if "/releases?" in path:
+                        return [{"draft": False, "tag_name": "previous", "body": notes}]
+                    raise AssertionError(path)
+                with patch.dict(os.environ, {"UPSTREAM_COMMIT": "", "FORCE_REBUILD": "false"}), \
+                        patch.object(detect_release, "api", side_effect=detected_api), \
+                        patch.object(detect_release, "recipe_digest", return_value="c" * 64):
+                    self.assertEqual(detect_release.pending(), [])
 
     def test_thinflex_rejects_missing_unexpected_or_misnamed_package(self):
         self.enable_thinflex()
