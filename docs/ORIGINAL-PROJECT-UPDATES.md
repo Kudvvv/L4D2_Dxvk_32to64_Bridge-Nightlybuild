@@ -1,10 +1,12 @@
 # L4D2 原项目完整同步
 
-当前完整功能基准：[`cf49175e8a3c6c2fe45c99aec0680b0d1c864d24`](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/tree/cf49175e8a3c6c2fe45c99aec0680b0d1c864d24)，包含 **1.2.1** 主提交 `0d450b7` 和其后的插件附件发布修正。本仓库完整合并版本始于 **Nightly 1.1**；两者版本号独立。
+当前隔离候选完整功能基准：[`de74cd7d5dd546bfd4f03ab451d0565f1fff0107`](https://github.com/yeyunyyds/L4D2_Dxvk_32to64_Bridge/tree/de74cd7d5dd546bfd4f03ab451d0565f1fff0107)，即上游 **1.2.2 可选稳定性更新**。本分支 v1.2 在此前完整基准 `cf49175` 上同步全部新增源码、测试与说明；两者版本号独立。候选尚未合入 main 或发布；正式版完整基准仍为 `cf49175`，默认下载保持 v1.1.10，性能/加载取舍与验证范围见 [本次集成说明](UPSTREAM-1.2.2-INTEGRATION.md)。
 
 用户于 2026-10-10 明确授权完整合并上游，包括上游新增功能。“不自行增加功能”不再作为筛除上游能力的理由。Git 合并保留两侧提交历史；以完整上游 Bridge 源码为基础融合 Nightly 修复，后续在此基准上增量同步。
 
 ## 本次功能范围
+
+2026-10-11 完整同步双向数据环完整预留、消费进度原子发布与等待重查、失败批次中止、Header 有界提交、请求/回复所有权清理、optimized Lock 指针保留、已知包完整规划及环尾 padding 消费。IPC 协议为 3，Client 与两个 Host 必须配套。保留原有 FULL_SHADOW、画质、后端和配置选择；不恢复已撤回的 Nightly 绑定引用优化。上游正常路径/实机性能报告原文保留，但不能作为本分支性能提升证明。
 
 完整保留上游 PageBlock residency、keep/learned-aggressive/drop、LGC/AGC/FGC、retention DB、Host ACK 和 readback recovery；Reset 状态机及等待；Presenter/ReShade 与 Steam 输入路径；x86/x64 Host、adapter/caps；L4N v2 设置/保存 API 与插件；memory/crash/data/color/API-wait 诊断及关闭时零观察开销；相关配置、实验源码、分析工具、文档与测试。
 

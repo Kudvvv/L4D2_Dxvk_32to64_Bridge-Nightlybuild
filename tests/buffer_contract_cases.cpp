@@ -78,7 +78,34 @@ static void runReadable() {
   const auto count = updates.size(); buffer.unlock();
   check(updates.size() == count, "READONLY Unlock started uploading");
 }
+static void failedUploadContract() {
+  D3DVERTEXBUFFER_DESC desc {}; desc.Size = 64; desc.Usage = D3DUSAGE_DYNAMIC; desc.Format = D3DFMT_VERTEXDATA;
+  const auto before = buffer_contract::liveBytes;
+  updates.clear();
+  {
+    Buffer<IDirect3DVertexBuffer9> buffer(desc);
+    void* data = nullptr;
+    check(buffer.lock(0,64,&data,D3DLOCK_DISCARD) == S_OK,"failure setup lock");
+    std::memset(data,0xa7,64);
+    failSubmissionTest=true;
+    check(buffer.unlock()==D3DERR_DEVICELOST,"failed upload must return failure");
+    check(updates.empty(),"failed upload published update");
+    check(buffer.unlock()==D3DERR_DEVICELOST,"failed upload must preserve lock record");
+    check(buffer_contract::liveBytes==before+64,"failed upload released shadow");
+    failSubmissionTest=false;
+  }
+  check(buffer_contract::liveBytes==before,"failed upload destruction leaked shadow");
+  transportHealthyTest=false;
+  { Buffer<IDirect3DVertexBuffer9> buffer(desc); void* data=reinterpret_cast<void*>(1);
+    check(buffer.lock(0,64,&data,0)==D3DERR_DEVICELOST && !data,"failed transport returned writable pointer"); }
+  transportHealthyTest=true;optimizedLockTest=true;
+  { Buffer<IDirect3DVertexBuffer9> buffer(desc); void* data=reinterpret_cast<void*>(1);
+    check(buffer.lock(0,64,&data,0)==D3DERR_DEVICELOST && !data,"failed optimized reservation returned pointer"); }
+  optimizedLockTest=false;
+  check(updates.empty(),"failed reserved lock published update");
+}
 int main() {
+  failedUploadContract();
   run<IDirect3DVertexBuffer9>("VB", D3DFMT_VERTEXDATA);
   run<IDirect3DVertexBuffer9>("VB managed", D3DFMT_VERTEXDATA, D3DPOOL_MANAGED);
   run<IDirect3DIndexBuffer9>("IB16", D3DFMT_INDEX16);

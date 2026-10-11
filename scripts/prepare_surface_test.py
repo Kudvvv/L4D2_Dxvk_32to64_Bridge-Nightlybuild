@@ -5,13 +5,10 @@
 import argparse
 import re
 from pathlib import Path
-
-
-def function(text, signature):
-    if text.count(signature) != 1:
-        raise ValueError(f"Expected one function: {signature}")
-    start = text.index(signature)
-    return text[start:text.index("\n}\n", start) + 3]
+try:
+    from .native_source import function
+except ImportError:
+    from native_source import function
 
 
 def prepare(source, output, copy_reference=False, negative_control=False):
@@ -20,8 +17,8 @@ def prepare(source, output, copy_reference=False, negative_control=False):
     text = (client / "d3d9_surface.cpp").read_text(encoding="utf-8")
     notices = text[:text.index('#include "pch.h"')]
     methods = "\n".join(function(text, signature) for signature in (
-        "void Direct3DSurface9_LSS::unlock()",
-        "void Direct3DSurface9_LSS::sendDataToServer(",
+        "HRESULT Direct3DSurface9_LSS::unlock()",
+        "HRESULT Direct3DSurface9_LSS::sendDataToServer(",
         "std::tuple<size_t, size_t> Direct3DSurface9_LSS::getRectDimensions("))
     start_marker = "        // NV-DXVK start: Copy only complete, tightly packed surfaces in one pass."
     end_marker = "        // NV-DXVK end"

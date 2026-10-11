@@ -6,17 +6,13 @@
 import argparse
 import re
 from pathlib import Path
+try:
+    from .native_source import function, function_bounds
+except ImportError:
+    from native_source import function, function_bounds
 
 
 KINDS = ("Volume", "Cube")
-
-
-def function(text, signature):
-    if text.count(signature) != 1:
-        raise ValueError(f"Expected one function: {signature}")
-    start = text.index(signature)
-    end = text.index("\n}\n", start) + 3
-    return text[start:end]
 
 
 def prepare(source, output, negative_control=None):
@@ -48,9 +44,10 @@ public:
             marker = "  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper."
             if create.count(marker) != 1:
                 raise ValueError(f"Cannot restore the original {kind} failure path")
+            _, _, body_end, _ = function_bounds(create, f"HRESULT Direct3DDevice9Ex_LSS<EnableSync>::Create{kind}Texture(")
             create = create[:create.index(marker)] + (
                 f'  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("Create{kind}Texture()", '
-                "D3DERR_INVALIDCALL, currentUID);\n}\n")
+                "D3DERR_INVALIDCALL, currentUID);\n}") + create[body_end:]
         methods.append("template<bool EnableSync>\n" + create)
         methods.append(function(implementation, f"void {name}::onDestroy()"))
     macros = (source / "bridge/src/util/util_bridgecommand.h").read_text(encoding="utf-8")

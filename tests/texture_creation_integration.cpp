@@ -6,6 +6,7 @@
 #define NOMINMAX
 #include <d3d9.h>
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
@@ -26,6 +27,7 @@ void require(bool condition, const char* message) {
 
 using UID = uint64_t;
 enum class Result { Success, Timeout };
+std::atomic<bool> gbBridgeRunning{true};
 namespace Commands {
 enum Command {
   Bridge_Response,
@@ -68,6 +70,7 @@ public:
 };
 class DeviceBridge {
 public:
+  static bool healthy() { return gbBridgeRunning.load(); }
   static Result waitForCommand(Commands::Command command, uint32_t timeout, void*, bool matchUID, UID uid) {
     require(command == Commands::Bridge_Response && timeout == 100 && matchUID,
       "response wait options changed");

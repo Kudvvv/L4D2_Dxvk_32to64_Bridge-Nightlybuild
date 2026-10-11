@@ -27,6 +27,9 @@
 #include "buffer_shadow.h"
 #include "pageblock_capability.h"
 #include "upload_observers.h"
+#include "data_ring_contract.h"
+
+std::atomic<bool> gbBridgeRunning{true};
 
 // Registry and optional observers are covered by their dedicated native suites.
 // Keep production constructor/destructor calls intact while isolating ownership.
@@ -139,6 +142,11 @@ class ClientMessage {
 public:
   ClientMessage(Commands::D3D9Command command, UID resource, Commands::Flags flags = 0)
     : m_message{command, resource, ++state.lastUID, flags, {}, {}} {}
+  template<size_t N> ClientMessage(Commands::D3D9Command command, UID resource, Commands::Flags flags,
+      const bridge_data::Packet<N>& packet) : ClientMessage(command, resource, flags) {
+    for (const auto value : packet.fields) { m_message.arguments.push_back(value); }
+    if (packet.hasBlob) { send_data(packet.bytes, packet.object); }
+  }
   ~ClientMessage() { state.messages.push_back(m_message); }
   UID get_uid() const { return m_message.uid; }
   template<typename... Args> void send_many(Args... values) {
@@ -158,10 +166,12 @@ public:
     return state.reserved.data();
   }
   void end_data_blob() {}
+  Result finish() { return Result::Success; }
 };
 void processHost(const Message& message);
 class DeviceBridge {
 public:
+  static bool healthy() { return gbBridgeRunning.load(); }
   static Result waitForCommand(Commands::D3D9Command command, uint32_t timeout, void*, bool matchUID, UID uid) {
     require(command == Commands::Bridge_Response && timeout == 100 && matchUID &&
       state.messages.size() == 1 && state.messages.front().uid == uid, "creation wait changed ordering or UID");

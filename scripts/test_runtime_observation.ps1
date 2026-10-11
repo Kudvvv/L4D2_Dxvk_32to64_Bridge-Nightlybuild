@@ -23,7 +23,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'Runtime observation source generation failed' }
   & cl.exe /nologo /std:c++17 /EHsc /O2 /W4 /WX /DNOMINMAX /DL4D2_EXCEPTION_TEST /DL4D2_DATA_TEST_STATE /wd4018 "/FI$repoRoot/tests/diagnostic_work_hooks.h" "/I$source/bridge/src/client" "/I$source/bridge/src/server" "/I$source/bridge/src/util" "/I$repoRoot/tests" $generated "$source/bridge/src/util/color_diagnostics.cpp" "$source/bridge/src/util/data_diagnostics.cpp" "$source/bridge/src/util/exception_diagnostics.cpp" /Fe:observation-test.exe /link psapi.lib bcrypt.lib user32.lib
   if ($LASTEXITCODE -ne 0) { throw 'Runtime observation compilation failed' }
-  foreach ($mode in @('off', 'monitor-on', 'input-on', 'crash-on', 'logging-on', 'observer-failure', 'init-failure', 'allocation-failure', 'data-on', 'lg-off', 'retention-log-failure', 'retention-write-failure', 'retention-callback-failure')) {
+  foreach ($mode in @('ipc-submit-failure', 'off', 'monitor-on', 'input-on', 'crash-on', 'logging-on', 'observer-failure', 'init-failure', 'allocation-failure', 'data-on', 'lg-off', 'retention-log-failure', 'retention-write-failure', 'retention-callback-failure')) {
     # Each process starts with fresh startup-only flags and lazy subsystem state.
     if ($mode -eq 'off') { Get-ChildItem $output -Filter '*.log' | Remove-Item -Force }
     & .\observation-test.exe $mode

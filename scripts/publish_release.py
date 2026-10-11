@@ -112,12 +112,14 @@ def publish():
     original = json.loads((Path(__file__).resolve().parents[1] / "config/original-project.json").read_text(encoding="utf-8"))
     introduction = (
         f"L4D2 Bridge {title}\n\n"
+        "**可选稳定性预发布：本次完整同步上游 1.2.2 的地图加载/切换 IPC 修复。上游初步截图对照出现约 1%～19% 的平均 FPS 下降，另有切图加载增加约 20 秒的反馈；low 帧无一致结论。这些不是本分支 GPLALL 组合的实测结果，不宣称提帧。没有加载问题的玩家可继续使用默认下载 v1.1.10。**\n\n"
         "**只提供一个完整 ZIP：已包含 DXVK（GPLALL）、L4N 2.51.0、完整桥接工具和已修复的 `bin/studiorender.dll`。备份后解压覆盖到游戏根目录即可安装，请勿与其他类似整合项目混装。核对游戏 DLL 版本并备份后，复制文件即可应用 ThinFlex 修复，无需运行补丁工具或安装 Python。**\n\n"
         "- L4N / Left4Neko 原作者：**Starfelll**。运行所需的启动器、模块、着色器、素材及原配套 VDF 模板和 QC/VMT 范例原样保留；开发 SDK 与离线转换工具不随安装包提供。作者原始说明原文合并到 `THIRD-PARTY-NOTICES.txt`；另含用户提供的 `dxvk.conf`、L4N `config.vdf` 及配套 shader 预设，不能将这些预设当作作者原始默认值。逐文件来源及 SHA-256 保留在仓库 `runtime/l4n/manifest.json`，包内归属见 `THIRD-PARTY-NOTICES.txt`。\n"
         f"- 完整合并 L4D2 原项目 **{original['version']}**（`{original['commit']}`），包括 PageBlock/retention/readback、ReShade Presenter、Steam 输入支持、诊断体系、x86 Host 和 L4N 控制插件。\n"
         f"- 合并范围及本分支保留项见[更新记录](https://github.com/{repo}/blob/{recipe}/docs/ORIGINAL-PROJECT-UPDATES.md)。默认继续使用 GPLALL 后端和 x64 Host；可选功能按仓库文档启用。\n"
         "- 同一完整包包含配套 x86 Client、x86/x64 Host、两种架构的 GPLALL 后端，以及 `bin/neko/plugins/L4D2BridgePlugin.dll`。Bridge 设置菜单随包安装；不需要菜单时退出游戏后移走该 DLL。\n"
-        f"- 本次减少队列就绪时的多余计时及进程内命令标志同步开销。对应生产补丁的候选已完成[手电性能对照](https://github.com/{repo}/blob/{recipe}/docs/FLASHLIGHT-PERFORMANCE-2026-10-10.md)：在临时统一 CPU 核心范围后，手电降幅接近无桥，但未证实稳定 FPS 或 low 帧提升。发布包由相同生产补丁重建，不能称为已逐字节实测；没有加入绑核或默认配置改动，也未证明消除了自然调度下的异常低档。此前[性能报告](https://github.com/{repo}/blob/{recipe}/docs/PERFORMANCE-2026-10-10.md)对应旧版与固定回放，性能测试未安装 ThinFlex，不能当作本次优化的收益。\n"
+        f"- 导入双向数据环完整预留、消费进度与等待重查、失败批次中止、请求/回复所有权清理及大包回绕修复。**IPC 协议为 3，Client 与两个 Host 必须一起更新或回退，不能混用旧版。** 合并范围、性能/加载取舍及验证边界见[本分支说明](https://github.com/{repo}/blob/{recipe}/docs/UPSTREAM-1.2.2-INTEGRATION.md)。\n"
+        f"- 本包通过编译、原生 IPC 与既有回归后发布，尚未在本分支 GPLALL + x64 Host 组合中进行游戏复测，未证实稳定 FPS 或 low 帧提升。此前[手电对照](https://github.com/{repo}/blob/{recipe}/docs/FLASHLIGHT-PERFORMANCE-2026-10-10.md)属于旧版，不作为本包性能证据；不重新加入已撤回的本地绑定引用优化。更早的[性能测试未安装 ThinFlex](https://github.com/{repo}/blob/{recipe}/docs/PERFORMANCE-2026-10-10.md)，同样不能作为本包稳定性或性能证据。\n"
         f"- 玩家包不包含补丁工具；先阅读包内 `README.txt`，详细安装与回退见[说明](https://github.com/{repo}/blob/{recipe}/docs/THINFLEX-TEST-README.txt)。升级前关闭游戏及 Host，备份原文件，保留已有配置及自定义后端。已打补丁的玩家须保留最初原版 DLL 备份，不能用修复文件覆盖它。\n"
         "- 支持的原始 `studiorender.dll` SHA-256："
         "`3f5f5b0f539e8ad22bcfc4381be41571257c0c29e8061057682f9b8525ca7b85`；"

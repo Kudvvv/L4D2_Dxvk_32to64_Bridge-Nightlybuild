@@ -8,7 +8,7 @@
 #include <utility>
 
 // Definitions normally supplied by the Client/Host executable.
-bool gbBridgeRunning = true;
+std::atomic<bool> gbBridgeRunning{true};
 bridge_util::Guid gUniqueIdentifier;
 using Device = Bridge<BridgeId::Device>;
 using Module = Bridge<BridgeId::Module>;
@@ -102,14 +102,10 @@ template<class B>
 void finishRead(const Header& header) {
   require(B::get_data_pos() == header.dataOffset, "header/data publication offset mismatch");
   const auto& reader = B::getReaderChannel();
-  // Same data-overwrite release protocol as the production Host command loop.
-  *reader.serverDataPos = static_cast<int64_t>(B::get_data_pos());
-  if (*reader.clientDataExpectedPos != -1 &&
-      *reader.serverDataPos > *reader.clientDataExpectedPos && !*reader.serverResetPosRequired) {
-    reader.dataSemaphore->release(1);
-    *reader.clientDataExpectedPos = -1;
-  }
+  // Exercise the production protocol-3 consumed frontier and waiter wakeup.
   B::end_read_data();
+  require(reader.control->consumed.load(std::memory_order_acquire) == reader.data->cursor(),
+    "completed Host payload was not released to its writer");
 }
 
 uint32_t word(uint32_t uid, uint32_t producer, uint32_t sequence, uint32_t index) {
@@ -181,7 +177,11 @@ void receiveResponses(uint32_t producers, uint32_t count) {
   for (uint32_t expectedUid = 0; expectedUid < producers * count; ++expectedUid) {
     require(B::waitForCommand(Commands::Bridge_Response, kWaitMs, nullptr, true, expectedUid) == Result::Success,
       "Client response UID wait failed");
-    const auto header = B::pop_front();
+    // The Client owns the response Header until its complete payload has been
+    // consumed. Production pop_front ends that read before publishing the pop.
+    Result peekResult;
+    const auto header = B::getReaderChannel().commands->peek(peekResult, kWaitMs);
+    require(peekResult == Result::Success, "ready Client response disappeared");
     require(header.command == Commands::Bridge_Response && header.pHandle == expectedUid,
       "response publication ordering changed");
     require(B::begin_read_data() == Result::Success, "Client read batch failed");
@@ -190,7 +190,13 @@ void receiveResponses(uint32_t producers, uint32_t count) {
     require(producer < producers && sequence == sequences[producer]++, "response producer ordering changed");
     require(token == (expectedUid ^ 0xa55a5aa5u) && sum == checksum(expectedUid, producer, sequence),
       "response payload mismatch");
-    finishRead<B>(header);
+    require(B::get_data_pos() == header.dataOffset, "response/header publication offset mismatch");
+    const auto completed = B::pop_front();
+    require(completed.command == header.command && completed.pHandle == header.pHandle,
+      "Client popped a different response");
+    const auto& reader = B::getReaderChannel();
+    require(reader.control->consumed.load(std::memory_order_acquire) == reader.data->cursor(),
+      "completed Client payload was not released to its writer");
   }
   for (const auto sequence : sequences) { require(sequence == count, "Client lost a response"); }
 }

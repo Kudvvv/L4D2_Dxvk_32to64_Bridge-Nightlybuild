@@ -5,17 +5,14 @@
 import argparse
 import re
 from pathlib import Path
+try:
+    from .native_source import function, function_bounds
+except ImportError:
+    from native_source import function, function_bounds
 
 KINDS = ("VertexBuffer", "IndexBuffer", "RenderTarget", "DepthStencilSurface",
          "OffscreenPlainSurface", "RenderTargetEx", "OffscreenPlainSurfaceEx", "DepthStencilSurfaceEx")
 NEGATIVE_CONTROLS = (*KINDS, "offset", "policy", "host")
-
-
-def function(text, signature):
-    if text.count(signature) != 1:
-        raise ValueError(f"Expected one function: {signature}")
-    start = text.index(signature)
-    return text[start:text.index("\n}\n", start) + 3]
 
 
 def prepare(source, output, negative_control=None):
@@ -26,7 +23,7 @@ def prepare(source, output, negative_control=None):
     host = (source / "bridge/src/server/main.cpp").read_text(encoding="utf-8")
     for kind in KINDS:
         create = function(device, f"HRESULT Direct3DDevice9Ex_LSS<EnableSync>::Create{kind}(")
-        signature = create[:create.index(" {")].replace("Direct3DDevice9Ex_LSS<EnableSync>::", "")
+        signature = re.sub(r"\s+try$", "", create[:create.index("{")].rstrip()).replace("Direct3DDevice9Ex_LSS<EnableSync>::", "")
         declarations.append("  " + signature + ";")
         parameters = signature[signature.index("(") + 1:-1].split(", ")
         names = [re.search(r"(\w+)$", parameter).group(1) for parameter in parameters]
@@ -46,7 +43,8 @@ def prepare(source, output, negative_control=None):
             marker = "  // NV-DXVK start: Failed creation returns a null output and releases its client wrapper."
             if create.count(marker) != 1:
                 raise ValueError(f"Cannot restore original failure path: {kind}")
-            create = create[:create.index(marker)] + f'  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("Create{kind}()", D3DERR_INVALIDCALL, currentUID);\n}}\n'
+            _, _, body_end, _ = function_bounds(create, f"HRESULT Direct3DDevice9Ex_LSS<EnableSync>::Create{kind}(")
+            create = create[:create.index(marker)] + f'  WAIT_FOR_OPTIONAL_CREATE_FUNCTION_SERVER_RESPONSE("Create{kind}()", D3DERR_INVALIDCALL, currentUID);\n}}' + create[body_end:]
         methods.append("template<bool EnableSync>\n" + create)
         start = host.index(f"      case IDirect3DDevice9Ex_Create{kind}:\n")
         case = host[start:host.index("\n      }", start) + 8]

@@ -74,6 +74,8 @@ def pending():
     identifier = "v" + version + ("-thinflex-test-" if thinflex else "-") + names["release_tag"]
     original = json.loads((Path(__file__).resolve().parents[1] / "config/original-project.json").read_text(encoding="utf-8"))
     title = "v" + version + " L4N 整合包 · 完整同步上游 " + original["version"] + (" + ThinFlex 测试版" if thinflex else "")
+    if original["version"] == "1.2.2":
+        title += " · 可选稳定性更新"
     names.update(release_tag=identifier, title=title,
                  archive="l4d2-bridge-" + identifier + ".zip")
     return [{"tag": names["group"], "commit": commit, "branch": branch,

@@ -50,15 +50,18 @@ struct Capture {
   RECT rect {};
   bool rectSent = false, refuseBlob = false;
   size_t requestedBytes = 0;
+  uint64_t wireWords = 0;
   std::vector<uint64_t> fields;
   std::vector<uint8_t> storage;
   static constexpr size_t guard = 32;
 } capture;
+enum class Result { Success };
+struct DeviceBridge { static bool healthy() { return true; } };
 struct ClientMessage {
   uint32_t get_uid() const { return 123; }
-  ClientMessage(uint32_t command, uint32_t id, uint32_t flag) {
+  ClientMessage(uint32_t command, uint32_t id, uint32_t flag, uint64_t wireWords) {
     require(command == Commands::IDirect3DSurface9_UnlockRect && id == 7, "command or resource id changed");
-    ++capture.commands; capture.dataFlag = flag;
+    ++capture.commands; capture.dataFlag = flag; capture.wireWords = wireWords;
   }
   void send_data(size_t bytes, const void* data) {
     require(!capture.rectSent && bytes == sizeof(RECT), "rectangle wire header changed");
@@ -80,6 +83,8 @@ struct ClientMessage {
     }
     ++capture.ends;
   }
+  void abort() {}
+  Result finish() { return Result::Success; }
 };
 size_t surfaceShadowBudget() { return 128u * 1024u * 1024u; }
 struct PagefileShadow {
@@ -138,7 +143,7 @@ class Direct3DSurface9_LSS {
   bool m_readbackTexture2D = false, m_readbackAttempted = false;
   l4d2_readback::Digest m_uploadHash;
   HRESULT m_uploadHashResult = E_FAIL;
-  void sendDataToServer(const LockInfo&);
+  HRESULT sendDataToServer(const LockInfo&);
   static std::tuple<size_t, size_t> getRectDimensions(const RECT&);
 public:
   PagefileShadow m_shadow;
@@ -154,7 +159,7 @@ public:
              SharedHeap::AllocId discard = SharedHeap::kInvalidId) {
     m_lockInfoQueue.push({{pitch, data}, rect, flags, 123, discard});
   }
-  void unlock();
+  HRESULT unlock();
 };
 #ifndef SURFACE_COPY_BENCHMARK
 void* countedCopy(void* target, const void* source, size_t bytes) {
@@ -205,7 +210,19 @@ void runCase(D3DFORMAT format, UINT width, UINT height, RECT rect, uint32_t padd
   capture = {}; capture.refuseBlob = refuse; SharedHeap::freed.clear(); copyCalls = 0;
   l4d2_color::lastUpload.clear();
   surface.queue(rect, static_cast<INT>(apiPitch), source.data() + 32 + offset, flags, 456);
-  surface.unlock(); surface.unlock();
+  const auto result = surface.unlock();
+  if (refuse && !(flags & D3DLOCK_READONLY) && !shared) {
+    require(result == D3DERR_DEVICELOST, "failed reservation returned success");
+    require(surface.m_shadow.releases == 0 && surface.m_shadow.observations == 0 && surface.m_shadow.transfers == 0,
+      "failed upload released or observed an unfinished lock");
+    require(capture.ends == 0 && copyCalls == 0 && source == preserved, "failed reservation still copied or completed");
+    capture.rectSent = false;
+    capture.fields.clear();
+    require(surface.unlock() == D3DERR_DEVICELOST && capture.commands == 2,
+      "failed upload discarded the pending lock");
+    return;
+  }
+  require(result == S_OK && surface.unlock() == S_OK, "successful upload or empty unlock returned failure");
   require(source == preserved, "upload changed source, padding or guards");
   require(surface.m_shadow.releases == (shared ? 0u : 1u), "shadow release count changed");
   require(surface.m_shadow.transfers == 0 && surface.m_shadow.observations == (shared ? 0u : 1u),
@@ -219,11 +236,12 @@ void runCase(D3DFORMAT format, UINT width, UINT height, RECT rect, uint32_t padd
     ? std::vector<uint64_t>{flags, static_cast<uint64_t>(format), pitch, 123}
     : std::vector<uint64_t>{flags, static_cast<uint64_t>(format), rowBytes};
   require(capture.fields == fields, "wire flags, format, pitch or buffer id changed");
+  require(capture.wireWords == 9 + (shared ? 0 : (static_cast<uint64_t>(expected.size()) + 3) / 4),
+    "declared complete upload wire length changed");
   if (shared) {
     require(capture.begins == 0 && SharedHeap::freed == std::vector<SharedHeap::AllocId>{456}, "shared upload copied data or lost discarded buffer"); return;
   }
   require(SharedHeap::freed.empty() && capture.begins == 1, "unexpected shared release or blob count");
-  if (refuse) { require(capture.ends == 0 && copyCalls == 0, "failed reservation still copied or completed"); return; }
   checkPayload(expected);
   require(surface.m_residency->attempts == 1 && surface.m_residency->uploads == 1 && surface.m_residency->idle == 1,
     "surface upload skipped residency notifications");

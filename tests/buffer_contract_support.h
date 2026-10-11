@@ -18,7 +18,9 @@
 #include <type_traits>
 #include <vector>
 #include "data_diagnostics.h"
+#include "data_ring_contract.h"
 #include "util_commands.h"
+#include "util_common.h"
 struct BaseDirect3DDevice9Ex_LSS {};
 template<typename T> struct Direct3DResource9_LSS {
   Direct3DResource9_LSS(T*, BaseDirect3DDevice9Ex_LSS*) {}
@@ -30,7 +32,8 @@ struct GlobalOptions {
   static bool getUseSharedHeapForStaticBuffers() { return false; }
   static bool getAlwaysCopyEntireStaticBuffer() { return false; }
 };
-struct ClientOptions { static bool getOptimizedDynamicLock() { return false; } };
+inline bool optimizedLockTest = false;
+struct ClientOptions { static bool getOptimizedDynamicLock() { return optimizedLockTest; } };
 #include "buffer_shadow.h"
 namespace buffer_contract {
 inline uint64_t liveBytes = 0;
@@ -60,19 +63,28 @@ inline uint8_t* getBuf(AllocId) { return nullptr; }
 template<typename T> T align(T value, size_t alignment) { return (value + alignment - 1) & ~(alignment - 1); }
 template<typename... T> std::string format_string(const char*, T...) { return {}; }
 namespace bridge_util { enum class LogLevel { Trace }; }
+using bridge_util::Result;
 struct Logger {
   static bool isEnabled(bridge_util::LogLevel) { return false; }
   template<typename Message> static void traceLazy(Message&&) {}
   static void trace(const std::string&) {} static void err(const std::string&) {}
 };
 struct Channel { uint32_t* get_data_ptr() const { return nullptr; } };
-struct DeviceBridge { static Channel getWriterChannel() { return {}; } };
+inline bool transportHealthyTest = true, failSubmissionTest = false;
+struct DeviceBridge { static bool healthy() { return transportHealthyTest; } static Channel getWriterChannel() { return {}; } };
 struct Update { Commands::D3D9Command command; uint32_t offset, size, flags; std::vector<uint8_t> bytes; };
 static std::vector<Update> updates;
 struct ClientMessage {
   Update update;
+  bool accepted = true;
   ClientMessage(Commands::D3D9Command command, uint32_t, Commands::Flags = 0) : update { command, 0, 0, 0, {} } {}
-  ~ClientMessage() { updates.push_back(std::move(update)); }
+  template<size_t N> ClientMessage(Commands::D3D9Command command, uint32_t id, Commands::Flags flags,
+      const bridge_data::Packet<N>& packet) : ClientMessage(command, id, flags) {
+    static_assert(N == 3 || N == 4, "buffer upload wire fields");
+    send_many(packet.fields[0], packet.fields[1], packet.fields[2]);
+    if (packet.hasBlob) { send_data(packet.bytes, packet.object); }
+  }
+  ~ClientMessage() { if (accepted) updates.push_back(std::move(update)); }
   template<typename A, typename B, typename C> void send_many(A offset, B size, C flags) {
     update.offset = static_cast<uint32_t>(offset); update.size = static_cast<uint32_t>(size); update.flags = static_cast<uint32_t>(flags);
   }
@@ -81,6 +93,7 @@ struct ClientMessage {
   void send_data(size_t size, const void* data) {
     const auto* first = static_cast<const uint8_t*>(data); update.bytes.assign(first, first + size);
   }
-  uint8_t* begin_data_blob(size_t) { return nullptr; }
+  uint8_t* begin_data_blob(size_t) { accepted = false; return nullptr; }
   void end_data_blob() {}
+  bridge_util::Result finish() { if (failSubmissionTest) accepted = false; return accepted ? bridge_util::Result::Success : bridge_util::Result::Failure; }
 };

@@ -57,7 +57,9 @@ void* operator new[](size_t size, const std::nothrow_t&) noexcept {
 }
 void operator delete[](void* memory, const std::nothrow_t&) noexcept { ::operator delete[](memory); }
 
-enum class TransportFault { None, Construct, Header, Payload, Finish };
+enum class TransportFault { None, Construct, Header, Payload, Finish, Submit };
+enum class Result { Success, Failure };
+std::atomic<bool> gbBridgeRunning{true};
 TransportFault transportFault = TransportFault::None;
 struct TransportFailure {};
 bool benchmarkEnabled = false;
@@ -83,6 +85,8 @@ struct Capture {
 } capture;
 struct ClientMessage {
   uint32_t get_uid() const { return 123; }
+  Result finish() { return transportFault == TransportFault::Submit ? Result::Failure : Result::Success; }
+  void abort() {}
   ClientMessage(uint32_t, uint32_t) {
     if (transportFault == TransportFault::Construct) { throw TransportFailure(); }
     ++capture.count;
@@ -131,7 +135,7 @@ public:
   HRESULT LockBox(D3DLOCKED_BOX*, CONST D3DBOX*, DWORD);
   HRESULT UnlockBox();
   HRESULT lock(D3DLOCKED_BOX&, const D3DBOX* const, const DWORD);
-  void unlock();
+  HRESULT unlock();
   static D3DBOX resolveLockInfoBox(const D3DBOX* const, const D3DVOLUME_DESC&);
 };
 #include "volume_methods.h"
@@ -299,25 +303,34 @@ void testAllocationFailuresAndDestruction() {
 void testTransportExceptions() {
   const auto baseline = allocation::liveArrays;
   for (const auto fault : {TransportFault::Construct, TransportFault::Header,
-                          TransportFault::Payload, TransportFault::Finish}) {
+                          TransportFault::Payload, TransportFault::Finish, TransportFault::Submit}) {
 #ifndef SEND_ALL_LOCK_DATA_AT_ONCE
     if (fault == TransportFault::Finish) { continue; }
 #endif
-    Direct3DVolume9_LSS volume(D3DFMT_A8R8G8B8);
-    D3DLOCKED_BOX locked {};
-    require(volume.LockBox(&locked, nullptr, 0) == S_OK, "transport case could not lock");
-    std::memset(locked.pBits, 0x6b, static_cast<size_t>(locked.SlicePitch) * 8);
-    capture = {};
-    transportFault = fault;
-    bool caught = false;
-    try { volume.UnlockBox(); } catch (const TransportFailure&) { caught = true; }
-    transportFault = TransportFault::None;
-    require(caught, "transport fault was not exercised");
-    require(allocation::liveArrays == baseline && volume.pendingLocks() == 0,
-      "transport exception leaked or retained the consumed lock");
-    const auto commands = capture.count;
-    require(volume.UnlockBox() == S_OK && capture.count == commands,
-      "a failed transport left the same lock queued for retransmission");
+    {
+      Direct3DVolume9_LSS volume(D3DFMT_A8R8G8B8);
+      D3DLOCKED_BOX locked {};
+      require(volume.LockBox(&locked, nullptr, 0) == S_OK, "transport case could not lock");
+      const auto bytes = static_cast<size_t>(locked.SlicePitch) * 8;
+      std::memset(locked.pBits, 0x6b, bytes);
+      capture = {};
+      transportFault = fault;
+      bool caught = false;
+      HRESULT result = S_OK;
+      try { result = volume.UnlockBox(); } catch (const TransportFailure&) { caught = true; }
+      transportFault = TransportFault::None;
+      require(fault == TransportFault::Submit ? !caught && result == D3DERR_DEVICELOST : caught,
+        "transport fault was not propagated");
+      // IPC protocol 3 releases the owning lock only after successful submission.
+      // A rejected packet must retain valid source bytes until resource destruction.
+      require(allocation::liveArrays == baseline + 1 && volume.pendingLocks() == 1,
+        "failed submission discarded or leaked its owning lock");
+      const auto data = static_cast<const uint8_t*>(locked.pBits);
+      for (size_t index = 0; index < bytes; ++index) {
+        require(data[index] == 0x6b, "failed submission changed retained volume bytes");
+      }
+    }
+    require(allocation::liveArrays == baseline, "failed transport leaked lock storage on destruction");
   }
 }
 

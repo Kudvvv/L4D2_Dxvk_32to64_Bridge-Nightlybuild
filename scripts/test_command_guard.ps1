@@ -22,7 +22,7 @@ $files = @(
   'util_sharedmemory.h', 'util_sharedmemory.cpp', 'util_semaphore.h', 'util_semaphore.cpp',
   'util_guid.h', 'util_common.h', 'util_commands.h', 'util_bridge_state.h', 'util_singleton.h',
   'api_wait_diagnostics.h', 'queue_wait_diagnostics.h', 'runtime_observation.h',
-  'exception_diagnostics.h', 'data_diagnostics.h', 'device_reset.h', 'log/log_strings.h'
+  'exception_diagnostics.h', 'data_diagnostics.h', 'device_reset.h', 'data_ring_contract.h', 'log/log_strings.h'
 )
 $testSource = Join-Path $repoRoot 'tests/command_guard_ipc.cpp'
 $harnessHash = (Get-FileHash -LiteralPath $testSource -Algorithm SHA256).Hash
